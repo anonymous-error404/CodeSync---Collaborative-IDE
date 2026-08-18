@@ -3,7 +3,7 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const { Server } = require('socket.io');
-const { workspaceRoutes, initWorkspaceSockets } = require('./workspace');
+const { workspaceRoutes, initWorkspaceSockets } = require('./src');
 const authRoutes = require('./routes/authRoutes');
 const { syncDatabase } = require('./models');
 
@@ -50,8 +50,8 @@ app.use((err, req, res, next) => {
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST']
-  }
+    methods: ['GET', 'POST'],
+  },
 });
 
 // Attach Workspace Real-Time Socket Handlers
