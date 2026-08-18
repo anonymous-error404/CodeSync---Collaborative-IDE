@@ -1,11 +1,10 @@
-require('dotenv').config();
-const http = require('http');
-const express = require('express');
-const cors = require('cors');
-const { Server } = require('socket.io');
-const { workspaceRoutes, initWorkspaceSockets } = require('./src');
-const authRoutes = require('./routes/authRoutes');
-const { syncDatabase } = require('./models');
+import 'dotenv/config';
+import http from 'http';
+import express from 'express';
+import cors from 'cors';
+import { Server } from 'socket.io';
+import { workspaceRoutes, authRoutes, initWorkspaceSockets } from './src/index.js';
+import { syncDatabase } from './src/models/index.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -81,8 +80,8 @@ const startServer = async (port = PORT) => {
   }
 };
 
-if (require.main === module) {
+if (process.argv[1] && new URL(import.meta.url).pathname.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop())) {
   startServer();
 }
 
-module.exports = { app, server, startServer };
+export { app, server, startServer };

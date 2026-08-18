@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import * as controller from '../controllers/workspaceController.js';
+
 const router = express.Router();
-const controller = require('../controllers/workspaceController');
 
 // Workspace routes
 router.post('/workspaces', controller.createWorkspace);
@@ -16,4 +17,4 @@ router.post('/workspaces/:id/files', controller.createItem);
 router.delete('/workspaces/:id/files', controller.deleteItem);
 router.post('/workspaces/:id/files/rename', controller.renameItem);
 
-module.exports = router;
+export default router;

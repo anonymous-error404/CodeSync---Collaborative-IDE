@@ -1,5 +1,5 @@
-const { v4: uuidv4 } = require('uuid');
-const storageService = require('./storageService');
+import { v4 as uuidv4 } from 'uuid';
+import storageService from './storageService.js';
 
 class WorkspaceService {
   constructor() {
@@ -101,6 +101,16 @@ class WorkspaceService {
       meta.activeUsers -= 1;
     }
   }
+
+  /**
+   * Returns the current active user count for a workspace (synchronous).
+   * Use this instead of getWorkspaceDetails() when you only need the counter.
+   * @param {string} workspaceId
+   * @returns {number}
+   */
+  getActiveUsers(workspaceId) {
+    return this.workspaces.get(workspaceId)?.activeUsers ?? 0;
+  }
 }
 
-module.exports = new WorkspaceService();
+export default new WorkspaceService();

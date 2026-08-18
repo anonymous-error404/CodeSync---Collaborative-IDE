@@ -1,5 +1,5 @@
-const path = require('path');
-const { STORAGE_ROOT } = require('../config/workspaceConfig');
+import path from 'path';
+import { STORAGE_ROOT } from '../config/workspaceConfig.js';
 
 /**
  * Resolves the absolute directory path of a workspace.
@@ -33,7 +33,7 @@ function resolveSafePath(workspaceId, relativePath = '') {
   const workspaceDir = getWorkspacePath(workspaceId);
 
   // Normalize and resolve path
-  const normalizedRelative = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
+  const normalizedRelative = path.normalize(relativePath).replace(/^(\.\.[\\/\\\\])+/, '');
   const targetPath = path.resolve(workspaceDir, normalizedRelative);
 
   // Enforce boundary check
@@ -44,7 +44,4 @@ function resolveSafePath(workspaceId, relativePath = '') {
   return targetPath;
 }
 
-module.exports = {
-  getWorkspacePath,
-  resolveSafePath
-};
+export { getWorkspacePath, resolveSafePath };

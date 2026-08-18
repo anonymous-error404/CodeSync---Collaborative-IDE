@@ -1,6 +1,6 @@
-const workspaceService = require('../services/workspaceService');
-const storageService = require('../services/storageService');
-const executionService = require('../services/executionService');
+import workspaceService from '../services/workspaceService.js';
+import storageService from '../services/storageService.js';
+import executionService from '../services/executionService.js';
 
 /**
  * Attaches real-time workspace socket event handlers to Socket.io server.
@@ -30,7 +30,7 @@ function initWorkspaceSockets(io) {
       socket.to(roomName).emit('user-joined', {
         socketId: socket.id,
         username,
-        activeUsers: workspaceService.getWorkspaceDetails(workspaceId)?.workspace?.activeUsers || 1
+        activeUsers: workspaceService.getActiveUsers(workspaceId)
       });
 
       // Send initial file tree to joining client
@@ -151,4 +151,4 @@ function initWorkspaceSockets(io) {
   });
 }
 
-module.exports = initWorkspaceSockets;
+export default initWorkspaceSockets;

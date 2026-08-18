@@ -1,5 +1,5 @@
-const sequelize = require('../config/database');
-const User = require('./User');
+import sequelize from '../config/database.js';
+import User from './User.js';
 
 const db = {
   sequelize,
@@ -23,7 +23,6 @@ const syncDatabase = async (options = {}) => {
   }
 };
 
-module.exports = {
-  ...db,
-  syncDatabase,
-};
+export { syncDatabase };
+export default db;
+export { User };

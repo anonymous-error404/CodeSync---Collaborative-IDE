@@ -1,8 +1,8 @@
-const fs = require('fs').promises;
-const fsSync = require('fs');
-const path = require('path');
-const { getWorkspacePath, resolveSafePath } = require('../utils/pathSandbox');
-const { STORAGE_ROOT, DEFAULT_FILES, MAX_FILE_SIZE_BYTES } = require('../config/workspaceConfig');
+import { promises as fs } from 'fs';
+import fsSync from 'fs';
+import path from 'path';
+import { getWorkspacePath, resolveSafePath } from '../utils/pathSandbox.js';
+import { STORAGE_ROOT, DEFAULT_FILES, MAX_FILE_SIZE_BYTES } from '../config/workspaceConfig.js';
 
 class StorageService {
   /**
@@ -217,4 +217,4 @@ class StorageService {
   }
 }
 
-module.exports = new StorageService();
+export default new StorageService();

@@ -1,10 +1,7 @@
-const jwt = require('jsonwebtoken');
-const { Op } = require('sequelize');
-const { User } = require('../models');
-require('dotenv').config();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'codesync_super_secret_jwt_key_2026_collaborative_ide';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
+import { User } from '../models/index.js';
+import { JWT_SECRET, JWT_EXPIRES_IN } from '../config/authConfig.js';
 
 // Email validation helper regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -219,8 +216,4 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = {
-  register,
-  login,
-  getMe,
-};
+export { register, login, getMe };

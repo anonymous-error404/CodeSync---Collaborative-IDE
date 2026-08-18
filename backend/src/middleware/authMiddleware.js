@@ -1,8 +1,7 @@
-const jwt = require('jsonwebtoken');
-const { User } = require('../models');
-require('dotenv').config();
+import jwt from 'jsonwebtoken';
+import { User } from '../models/index.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'codesync_super_secret_jwt_key_2026_collaborative_ide';
 
 /**
  * Authentication Middleware to verify JWT tokens
@@ -62,6 +61,4 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-module.exports = {
-  authenticateToken,
-};
+export { authenticateToken };

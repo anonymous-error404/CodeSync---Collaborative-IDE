@@ -9,7 +9,7 @@ process.env.PORT = '5001';
 process.env.JWT_SECRET = 'test_jwt_secret_key_12345';
 
 const { syncDatabase, sequelize, User } = require('./models');
-const { app, startServer } = require('./server');
+const { app, startServer } = require('../server');
 
 // Helper to make HTTP requests
 const request = (method, path, body = null, headers = {}) => {

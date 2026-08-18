@@ -1,6 +1,6 @@
-const workspaceService = require('../services/workspaceService');
-const storageService = require('../services/storageService');
-const asyncWrapper = require('../utils/asyncWrapper');
+import workspaceService from '../services/workspaceService.js';
+import storageService from '../services/storageService.js';
+import asyncWrapper from '../utils/asyncWrapper.js';
 
 /**
  * POST /api/workspaces
@@ -131,7 +131,7 @@ const renameItem = asyncWrapper(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
-module.exports = {
+export {
   createWorkspace,
   listWorkspaces,
   getWorkspaceDetails,

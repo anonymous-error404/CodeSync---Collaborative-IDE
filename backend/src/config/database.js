@@ -1,6 +1,10 @@
-const { Sequelize } = require('sequelize');
-const path = require('path');
-require('dotenv').config();
+import { Sequelize } from 'sequelize';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import 'dotenv/config';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const dbPath = process.env.DB_STORAGE
   ? path.resolve(process.cwd(), process.env.DB_STORAGE)
@@ -12,4 +16,4 @@ const sequelize = new Sequelize({
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
 });
 
-module.exports = sequelize;
+export default sequelize;
