@@ -1,0 +1,12 @@
+{
+  "name": "codesync-collaborative-ide",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CodeSync - Real-time Collaborative Web IDE Monorepo Root",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "start:backend": "npm --prefix backend start",
+    "build:frontend": "npm --prefix frontend run build"
+  }
+}
