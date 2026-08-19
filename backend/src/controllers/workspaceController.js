@@ -14,10 +14,10 @@ const createWorkspace = asyncWrapper(async (req, res) => {
 
 /**
  * GET /api/workspaces
- * Lists all active workspaces.
+ * Lists all active workspaces (scans disk to recover persisted ones).
  */
 const listWorkspaces = asyncWrapper(async (req, res) => {
-  const workspaces = workspaceService.listWorkspaces();
+  const workspaces = await workspaceService.listWorkspaces();
   res.status(200).json({ success: true, workspaces });
 });
 

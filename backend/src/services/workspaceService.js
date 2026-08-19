@@ -1,17 +1,38 @@
 import { v4 as uuidv4 } from 'uuid';
+import { promises as fs } from 'fs';
+import fsSync from 'fs';
+import path from 'path';
 import storageService from './storageService.js';
+import { STORAGE_ROOT } from '../config/workspaceConfig.js';
+
+const META_FILENAME = '.codesync-meta.json';
 
 class WorkspaceService {
   constructor() {
     this.workspaces = new Map();
   }
 
+  /** Write metadata JSON into the workspace directory for persistence across restarts. */
+  async _writeMeta(meta) {
+    try {
+      const metaPath = path.join(STORAGE_ROOT, meta.id, META_FILENAME);
+      await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+    } catch { /* ignore */ }
+  }
+
+  /** Read metadata from a workspace directory, returns null if missing/corrupt. */
+  async _readMeta(workspaceId) {
+    try {
+      const metaPath = path.join(STORAGE_ROOT, workspaceId, META_FILENAME);
+      const raw = await fs.readFile(metaPath, 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Creates a new workspace session and initializes its folder.
-   * @param {Object} options 
-   * @param {string} options.name 
-   * @param {string} [options.description] 
-   * @returns {Promise<Object>} Workspace metadata 
    */
   async createWorkspace({ name, description = '' }) {
     const workspaceId = `ws-${uuidv4().substring(0, 8)}`;
@@ -23,11 +44,14 @@ class WorkspaceService {
       description,
       createdAt: now,
       updatedAt: now,
-      activeUsers: 0
+      activeUsers: 0,
     };
 
-    // Create external directory & default starter files
+    // Create directory + default files on disk
     await storageService.createWorkspaceDirectory(workspaceId);
+
+    // Persist metadata so it survives restarts
+    await this._writeMeta(workspaceMeta);
 
     // Register in memory
     this.workspaces.set(workspaceId, workspaceMeta);
@@ -36,43 +60,59 @@ class WorkspaceService {
   }
 
   /**
-   * Retrieves a list of all active workspaces.
-   * @returns {Array<Object>} List of workspace metadata
+   * Lists all workspaces — scans disk to recover any not yet in memory.
    */
-  listWorkspaces() {
+  async listWorkspaces() {
+    try {
+      if (!fsSync.existsSync(STORAGE_ROOT)) return Array.from(this.workspaces.values());
+
+      const entries = await fs.readdir(STORAGE_ROOT, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const wsId = entry.name;
+        if (this.workspaces.has(wsId)) continue;
+
+        // Try to recover from persisted meta file
+        const meta = await this._readMeta(wsId);
+        if (meta && meta.id) {
+          this.workspaces.set(wsId, { activeUsers: 0, ...meta });
+        } else {
+          // Meta file missing — create a recovery entry
+          const now = new Date().toISOString();
+          const recovered = { id: wsId, name: wsId, description: '', createdAt: now, updatedAt: now, activeUsers: 0 };
+          this.workspaces.set(wsId, recovered);
+          await this._writeMeta(recovered);
+        }
+      }
+    } catch { /* ignore scan errors */ }
+
     return Array.from(this.workspaces.values());
   }
 
   /**
    * Gets details and file tree for a specific workspace.
-   * @param {string} workspaceId 
-   * @returns {Promise<Object>} Workspace metadata & file tree
    */
   async getWorkspaceDetails(workspaceId) {
-    const meta = this.workspaces.get(workspaceId);
-
-    // If meta isn't in memory (e.g., server restarted), re-verify filesystem existence
-    const fileTree = await storageService.getFileTree(workspaceId);
-
-    if (!meta) {
-      const recoveredMeta = {
-        id: workspaceId,
-        name: `Workspace ${workspaceId}`,
-        description: 'Recovered workspace',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        activeUsers: 0
-      };
-      this.workspaces.set(workspaceId, recoveredMeta);
-      return { workspace: recoveredMeta, fileTree };
+    if (!this.workspaces.has(workspaceId)) {
+      // Try disk recovery for this specific workspace
+      const meta = await this._readMeta(workspaceId);
+      if (meta) {
+        this.workspaces.set(workspaceId, { activeUsers: 0, ...meta });
+      } else {
+        const now = new Date().toISOString();
+        const recovered = { id: workspaceId, name: `Workspace ${workspaceId}`, description: 'Recovered workspace', createdAt: now, updatedAt: now, activeUsers: 0 };
+        this.workspaces.set(workspaceId, recovered);
+        await this._writeMeta(recovered);
+      }
     }
 
+    const meta = this.workspaces.get(workspaceId);
+    const fileTree = await storageService.getFileTree(workspaceId);
     return { workspace: meta, fileTree };
   }
 
   /**
-   * Deletes a workspace metadata and external directory.
-   * @param {string} workspaceId 
+   * Deletes a workspace metadata and its directory.
    */
   async deleteWorkspace(workspaceId) {
     await storageService.deleteWorkspaceDirectory(workspaceId);
@@ -80,34 +120,16 @@ class WorkspaceService {
     return { success: true, workspaceId };
   }
 
-  /**
-   * Increments connected user count for a workspace room.
-   * @param {string} workspaceId 
-   */
   incrementUserCount(workspaceId) {
     const meta = this.workspaces.get(workspaceId);
-    if (meta) {
-      meta.activeUsers += 1;
-    }
+    if (meta) meta.activeUsers += 1;
   }
 
-  /**
-   * Decrements connected user count for a workspace room.
-   * @param {string} workspaceId 
-   */
   decrementUserCount(workspaceId) {
     const meta = this.workspaces.get(workspaceId);
-    if (meta && meta.activeUsers > 0) {
-      meta.activeUsers -= 1;
-    }
+    if (meta && meta.activeUsers > 0) meta.activeUsers -= 1;
   }
 
-  /**
-   * Returns the current active user count for a workspace (synchronous).
-   * Use this instead of getWorkspaceDetails() when you only need the counter.
-   * @param {string} workspaceId
-   * @returns {number}
-   */
   getActiveUsers(workspaceId) {
     return this.workspaces.get(workspaceId)?.activeUsers ?? 0;
   }

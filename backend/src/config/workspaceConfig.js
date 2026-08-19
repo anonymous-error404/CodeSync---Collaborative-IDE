@@ -25,7 +25,6 @@ if (!fs.existsSync(STORAGE_ROOT)) {
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const EXECUTION_TIMEOUT_MS = 30000;
 const DEFAULT_FILES = {
-  "index.js": `// Welcome to your isolated workspace!\nconsole.log("Hello from server workspace!");\n`,
   "README.md": `# Collaborative Workspace\n\nThis workspace is hosted and executed on the backend server.\n`,
 };
 
