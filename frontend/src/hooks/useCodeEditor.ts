@@ -40,7 +40,7 @@ function leadingWS(line: string): string {
 
 export function useCodeEditor(
   value: string,
-  onChange: (v: string) => void,
+  onChange: (v: string, cursorOffset?: number) => void,
   filename: string,
   onSave?: () => void,
 ) {
@@ -63,7 +63,7 @@ export function useCodeEditor(
 
   /** Apply a value change and schedule cursor placement. */
   const applyChange = (newValue: string, cursorStart: number, cursorEnd = cursorStart) => {
-    onChange(newValue);
+    onChange(newValue, cursorStart);
     setCursor(cursorStart, cursorEnd);
   };
 

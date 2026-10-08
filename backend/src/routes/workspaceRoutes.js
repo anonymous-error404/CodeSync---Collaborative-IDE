@@ -1,13 +1,15 @@
 import express from 'express';
 import * as controller from '../controllers/workspaceController.js';
+import { authenticateToken } from '../middleware/authMiddleware.js';
+import { requireWorkspaceOwner } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
 // Workspace routes
-router.post('/workspaces', controller.createWorkspace);
-router.get('/workspaces', controller.listWorkspaces);
+router.post('/workspaces', authenticateToken, controller.createWorkspace);
+router.get('/workspaces', authenticateToken, controller.listWorkspaces);
 router.get('/workspaces/:id', controller.getWorkspaceDetails);
-router.delete('/workspaces/:id', controller.deleteWorkspace);
+router.delete('/workspaces/:id', authenticateToken, requireWorkspaceOwner, controller.deleteWorkspace);
 
 // File management routes 
 router.get('/workspaces/:id/files/tree', controller.getFileTree);

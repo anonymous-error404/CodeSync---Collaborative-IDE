@@ -3,7 +3,7 @@ import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { workspaceRoutes, authRoutes, initWorkspaceSockets } from './src/index.js';
+import { workspaceRoutes, authRoutes, memberRoutes, inviteRoutes, initWorkspaceSockets } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
 
 const app = express();
@@ -26,6 +26,8 @@ app.use(express.json());
 // REST API routes
 app.use('/api/auth', authRoutes);
 app.use('/api', workspaceRoutes);
+app.use('/api', memberRoutes);
+app.use('/api', inviteRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

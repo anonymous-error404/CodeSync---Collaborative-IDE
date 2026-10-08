@@ -1,6 +1,9 @@
 import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import executionService from '../services/executionService.js';
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/authConfig.js';
+import { WorkspaceMember } from '../models/index.js';
 
 /**
  * Attaches real-time workspace socket event handlers to Socket.io server.
@@ -15,8 +18,34 @@ function initWorkspaceSockets(io) {
     console.log(`[Socket] Client connected: ${socket.id}`);
 
     // User joins workspace room
-    socket.on('join-workspace', async ({ workspaceId, username = 'Anonymous User' }) => {
+    socket.on('join-workspace', async ({ workspaceId, token }) => {
       if (!workspaceId) return;
+
+      if (!token) {
+        socket.emit('workspace-error', { message: 'Unauthorized' });
+        return;
+      }
+
+      let decoded;
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+      } catch (err) {
+        socket.emit('workspace-error', { message: 'Unauthorized' });
+        return;
+      }
+
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId, userId: decoded.id }
+      });
+
+      if (!membership) {
+        socket.emit('workspace-error', { message: 'Not a member' });
+        return;
+      }
+
+      socket.userId = decoded.id;
+      socket.username = decoded.username;
+      socket.role = membership.role;
 
       currentWorkspaceId = workspaceId;
       const roomName = `workspace:${workspaceId}`;
@@ -24,12 +53,12 @@ function initWorkspaceSockets(io) {
       socket.join(roomName);
       workspaceService.incrementUserCount(workspaceId);
 
-      console.log(`[Socket] User ${username} (${socket.id}) joined ${roomName}`);
+      console.log(`[Socket] User ${socket.username} (${socket.id}) joined ${roomName} as ${socket.role}`);
 
       // notify others in the workspace room
       socket.to(roomName).emit('user-joined', {
         socketId: socket.id,
-        username,
+        username: socket.username,
         activeUsers: workspaceService.getActiveUsers(workspaceId)
       });
 
@@ -45,6 +74,10 @@ function initWorkspaceSockets(io) {
     // Real-time file content change 
     socket.on('file-change', async ({ workspaceId, filePath, content }) => {
       if (!workspaceId || !filePath) return;
+      if (socket.role === 'viewer') {
+        socket.emit('workspace-error', { message: 'Viewers cannot edit' });
+        return;
+      }
 
       try {
         // Save change to workspace storage
@@ -54,7 +87,8 @@ function initWorkspaceSockets(io) {
         socket.to(`workspace:${workspaceId}`).emit('file-updated', {
           filePath,
           content,
-          updatedBy: socket.id
+          updatedBy: socket.id,
+          username: socket.username || 'Collaborator',
         });
       } catch (err) {
         socket.emit('workspace-error', { message: `Failed to sync file: ${err.message}` });
@@ -66,14 +100,28 @@ function initWorkspaceSockets(io) {
       if (!workspaceId) return;
       socket.to(`workspace:${workspaceId}`).emit('remote-cursor', {
         socketId: socket.id,
+        username: socket.username || 'Collaborator',
         filePath,
         cursor
+      });
+    });
+
+    // Real-time cursor leave / tab change
+    socket.on('cursor-leave', ({ workspaceId, filePath }) => {
+      if (!workspaceId) return;
+      socket.to(`workspace:${workspaceId}`).emit('remote-cursor-remove', {
+        socketId: socket.id,
+        filePath
       });
     });
 
     // Real-time File System changes 
     socket.on('fs-action', async ({ workspaceId, action, payload }) => {
       if (!workspaceId) return;
+      if (socket.role === 'viewer') {
+        socket.emit('workspace-error', { message: 'Viewers cannot edit' });
+        return;
+      }
 
       const roomName = `workspace:${workspaceId}`;
       try {
@@ -102,6 +150,10 @@ function initWorkspaceSockets(io) {
     // Trigger Code Execution on Backend Server Workspace
     socket.on('execute-code', ({ workspaceId, filePath }) => {
       if (!workspaceId || !filePath) return;
+      if (socket.role === 'viewer') {
+        socket.emit('workspace-error', { message: 'Viewers cannot edit' });
+        return;
+      }
 
       const roomName = `workspace:${workspaceId}`;
 
@@ -131,6 +183,11 @@ function initWorkspaceSockets(io) {
     // Stop execution
     socket.on('stop-execution', ({ workspaceId }) => {
       if (!workspaceId) return;
+      if (socket.role === 'viewer') {
+        socket.emit('workspace-error', { message: 'Viewers cannot edit' });
+        return;
+      }
+
       const stopped = executionService.stopExecution(workspaceId);
       if (stopped) {
         workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n' });
@@ -143,6 +200,9 @@ function initWorkspaceSockets(io) {
       if (currentWorkspaceId) {
         workspaceService.decrementUserCount(currentWorkspaceId);
         socket.to(`workspace:${currentWorkspaceId}`).emit('user-left', {
+          socketId: socket.id
+        });
+        socket.to(`workspace:${currentWorkspaceId}`).emit('remote-cursor-remove', {
           socketId: socket.id
         });
       }

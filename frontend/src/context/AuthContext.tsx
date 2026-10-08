@@ -18,7 +18,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const t = authService.getToken();
+    let t = authService.handleOAuthCallback();
+    if (!t) {
+      t = authService.getToken();
+    }
     if (!t) { setIsLoading(false); return; }
     authService.getMe(t).then(res => {
       if (res.success && res.user) { setUser(res.user); setToken(t); }

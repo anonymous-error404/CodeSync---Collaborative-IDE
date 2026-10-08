@@ -23,4 +23,18 @@ export const authService = {
   getToken: (): string | null => localStorage.getItem('codesync_token'),
   setToken: (t: string): void => { localStorage.setItem('codesync_token', t); },
   clearToken: (): void => { localStorage.removeItem('codesync_token'); },
+  googleAuth: () => { window.location.href = `${BASE_URL}/api/auth/google`; },
+  googleAuthDemo: () => { window.location.href = `${BASE_URL}/api/auth/google?demo=true`; },
+  handleOAuthCallback: (): string | null => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      localStorage.setItem('codesync_token', token);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url.toString());
+      return token;
+    }
+    return null;
+  }
 };

@@ -1,6 +1,7 @@
 import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import asyncWrapper from '../utils/asyncWrapper.js';
+import { WorkspaceMember } from '../models/index.js';
 
 /**
  * POST /api/workspaces
@@ -9,15 +10,30 @@ import asyncWrapper from '../utils/asyncWrapper.js';
 const createWorkspace = asyncWrapper(async (req, res) => {
   const { name, description } = req.body;
   const workspace = await workspaceService.createWorkspace({ name, description });
+  
+  await WorkspaceMember.create({
+    workspaceId: workspace.id,
+    userId: req.user.id,
+    role: 'owner',
+  });
+
   res.status(201).json({ success: true, workspace });
 });
 
 /**
  * GET /api/workspaces
- * Lists all active workspaces (scans disk to recover persisted ones).
+ * Lists all active workspaces for the current user
  */
 const listWorkspaces = asyncWrapper(async (req, res) => {
-  const workspaces = await workspaceService.listWorkspaces();
+  const memberships = await WorkspaceMember.findAll({
+    where: { userId: req.user.id },
+  });
+
+  const allWorkspaces = await workspaceService.listWorkspaces();
+  const userWorkspaceIds = new Set(memberships.map(m => m.workspaceId));
+  
+  const workspaces = allWorkspaces.filter(w => userWorkspaceIds.has(w.id));
+
   res.status(200).json({ success: true, workspaces });
 });
 

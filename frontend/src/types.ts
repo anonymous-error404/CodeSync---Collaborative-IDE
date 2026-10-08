@@ -9,6 +9,28 @@ export interface FileItem {
   updatedAt?: string;
 }
 
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
+
+export interface WorkspaceMember {
+  id: number;
+  workspaceId: string;
+  userId: number;
+  role: WorkspaceRole;
+  joinedAt: string;
+  User?: { id: number; username: string; email: string };
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  workspaceId: string;
+  role: WorkspaceRole;
+  expiresAt?: string;
+  maxUses?: number;
+  usedCount: number;
+  active: boolean;
+  inviteUrl?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -16,6 +38,7 @@ export interface Workspace {
   createdAt?: string;
   updatedAt?: string;
   activeUsers?: number;
+  myRole?: WorkspaceRole;
 }
 
 export interface ExecutionResult {

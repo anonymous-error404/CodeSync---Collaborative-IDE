@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid } from 'lucide-react';
-import type { Workspace } from '../../types';
+import { Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2 } from 'lucide-react';
+import type { Workspace, WorkspaceRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Button } from '../ui/Button';
 import { Spinner } from '../ui/Spinner';
+import { collabService } from '../../services/workspaceCollabService';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -19,7 +20,7 @@ function timeAgo(dateStr?: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-interface Props { onOpen: (ws: Workspace) => void; }
+interface Props { onOpen: (ws: Workspace, role: WorkspaceRole) => void; }
 
 export function Dashboard({ onOpen }: Props) {
   const { user, token, logout } = useAuth();
@@ -30,6 +31,12 @@ export function Dashboard({ onOpen }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const newNameRef = useRef<HTMLInputElement>(null);
+
+  const [showJoin, setShowJoin] = useState(false);
+  const [joinInput, setJoinInput] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState('');
+  const joinInputRef = useRef<HTMLInputElement>(null);
 
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -74,9 +81,100 @@ export function Dashboard({ onOpen }: Props) {
     setWorkspaces(prev => prev.filter(w => w.id !== id));
   };
 
+  const handleOpen = async (ws: Workspace) => {
+    try {
+      const res = await collabService.getMembers(ws.id, token);
+      let role: WorkspaceRole = 'owner';
+      if (res.success && res.members && user) {
+        const member = res.members.find(m => m.userId === user.id);
+        if (member) role = member.role;
+      }
+      onOpen(ws, role);
+    } catch {
+      onOpen(ws, 'owner');
+    }
+  };
+
+  const generateQuickInvite = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await collabService.createInvite(id, { role: 'editor' }, token);
+      if (res.success && res.invite) {
+        const url = res.invite.inviteUrl || `${window.location.origin}/?join=${res.invite.id}`;
+        navigator.clipboard.writeText(url);
+        alert('Invite link copied to clipboard!');
+      } else {
+        alert('Failed to generate invite');
+      }
+    } catch {
+      alert('Failed to generate invite');
+    }
+  };
+
   const openNewForm = () => {
     setShowNew(true);
+    setShowJoin(false);
     setTimeout(() => newNameRef.current?.focus(), 50);
+  };
+
+  const openJoinForm = () => {
+    setShowJoin(true);
+    setShowNew(false);
+    setJoinError('');
+    setTimeout(() => joinInputRef.current?.focus(), 50);
+  };
+
+  const extractInviteCode = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    try {
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        const url = new URL(trimmed);
+        const code = url.searchParams.get('join') || url.searchParams.get('code');
+        if (code) return code;
+      }
+    } catch {}
+    if (trimmed.includes('join=')) {
+      return trimmed.split('join=')[1].split('&')[0];
+    }
+    if (trimmed.includes('code=')) {
+      return trimmed.split('code=')[1].split('&')[0];
+    }
+    return trimmed;
+  };
+
+  const handleJoinWorkspace = async () => {
+    const code = extractInviteCode(joinInput);
+    if (!code) {
+      setJoinError('Please enter a valid invite link or invite code.');
+      return;
+    }
+    setJoining(true);
+    setJoinError('');
+    try {
+      const res = await collabService.joinViaInvite(code, token);
+      if (res.success && res.workspaceId) {
+        let ws: Workspace = { id: res.workspaceId, name: `Workspace ${res.workspaceId}` };
+        try {
+          const wsRes = await fetch(`${BASE_URL}/api/workspaces/${res.workspaceId}`, { headers: authHeaders });
+          const wsData = await wsRes.json();
+          if (wsData.success && wsData.workspace) {
+            ws = wsData.workspace;
+          }
+        } catch {}
+        
+        setShowJoin(false);
+        setJoinInput('');
+        fetchWorkspaces();
+        onOpen(ws, res.role || 'viewer');
+      } else {
+        setJoinError((res as any).error || 'Invalid or expired invite link.');
+      }
+    } catch {
+      setJoinError('Could not connect to the server.');
+    } finally {
+      setJoining(false);
+    }
   };
 
   return (
@@ -128,20 +226,62 @@ export function Dashboard({ onOpen }: Props) {
       <main className="max-w-6xl mx-auto px-8 py-12">
 
         {/* Page title row */}
-        <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center justify-between mb-10 flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-2.5 mb-1">
               <LayoutGrid size={20} style={{ color: 'var(--accent)' }} />
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>My Workspaces</h1>
             </div>
             <p style={{ color: 'var(--muted)', fontSize: 15 }}>
-              Open a workspace or create a new one to start coding.
+              Open a workspace or join an existing one with an invite link.
             </p>
           </div>
-          <Button onClick={openNewForm} size="lg">
-            <Plus size={16} />New Workspace
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="subtle" onClick={openJoinForm} size="lg">
+              <Link2 size={16} />Join Workspace
+            </Button>
+            <Button onClick={openNewForm} size="lg">
+              <Plus size={16} />New Workspace
+            </Button>
+          </div>
         </div>
+
+        {/* ── Join workspace inline form ── */}
+        {showJoin && (
+          <div className="rounded-xl p-6 mb-8 animate-fade-in"
+            style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
+            <p className="font-semibold mb-1" style={{ color: 'var(--text)', fontSize: 15 }}>Join Workspace with Link or Code</p>
+            <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>
+              Paste an invite link (e.g. <code>http://localhost:5173/?join=...</code>) or the invite code shared by your teammate.
+            </p>
+            {joinError && (
+              <div className="p-2.5 rounded-lg text-xs mb-3 flex items-center gap-2"
+                style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
+                <span>{joinError}</span>
+              </div>
+            )}
+            <div className="flex gap-3 flex-wrap items-center">
+              <input
+                ref={joinInputRef}
+                value={joinInput}
+                onChange={e => { setJoinInput(e.target.value); setJoinError(''); }}
+                placeholder="e.g. http://localhost:5173/?join=51b55f9f-... or 51b55f9f-..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleJoinWorkspace();
+                  if (e.key === 'Escape') { setShowJoin(false); setJoinInput(''); setJoinError(''); }
+                }}
+                className="flex-1 h-10 px-4 rounded-lg text-sm focus:outline-none min-w-0"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 260 }}
+              />
+              <Button onClick={handleJoinWorkspace} isLoading={joining} size="md">
+                <Link2 size={14} />Join
+              </Button>
+              <Button variant="ghost" onClick={() => { setShowJoin(false); setJoinInput(''); setJoinError(''); }} size="md">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── New workspace inline form ── */}
         {showNew && (
@@ -181,7 +321,7 @@ export function Dashboard({ onOpen }: Props) {
             {workspaces.map(ws => (
               <div
                 key={ws.id}
-                onClick={() => onOpen(ws)}
+                onClick={() => handleOpen(ws)}
                 className="group rounded-xl cursor-pointer transition-all duration-150 relative"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: 24, minHeight: 160 }}
                 onMouseEnter={e => {
@@ -195,16 +335,29 @@ export function Dashboard({ onOpen }: Props) {
                   (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
                 }}
               >
-                {/* Delete button (hover) */}
-                <button
-                  onClick={e => deleteWorkspace(ws.id, e)}
-                  className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-                  style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; e.stopPropagation(); }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-                >
-                  <Trash2 size={13} />
-                </button>
+                {/* Actions (hover) */}
+                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-all">
+                  <button
+                    onClick={e => generateQuickInvite(ws.id, e)}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+                    style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; e.stopPropagation(); }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
+                    title="Copy invite link"
+                  >
+                    <UserPlus size={13} />
+                  </button>
+                  <button
+                    onClick={e => deleteWorkspace(ws.id, e)}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+                    style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; e.stopPropagation(); }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
+                    title="Delete workspace"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
 
                 {/* Workspace icon */}
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg mb-4"

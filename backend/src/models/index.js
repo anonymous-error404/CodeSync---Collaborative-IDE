@@ -1,9 +1,18 @@
 import sequelize from '../config/database.js';
 import User from './User.js';
+import WorkspaceMember from './WorkspaceMember.js';
+import WorkspaceInvite from './WorkspaceInvite.js';
+
+WorkspaceMember.belongsTo(User, { foreignKey: 'userId' });
+User.hasMany(WorkspaceMember, { foreignKey: 'userId' });
+
+WorkspaceInvite.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 
 const db = {
   sequelize,
   User,
+  WorkspaceMember,
+  WorkspaceInvite,
 };
 
 /**
@@ -25,4 +34,4 @@ const syncDatabase = async (options = {}) => {
 
 export { syncDatabase };
 export default db;
-export { User };
+export { User, WorkspaceMember, WorkspaceInvite };
