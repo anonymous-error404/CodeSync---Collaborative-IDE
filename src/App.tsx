@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import ChatAndVoicePanel from './components/ChatAndVoicePanel';
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
 
 // Theme Presets Definition
 type ThemeKey = 'cyber' | 'monokai' | 'dracula' | 'matrix';
@@ -767,6 +771,13 @@ class MemoryBoundaryGuard {
             />
           </div>
         </main>
+
+        {/* Chat and Voice Panel */}
+        <ChatAndVoicePanel
+          socket={socket}
+          roomId={activeWorkspace.id}
+          currentUser="Easha"
+        />
 
         {/* Right Output Terminal */}
         <aside className="w-80 bg-slate-950/60 border-l border-slate-800/80 flex flex-col shrink-0 select-none">
