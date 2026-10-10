@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #c9d1d9;
+  --muted: #7d8590;
+  --accent: #2f81f7;
+  --accent-hover: #1f6feb;
+  --accent-fg: #ffffff;
+  --error: #f85149;
+  --error-bg: rgba(248,81,73,0.1);
+  --success: #3fb950;
+  --success-bg: rgba(63,185,80,0.1);
+  --warning: #d29922;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+[data-theme="light"] {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #f0f2f4;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-secondary: #24292f;
+  --muted: #656d76;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --error: #cf222e;
+  --error-bg: rgba(207,34,46,0.08);
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+html { background-color: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+body { margin: 0; padding: 0; min-height: 100vh; background-color: var(--bg); color: var(--text); transition: background-color 0.2s ease, color 0.2s ease; }
+#root { min-height: 100vh; display: flex; flex-direction: column; }
+::selection { background-color: rgba(47,129,247,0.3); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in { animation: fadeIn 0.2s ease forwards; }
