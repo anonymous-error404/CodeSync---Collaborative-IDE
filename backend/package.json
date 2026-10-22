@@ -8,7 +8,8 @@
     "dev": "node --watch server.js",
     "test": "node test/test_auth.js",
     "test:docker": "node test/test_docker_exec.mjs",
-    "test:e2e": "node test/test_e2e_frontend_backend.js"
+    "test:e2e": "node test/test_e2e_frontend_backend.js",
+    "test:whiteboard": "node test/test_whiteboard.mjs"
   },
   "keywords": [],
   "author": "",

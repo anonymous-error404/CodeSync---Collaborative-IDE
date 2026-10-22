@@ -1,6 +1,7 @@
 import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import executionService from '../services/executionService.js';
+import attachWhiteboardSocketHandlers from './whiteboardSocket.js';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/authConfig.js';
 import { WorkspaceMember } from '../models/index.js';
@@ -16,6 +17,9 @@ function initWorkspaceSockets(io) {
     let currentWorkspaceId = null;
 
     console.log(`[Socket] Client connected: ${socket.id}`);
+
+    // Attach Whiteboard Socket Listeners
+    attachWhiteboardSocketHandlers(socket, workspaceNamespace);
 
     // User joins workspace room
     socket.on('join-workspace', async ({ workspaceId, token }) => {

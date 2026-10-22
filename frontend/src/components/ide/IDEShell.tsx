@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder,
-  X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck, Users,
+  X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck, Users, Layers,
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole } from '../../types';
@@ -10,6 +10,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { MembersPanel } from './MembersPanel';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
+import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -64,6 +65,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   }), [token]);
 
   // ── State ──────────────────────────────────────────────────────────────────
+  const [activeView, setActiveView] = useState<'editor' | 'whiteboard'>('editor');
   const [tree, setTree] = useState<FileItem[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -607,6 +609,38 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </span>
           </div>
 
+          {/* View Mode Toggle: Code Editor vs Whiteboard */}
+          <div
+            className="flex items-center p-0.5 rounded-lg border ml-2"
+            style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+          >
+            <button
+              onClick={() => setActiveView('editor')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all"
+              style={{
+                background: activeView === 'editor' ? 'var(--surface-2)' : 'transparent',
+                color: activeView === 'editor' ? 'var(--accent)' : 'var(--muted)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <Code2 size={13} /> Code Editor
+            </button>
+
+            <button
+              onClick={() => setActiveView('whiteboard')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all"
+              style={{
+                background: activeView === 'whiteboard' ? 'var(--surface-2)' : 'transparent',
+                color: activeView === 'whiteboard' ? 'var(--accent)' : 'var(--muted)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <Layers size={13} /> Whiteboard
+            </button>
+          </div>
+
           {/* Connection status badge */}
           <span
             className="text-xs px-2.5 py-1 rounded-full font-semibold"
@@ -764,10 +798,20 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
         </aside>
 
-        {/* ── Editor area ── */}
+        {/* ── Main Pane ── */}
         <main className="flex-1 flex flex-col overflow-hidden" style={{ background: '#0d1117' }}>
-
-          {/* Tab bar */}
+          {activeView === 'whiteboard' ? (
+            <IntelligentWhiteboard
+              workspace={workspace}
+              socket={socketRef.current}
+              onOpenInIDE={filePath => {
+                setActiveView('editor');
+                const filename = filePath.split('/').pop() || filePath;
+                openFile({ id: filePath, name: filename, path: filePath, type: 'file' });
+              }}
+            />
+          ) : (
+            <>
           <div
             className="flex items-end overflow-x-auto shrink-0"
             style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
@@ -934,6 +978,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
               {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
             </div>
+          </>
           )}
         </main>
       </div>
