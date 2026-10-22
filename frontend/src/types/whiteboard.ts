@@ -147,6 +147,7 @@ export interface CanvasElement {
 
   // Text
   text?: string;
+  latex?: string;
   fontSize?: number;
   fontWeight?: 'normal' | 'bold';
   textAlign?: 'left' | 'center' | 'right';

@@ -1,9 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { CanvasElement, RemoteWhiteboardCursor, Anchor, DiagramNodeType, RelationshipType } from '../../types/whiteboard';
+import type { CanvasElement, RemoteWhiteboardCursor, Anchor, RelationshipType } from '../../types/whiteboard';
 import type { ToolType } from './WhiteboardToolbar';
 import { CodeCellNode } from './CodeCellNode';
 import { DiagramNode } from './DiagramNode';
-import { computeBoundingBox } from '../../services/graphLayout';
 
 // ─── Anchor helpers ───────────────────────────────────────────────────────────
 
@@ -252,6 +251,7 @@ export function WhiteboardCanvas({
   // Resize
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ mx: number; my: number; elX: number; elY: number; elW: number; elH: number } | null>(null);
+  void resizingId; void setResizingId; void resizeStart; void setResizeStart;
 
   // Multi-select rubber band
   const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);

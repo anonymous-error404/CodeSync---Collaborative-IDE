@@ -13,6 +13,9 @@ import { WorkspaceMember } from '../models/index.js';
 function initWorkspaceSockets(io) {
   const workspaceNamespace = io.of('/workspace');
 
+  // ── NEW (voice call): roomName -> { teacherSocketId, teacherName }
+  const activeCalls = new Map();
+
   workspaceNamespace.on('connection', (socket) => {
     let currentWorkspaceId = null;
 
@@ -57,6 +60,11 @@ function initWorkspaceSockets(io) {
       socket.join(roomName);
       workspaceService.incrementUserCount(workspaceId);
 
+      // ── NEW (voice call): tell late joiners that a call is already running
+      const call = activeCalls.get(roomName);
+      if (call) {
+        socket.emit('voice-started', { teacherSocketId: call.teacherSocketId, teacherName: call.teacherName });
+      }
       console.log(`[Socket] User ${socket.username} (${socket.id}) joined ${roomName} as ${socket.role}`);
 
       // notify others in the workspace room
@@ -119,6 +127,75 @@ function initWorkspaceSockets(io) {
       });
     });
 
+    // ── NEW (chat): Real-time workspace chat
+    socket.on('chatMessage', ({ workspaceId, id, text, timestamp }) => {
+      if (!workspaceId || typeof text !== 'string') return;
+
+      const roomName = `workspace:${workspaceId}`;
+
+      // Only members who have joined this room may send to it
+      if (!socket.rooms.has(roomName)) return;
+
+      const clean = text.trim().slice(0, 2000);
+      if (!clean) return;
+
+      // Broadcast to everyone else in the room (sender already shows it locally)
+      socket.to(roomName).emit('chatMessage', {
+        id,
+        sender: socket.username || 'Collaborator', // from the verified JWT
+        text: clean,
+        timestamp,
+      });
+    });
+
+    // ── NEW (voice call): Voice call (teacher -> students) ─────────────────
+    const inRoom = (wsId) => !!wsId && socket.rooms.has(`workspace:${wsId}`);
+
+    socket.on('voice-start', ({ workspaceId }) => {
+      if (!inRoom(workspaceId)) return;
+      if (socket.role !== 'owner') {
+        socket.emit('workspace-error', { message: 'Only the teacher can start a voice call' });
+        return;
+      }
+      const roomName = `workspace:${workspaceId}`;
+      activeCalls.set(roomName, { teacherSocketId: socket.id, teacherName: socket.username });
+      socket.to(roomName).emit('voice-started', {
+        teacherSocketId: socket.id,
+        teacherName: socket.username,
+      });
+    });
+
+    socket.on('voice-join', ({ workspaceId }) => {
+      if (!inRoom(workspaceId)) return;
+      const call = activeCalls.get(`workspace:${workspaceId}`);
+      if (!call) return;
+      workspaceNamespace.to(call.teacherSocketId).emit('voice-peer-joined', { socketId: socket.id });
+    });
+
+    socket.on('voice-leave', ({ workspaceId }) => {
+      if (!inRoom(workspaceId)) return;
+      const call = activeCalls.get(`workspace:${workspaceId}`);
+      if (call) workspaceNamespace.to(call.teacherSocketId).emit('voice-peer-left', { socketId: socket.id });
+    });
+
+    // WebRTC signaling relay (offer / answer / ICE), only inside the same room
+    socket.on('voice-signal', ({ workspaceId, to, data }) => {
+      if (!inRoom(workspaceId) || !to || !data) return;
+      const target = workspaceNamespace.sockets.get(to);
+      if (!target || !target.rooms.has(`workspace:${workspaceId}`)) return;
+      target.emit('voice-signal', { from: socket.id, data });
+    });
+
+    socket.on('voice-stop', ({ workspaceId }) => {
+      if (!inRoom(workspaceId)) return;
+      const roomName = `workspace:${workspaceId}`;
+      const call = activeCalls.get(roomName);
+      if (call && call.teacherSocketId === socket.id) {
+        activeCalls.delete(roomName);
+        socket.to(roomName).emit('voice-ended');
+      }
+    });
+    // ── end of voice call handlers ─────────────────────────────────────────
     // Real-time File System changes 
     socket.on('fs-action', async ({ workspaceId, action, payload }) => {
       if (!workspaceId) return;
@@ -202,6 +279,15 @@ function initWorkspaceSockets(io) {
     // Disconnect handler
     socket.on('disconnect', () => {
       if (currentWorkspaceId) {
+        // ── NEW (voice call): end the call if the teacher left, else drop the student's peer
+        const callRoom = `workspace:${currentWorkspaceId}`;
+        const call = activeCalls.get(callRoom);
+        if (call && call.teacherSocketId === socket.id) {
+          activeCalls.delete(callRoom);
+          socket.to(callRoom).emit('voice-ended');
+        } else if (call) {
+          workspaceNamespace.to(call.teacherSocketId).emit('voice-peer-left', { socketId: socket.id });
+        }
         workspaceService.decrementUserCount(currentWorkspaceId);
         socket.to(`workspace:${currentWorkspaceId}`).emit('user-left', {
           socketId: socket.id

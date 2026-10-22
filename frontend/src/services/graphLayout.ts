@@ -211,7 +211,6 @@ function radialLayout(nodes: GraphNode[], edges: GraphEdge[]): Record<string, { 
 
   ring.forEach((n, i) => {
     const ringIdx = i < innerCount ? 0 : 1;
-    const ringNodes = ringIdx === 0 ? ring.slice(0, innerCount) : ring.slice(innerCount);
     const angle = (2 * Math.PI * (i - (ringIdx === 0 ? 0 : innerCount))) / (ringIdx === 0 ? innerCount : ring.length - innerCount);
     const r = radii[ringIdx] ?? radii[radii.length - 1];
     positions[n.id] = {
@@ -259,10 +258,8 @@ function timelineLayout(nodes: GraphNode[], edges: GraphEdge[]): Record<string, 
   }
 
   const positions: Record<string, { x: number; y: number }> = {};
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
   for (const [layerIdx, ids] of Array.from(byLayer.entries()).sort(([a], [b]) => a - b)) {
     ids.forEach((id, i) => {
-      const n = nodeMap.get(id);
       positions[id] = {
         x: ORIGIN_X + layerIdx * (DEFAULT_W + H_GAP),
         y: ORIGIN_Y + i * (DEFAULT_H + V_GAP),

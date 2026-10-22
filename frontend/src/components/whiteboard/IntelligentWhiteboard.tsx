@@ -20,7 +20,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Socket } from 'socket.io-client';
 import type {
   CanvasElement, WhiteboardData, RemoteWhiteboardCursor,
-  ParsedCommand, LayoutAlgorithm, ValidationResult,
+  ParsedCommand, LayoutAlgorithm,
 } from '../../types/whiteboard';
 import type { ToolType } from './WhiteboardToolbar';
 
@@ -34,7 +34,7 @@ import { ValidationPanel } from './ValidationPanel';
 import { TaskProposalModal } from './TaskProposalModal';
 
 import { updateWhiteboard, recognizeStroke, generateTaskProposals } from '../../services/whiteboardApi';
-import { applyLayout, applyLayoutToElements, snapToGrid, computeBoundingBox } from '../../services/graphLayout';
+import { applyLayout, applyLayoutToElements, computeBoundingBox } from '../../services/graphLayout';
 import type { DiagramNodeType } from '../../types/whiteboard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -64,12 +64,14 @@ const NODE_TYPE_DEFAULTS: Partial<Record<DiagramNodeType, Partial<CanvasElement>
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  boardId: string;
-  initialData: WhiteboardData;
+  boardId?: string;
+  workspace?: { id: string; name?: string };
+  initialData?: WhiteboardData;
   socket?: Socket | null;
   userId?: string;
   username?: string;
   onOpenFile?: (path: string) => void;
+  onOpenInIDE?: (path: string) => void;
   onTaskCreated?: (task: Record<string, unknown>) => void;
 }
 
@@ -192,26 +194,39 @@ function exportPNG(canvasRef: React.RefObject<HTMLElement | null>): void {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function IntelligentWhiteboard({
-  boardId,
+  boardId: propBoardId,
+  workspace,
   initialData,
   socket,
   userId,
   username = 'User',
   onOpenFile,
+  onOpenInIDE,
   onTaskCreated,
 }: Props) {
+  const boardId = propBoardId || workspace?.id || 'default-board';
+  const effectiveInitialData: WhiteboardData = initialData ?? {
+    id: boardId,
+    workspaceId: workspace?.id ?? '',
+    title: 'Untitled Diagram',
+    elements: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    metadata: {},
+  };
+  const effectiveOnOpenFile = onOpenFile || onOpenInIDE;
+  void userId;
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // ── State ─────────────────────────────────────────────────────────────────
 
-  const [elements, setElements] = useState<CanvasElement[]>(initialData.elements ?? []);
-  const [history, setHistory] = useState<CanvasElement[][]>([initialData.elements ?? []]);
+  const [elements, setElements] = useState<CanvasElement[]>(effectiveInitialData.elements ?? []);
+  const [history, setHistory] = useState<CanvasElement[][]>([effectiveInitialData.elements ?? []]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [highlightIds, setHighlightIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>('select');
-  const [viewport, setViewport] = useState(initialData.viewport ?? { x: 0, y: 0, zoom: 1 });
+  const [viewport, setViewport] = useState(effectiveInitialData.viewport ?? { x: 0, y: 0, zoom: 1 });
 
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [remoteCursors, setRemoteCursors] = useState<RemoteWhiteboardCursor[]>([]);
@@ -417,7 +432,6 @@ export function IntelligentWhiteboard({
     const candidate = await recognizeStroke(points);
     if (!candidate || !candidate.type) return;
 
-    const strokeEl = elements.find(e => e.points === points || (e.type === 'stroke' && e.points?.length === points.length));
     // Show recognition banner: the canvas keeps original, user can accept/reject
     // For now: show a temporary overlay (handled in canvas via onStrokeComplete callback)
     // The accepted shape replaces the stroke:
@@ -474,10 +488,6 @@ export function IntelligentWhiteboard({
   // ── NLP command execution ─────────────────────────────────────────────────
 
   const executeCommand = useCallback((cmd: ParsedCommand) => {
-    const targetEls = cmd.targetIds.length > 0
-      ? elements.filter(e => cmd.targetIds.includes(e.id))
-      : elements.filter(e => selectedIds.includes(e.id));
-
     switch (cmd.intent) {
       case 'align': {
         const dir = cmd.params.direction as string ?? 'left';
@@ -661,14 +671,15 @@ export function IntelligentWhiteboard({
     setTaskProposals(tasks);
     setShowTaskModal(true);
   }, [elements, selectedIds]);
+  void handleGenerateTasks;
 
   // ── Export ────────────────────────────────────────────────────────────────
 
   const handleExport = useCallback((format: 'json' | 'svg' | 'png') => {
-    if (format === 'json') exportJSON(elements, initialData.title);
+    if (format === 'json') exportJSON(elements, effectiveInitialData.title);
     else if (format === 'svg') exportSVG(elements);
     else if (format === 'png') exportPNG(canvasRef);
-  }, [elements, initialData.title]);
+  }, [elements, effectiveInitialData.title]);
 
   // ── Title change ──────────────────────────────────────────────────────────
 
@@ -718,7 +729,7 @@ export function IntelligentWhiteboard({
           onUpdateElement={updateElement}
           onDeleteElement={deleteElement}
           onStrokeComplete={handleStrokeComplete}
-          onOpenInIDE={onOpenFile}
+          onOpenInIDE={effectiveOnOpenFile}
           remoteCursors={remoteCursors}
           onCursorMove={handleCursorMove}
           viewport={viewport}
@@ -733,7 +744,7 @@ export function IntelligentWhiteboard({
             elements={elements}
             selectedIds={selectedIds}
             onUpdate={updateElement}
-            onOpenInIDE={onOpenFile}
+            onOpenInIDE={effectiveOnOpenFile}
           />
         )}
 

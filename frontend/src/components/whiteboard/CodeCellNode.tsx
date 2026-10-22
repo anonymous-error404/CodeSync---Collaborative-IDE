@@ -1,4 +1,4 @@
-import { Code2, ExternalLink, FileCode, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Code2, ExternalLink, FileCode } from 'lucide-react';
 import type { CanvasElement, CodeBlockType } from '../../types/whiteboard';
 
 interface Props {

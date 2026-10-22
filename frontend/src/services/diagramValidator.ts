@@ -12,7 +12,6 @@ import type {
   ValidationResult,
   ValidationIssue,
   ValidationSeverity,
-  RelationshipType,
 } from '../types/whiteboard';
 
 let _issueCounter = 0;
@@ -37,10 +36,6 @@ function getConnectors(elements: CanvasElement[]): CanvasElement[] {
 
 function getNodes(elements: CanvasElement[]): CanvasElement[] {
   return elements.filter(el => el.type !== 'connector' && el.type !== 'arrow' && el.type !== 'stroke');
-}
-
-function getElementById(id: string, elements: CanvasElement[]): CanvasElement | undefined {
-  return elements.find(el => el.id === id);
 }
 
 // ─── Generic rules (apply to all boards) ─────────────────────────────────────
@@ -259,11 +254,9 @@ function checkSequenceRules(elements: CanvasElement[]): ValidationIssue[] {
 
 function checkArchRules(elements: CanvasElement[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const ARCH_TYPES = new Set(['service', 'client', 'api', 'database', 'cache', 'queue', 'worker', 'gateway', 'external']);
 
   // Detect services directly accessing databases (bypassing API/gateway)
   const connectors = getConnectors(elements);
-  const clients = elements.filter(el => el.diagramType === 'client');
   const databases = new Set(elements.filter(el => el.diagramType === 'database').map(e => e.id));
 
   for (const conn of connectors) {

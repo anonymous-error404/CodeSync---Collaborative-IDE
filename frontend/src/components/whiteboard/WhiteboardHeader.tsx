@@ -8,8 +8,8 @@
  */
 import { useState, useRef } from 'react';
 import {
-  Save, Undo2, Redo2, Download, LayoutDashboard, Terminal,
-  FileText, ShieldCheck, Maximize2, Share2, Grid3x3,
+  Undo2, Redo2, Download, LayoutDashboard, Terminal,
+  FileText, ShieldCheck, Maximize2,
   CheckCircle, AlertCircle, Clock, ChevronDown, Loader2,
 } from 'lucide-react';
 import type { LayoutAlgorithm } from '../../types/whiteboard';

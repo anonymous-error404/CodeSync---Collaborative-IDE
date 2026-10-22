@@ -13,7 +13,6 @@
 import type {
   CanvasElement,
   ParsedCommand,
-  CommandIntent,
   AlignDirection,
   ArrangeDirection,
   DiagramNodeType,
@@ -407,7 +406,7 @@ function parseFitCanvas(text: string): ParsedCommand {
   };
 }
 
-function parseValidate(text: string, elements: CanvasElement[], selectedIds: string[]): ParsedCommand {
+function parseValidate(text: string, _elements: CanvasElement[], selectedIds: string[]): ParsedCommand {
   const lower = normalize(text);
   const all = lower.includes('all') || lower.includes('board') || lower.includes('everything') || lower.includes('diagram');
   const ids = all ? [] : selectedIds;

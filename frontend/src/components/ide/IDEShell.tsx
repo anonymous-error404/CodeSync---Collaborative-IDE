@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import ChatAndVoicePanel from './ChatAndVoicePanel';
 import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder,
-  X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck, Users, Layers,
+  X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
+  Users, Layers, MessageSquare,
+  Phone, PhoneOff, Mic, MicOff, Headphones
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
+import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
@@ -73,6 +77,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   // Collab state
   const [showMembersPanel, setShowMembersPanel] = useState(false);
@@ -96,6 +101,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const isViewer = myRole === 'viewer';
 
+  // ── Voice call (teacher -> students) ── NEW
+  const isTeacher = myRole === 'owner';
+  const voice = useVoiceCall(
+    socketConnected ? socketRef.current : null,
+    workspace.id,
+    isTeacher
+  );
   // ── Socket.io connection ───────────────────────────────────────────────────
   useEffect(() => {
     const socket = io(`${BASE_URL}/workspace`, {
@@ -679,7 +691,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             onClick={() => setShowMembersPanel(v => !v)}
             className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
             style={{ background: showMembersPanel ? 'var(--surface-2)' : 'transparent', border: '1px solid var(--border)', color: showMembersPanel ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer' }}
-            title="Members & Invites"
+            title="Members &amp; Invites"
           >
             <Users size={13} />
           </button>
@@ -695,6 +707,63 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           )}
 
+          {/* ── Voice call controls ── */}
+          {isTeacher ? (
+            voice.joined ? (
+              <div className="flex items-center gap-1.5 mr-1">
+                <span className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
+                  style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
+                  LIVE
+                </span>
+                <button onClick={voice.toggleMute} title={voice.muted ? 'Unmute' : 'Mute'}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: voice.muted ? 'var(--error)' : 'var(--text)', cursor: 'pointer' }}>
+                  {voice.muted ? <MicOff size={14} /> : <Mic size={14} />}
+                </button>
+                <button onClick={voice.endCall}
+                  className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold"
+                  style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}>
+                  <PhoneOff size={13} />End Call
+                </button>
+              </div>
+            ) : (
+              <button onClick={voice.startCall}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1"
+                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}>
+                <Phone size={13} />Start Call
+              </button>
+            )
+          ) : voice.callActive ? (
+            voice.joined ? (
+              <button onClick={voice.leaveCall}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1"
+                style={{ background: 'var(--surface-2)', color: 'var(--error)', border: '1px solid var(--error)', cursor: 'pointer' }}>
+                <PhoneOff size={13} />Leave
+              </button>
+            ) : (
+              <button onClick={voice.joinCall}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1 animate-pulse"
+                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
+                title={`${voice.teacherName} is speaking`}>
+                <Headphones size={13} />Join &amp; Listen
+              </button>
+            )
+          ) : null}
+          {voice.error && (
+            <span className="text-xs mr-1" style={{ color: 'var(--error)' }}>{voice.error}</span>
+          )}
+
+          {/* Chat & Voice toggle */}
+          <button
+            type="button"
+            onClick={() => setShowChat(prev => !prev)}
+            title={showChat ? 'Close Chat & Voice' : 'Open Chat & Voice'}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            style={{ background: showChat ? 'var(--surface-2)' : 'transparent', border: '1px solid var(--border)', color: showChat ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer' }}
+          >
+            <MessageSquare size={13} />
+          </button>
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
@@ -812,6 +881,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             />
           ) : (
             <>
+              {/* Tab bar */}
           <div
             className="flex items-end overflow-x-auto shrink-0"
             style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
@@ -978,8 +1048,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
               {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
             </div>
-          </>
           )}
+        </>
+      )}
         </main>
       </div>
 
@@ -993,6 +1064,26 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           onClose={() => setShowMembersPanel(false)}
         />
       )}
+      {/* Right Chat & Voice Panel */}
+      {showChat && (
+        <div
+          className="fixed right-0 top-[52px] bottom-0 w-80 flex flex-col z-30"
+          style={{
+            background: 'var(--surface)',
+            borderLeft: '1px solid var(--border)',
+            outline: 'none',
+            boxShadow: 'none',
+          }}
+        >
+          <ChatAndVoicePanel
+            username={user?.username ?? 'Anonymous'}
+            socket={socketRef.current}
+            workspaceId={workspace.id}
+            onClose={() => setShowChat(false)}
+          />
+        </div>
+      )}
+
     </div>
   );
 }

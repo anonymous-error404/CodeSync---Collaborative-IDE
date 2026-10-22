@@ -8,11 +8,7 @@
  *   - Connector: relationship type, label, direction
  *   - Code cell: language, link type, file path
  */
-import { useState } from 'react';
-import {
-  Palette, Link2, Tag, Database, Server, ExternalLink,
-  Plus, Trash2, ChevronDown, FileCode,
-} from 'lucide-react';
+import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import type {
   CanvasElement, DiagramNodeType, RelationshipType,
   ComponentStatus, CodeBlockType, ObjectField, ObjectMethod,
