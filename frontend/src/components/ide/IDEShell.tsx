@@ -872,7 +872,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {activeView === 'whiteboard' ? (
             <IntelligentWhiteboard
               workspace={workspace}
+              boardId={workspace.id}
+              initialData={{
+                id: workspace.id,
+                workspaceId: workspace.id,
+                title: `${workspace.name} Whiteboard`,
+                elements: [],
+                viewport: { x: 0, y: 0, zoom: 1 },
+                metadata: {},
+              }}
               socket={socketRef.current}
+              username={user?.username ?? 'Anonymous'}
+              onOpenFile={filePath => {
+                setActiveView('editor');
+                const filename = filePath.split('/').pop() || filePath;
+                openFile({ id: filePath, name: filename, path: filePath, type: 'file' });
+              }}
               onOpenInIDE={filePath => {
                 setActiveView('editor');
                 const filename = filePath.split('/').pop() || filePath;

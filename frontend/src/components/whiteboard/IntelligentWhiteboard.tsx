@@ -33,7 +33,7 @@ import { TextToDiagramModal } from './TextToDiagramModal';
 import { ValidationPanel } from './ValidationPanel';
 import { TaskProposalModal } from './TaskProposalModal';
 
-import { updateWhiteboard, recognizeStroke, generateTaskProposals } from '../../services/whiteboardApi';
+import { updateWhiteboard, recognizeStroke, generateTaskProposals, fetchWhiteboard } from '../../services/whiteboardApi';
 import { applyLayout, applyLayoutToElements, computeBoundingBox } from '../../services/graphLayout';
 import type { DiagramNodeType } from '../../types/whiteboard';
 
@@ -219,6 +219,7 @@ export function IntelligentWhiteboard({
 
   // ── State ─────────────────────────────────────────────────────────────────
 
+  const [boardTitle, setBoardTitle] = useState(effectiveInitialData.title);
   const [elements, setElements] = useState<CanvasElement[]>(effectiveInitialData.elements ?? []);
   const [history, setHistory] = useState<CanvasElement[][]>([effectiveInitialData.elements ?? []]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -227,6 +228,24 @@ export function IntelligentWhiteboard({
   const [highlightIds, setHighlightIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [viewport, setViewport] = useState(effectiveInitialData.viewport ?? { x: 0, y: 0, zoom: 1 });
+
+  // Load persisted whiteboard data if not provided
+  useEffect(() => {
+    let active = true;
+    if (boardId) {
+      fetchWhiteboard(boardId).then(data => {
+        if (!active || !data) return;
+        if (data.title) setBoardTitle(data.title);
+        if (data.elements && data.elements.length > 0) {
+          setElements(data.elements);
+          setHistory([data.elements]);
+          setHistoryIndex(0);
+        }
+        if (data.viewport) setViewport(data.viewport);
+      }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [boardId]);
 
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [remoteCursors, setRemoteCursors] = useState<RemoteWhiteboardCursor[]>([]);
@@ -676,14 +695,15 @@ export function IntelligentWhiteboard({
   // ── Export ────────────────────────────────────────────────────────────────
 
   const handleExport = useCallback((format: 'json' | 'svg' | 'png') => {
-    if (format === 'json') exportJSON(elements, effectiveInitialData.title);
+    if (format === 'json') exportJSON(elements, boardTitle);
     else if (format === 'svg') exportSVG(elements);
     else if (format === 'png') exportPNG(canvasRef);
-  }, [elements, effectiveInitialData.title]);
+  }, [elements, boardTitle]);
 
   // ── Title change ──────────────────────────────────────────────────────────
 
   const handleTitleChange = useCallback(async (newTitle: string) => {
+    setBoardTitle(newTitle);
     setSaveState('saving');
     const ok = await updateWhiteboard(boardId, { title: newTitle });
     setSaveState(ok ? 'saved' : 'error');
@@ -700,7 +720,7 @@ export function IntelligentWhiteboard({
   return (
     <div className="flex flex-col w-full h-full" style={{ background: 'var(--bg)' }}>
       <WhiteboardHeader
-        title={initialData.title}
+        title={boardTitle}
         saveState={saveState}
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
