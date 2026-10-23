@@ -3,7 +3,16 @@ import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { workspaceRoutes, authRoutes, memberRoutes, inviteRoutes, whiteboardRoutes, initWorkspaceSockets } from './src/index.js';
+import {
+  workspaceRoutes,
+  authRoutes,
+  memberRoutes,
+  inviteRoutes,
+  whiteboardRoutes,
+  sessionRoutes,
+  professionalRoutes,
+  initWorkspaceSockets
+} from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
 
 const app = express();
@@ -15,7 +24,7 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -29,6 +38,8 @@ app.use('/api', workspaceRoutes);
 app.use('/api', memberRoutes);
 app.use('/api', inviteRoutes);
 app.use('/api', whiteboardRoutes);
+app.use('/api', sessionRoutes);
+app.use('/api', professionalRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

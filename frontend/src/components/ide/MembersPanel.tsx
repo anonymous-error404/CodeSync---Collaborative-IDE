@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Users, UserPlus, Copy, Check, Trash2, Crown, Shield, Eye, EyeOff, Edit3, X,
-  GraduationCap, Lock
+  GraduationCap, Lock, FileCode
 } from 'lucide-react';
 import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceType, StudentAccessLevel } from '../../types';
 import { collabService } from '../../services/workspaceCollabService';
@@ -13,6 +13,7 @@ interface Props {
   myRole: WorkspaceRole;
   currentUserId: number;
   token: string | null;
+  activeMemberFiles?: Record<number, string>;
   onClose: () => void;
   onStudentAccessUpdated?: (userId: number, access: StudentAccessLevel) => void;
 }
@@ -23,6 +24,7 @@ export function MembersPanel({
   myRole,
   currentUserId,
   token,
+  activeMemberFiles,
   onClose,
   onStudentAccessUpdated,
 }: Props) {
@@ -328,6 +330,14 @@ export function MembersPanel({
                         )}
                       </div>
                     </div>
+
+                    {/* Professional Workspace: Active File Focus */}
+                    {workspaceType === 'professional' && activeMemberFiles?.[m.userId] && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20 font-mono">
+                        <FileCode size={11} className="shrink-0" />
+                        <span className="truncate">Working on: {activeMemberFiles[m.userId]}</span>
+                      </div>
+                    )}
 
                     {/* Educational Workspace: Student Access Permissions (no-view, viewer, editor) */}
                     {(m.role === 'student' || workspaceType === 'educational') && m.role !== 'teacher' && (

@@ -7,7 +7,7 @@ import {
   Phone, PhoneOff, Mic, MicOff, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
   Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
-  Maximize2, Minimize2, ChevronUp, ChevronDown
+  Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
@@ -16,6 +16,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
+import { ProfessionalPanel } from './ProfessionalPanel';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 import { collabService } from '../../services/workspaceCollabService';
@@ -110,6 +111,12 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [helpNotification, setHelpNotification] = useState<{ username: string; message: string; timestamp: number } | null>(null);
   const [pingAlert, setPingAlert] = useState<{ message: string; from?: string } | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
+
+  // ── Professional Workspace State ──
+  const [showProfessionalPanel, setShowProfessionalPanel] = useState(false);
+  const [activeMemberFiles, setActiveMemberFiles] = useState<Record<number, string>>({});
+  const [openReviewsCount, setOpenReviewsCount] = useState<number>(0);
+  const [projectToast, setProjectToast] = useState<string | null>(null);
 
   const [currentRole, setCurrentRole] = useState<WorkspaceRole>(workspace.myRole || myRole || 'owner');
   const [studentAccess, setStudentAccess] = useState<StudentAccessLevel>(workspace.studentAccess || 'editor');
@@ -508,6 +515,43 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setSessionRole('none');
     });
 
+    // ── Professional Workspace Socket Events ──
+    socket.on('developer:file_focused', (data: { userId: number; username: string; filePath: string | null }) => {
+      setActiveMemberFiles(prev => ({
+        ...prev,
+        [data.userId]: data.filePath || '',
+      }));
+    });
+
+    socket.on('task:created', (data: { task: any; createdBy: string }) => {
+      setProjectToast(`${data.createdBy} created task: "${data.task.title}"`);
+      setTimeout(() => setProjectToast(null), 5000);
+    });
+
+    socket.on('task:updated', (data: { task: any; updatedBy: string }) => {
+      setProjectToast(`${data.updatedBy} updated task: "${data.task.title}" (${data.task.status})`);
+      setTimeout(() => setProjectToast(null), 5000);
+    });
+
+    socket.on('task:deleted', () => {
+      setProjectToast('A project task was deleted');
+      setTimeout(() => setProjectToast(null), 3000);
+    });
+
+    socket.on('review:created', (data: { review: any; authorName: string }) => {
+      setOpenReviewsCount(prev => prev + 1);
+      setProjectToast(`New Code Review by ${data.authorName}: "${data.review.title}"`);
+      setTimeout(() => setProjectToast(null), 6000);
+    });
+
+    socket.on('review:status_changed', (data: { review: any; updatedBy: string }) => {
+      if (data.review.status !== 'open') {
+        setOpenReviewsCount(prev => Math.max(0, prev - 1));
+      }
+      setProjectToast(`Code Review "${data.review.title}" set to ${data.review.status} by ${data.updatedBy}`);
+      setTimeout(() => setProjectToast(null), 6000);
+    });
+
     return () => { socket.disconnect(); };
   }, [workspace.id, user?.id, user?.username, token, openFileByPath]);
 
@@ -535,6 +579,30 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
     return () => { mounted = false; };
   }, [workspace.id, token]);
+
+  // Professional workspace: Fetch open reviews count for badge
+  useEffect(() => {
+    if (workspaceType === 'professional') {
+      let mounted = true;
+      collabService.getReviews(workspace.id, token).then(res => {
+        if (!mounted) return;
+        if (res.success && res.reviews) {
+          setOpenReviewsCount(res.reviews.filter(r => r.status === 'open').length);
+        }
+      }).catch(() => {});
+      return () => { mounted = false; };
+    }
+  }, [workspaceType, workspace.id, token]);
+
+  // Professional workspace: Broadcast active file focus when active tab changes
+  useEffect(() => {
+    if (workspaceType === 'professional' && socketRef.current && socketConnected) {
+      socketRef.current.emit('developer:focus_file', {
+        workspaceId: workspace.id,
+        filePath: activeTab?.path || null,
+      });
+    }
+  }, [activeTab?.path, workspaceType, workspace.id, socketConnected]);
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1095,8 +1163,31 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           )}
 
+          {/* Professional Sprint & Review Hub button */}
+          {workspaceType === 'professional' && (
+            <button
+              onClick={() => setShowProfessionalPanel(v => !v)}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative mr-1"
+              style={{
+                background: showProfessionalPanel ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
+                color: showProfessionalPanel ? '#60a5fa' : 'var(--text)',
+                border: `1px solid ${showProfessionalPanel ? '#3b82f6' : 'var(--border)'}`,
+                cursor: 'pointer',
+              }}
+              title="Open Sprint Tasks & Code Review Hub"
+            >
+              <Briefcase size={13} className="text-blue-400" />
+              <span>Sprint Hub</span>
+              {openReviewsCount > 0 && (
+                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black">
+                  {openReviewsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Start Class button (Education mode) */}
-          {!sessionActive && canEdit && (
+          {workspaceType === 'educational' && !sessionActive && canEdit && (
             <button
               onClick={handleStartSession}
               disabled={sessionLoading}
@@ -1213,6 +1304,24 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             )
           )}
 
+          {/* Professional: Request Review button for active file */}
+          {workspaceType === 'professional' && activeTab && !isEffectiveReadOnly && (
+            <button
+              onClick={() => setShowProfessionalPanel(true)}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.35)',
+                cursor: 'pointer',
+              }}
+              title="Request code review for current file"
+            >
+              <GitPullRequest size={12} />
+              <span>Request Review</span>
+            </button>
+          )}
+
           {/* Logout */}
           <button
             onClick={logout}
@@ -1224,6 +1333,25 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </button>
         </div>
       </header>
+
+      {/* ── Project / Sprint Notification Toast ── */}
+      {projectToast && (
+        <div
+          className="flex items-center justify-between px-5 py-2 shrink-0 animate-fade-in z-40"
+          style={{ background: '#2563eb', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+        >
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <Briefcase size={14} />
+            <span>{projectToast}</span>
+          </div>
+          <button
+            onClick={() => setProjectToast(null)}
+            className="text-[11px] px-2 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Ping Alert Banner ── */}
       {pingAlert && (
@@ -1861,6 +1989,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           myRole={currentRole}
           currentUserId={user?.id ?? 0}
           token={token}
+          activeMemberFiles={activeMemberFiles}
           onClose={() => setShowMembersPanel(false)}
           onStudentAccessUpdated={(userId, access) => {
             if (socketRef.current) {
@@ -1869,6 +1998,45 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 userId,
                 access,
               });
+            }
+          }}
+        />
+      )}
+
+      {/* Professional Tasks & Code Review Panel Overlay */}
+      {showProfessionalPanel && (
+        <ProfessionalPanel
+          workspaceId={workspace.id}
+          myRole={currentRole}
+          currentUserId={user?.id ?? 0}
+          token={token}
+          activeFilePath={activeTab?.path}
+          onOpenFile={(filePath) => openFileByPath(filePath)}
+          onClose={() => setShowProfessionalPanel(false)}
+          onTaskCreated={(task) => {
+            if (socketRef.current) {
+              socketRef.current.emit('task:create', { workspaceId: workspace.id, task });
+            }
+          }}
+          onTaskUpdated={(task) => {
+            if (socketRef.current) {
+              socketRef.current.emit('task:update', { workspaceId: workspace.id, task });
+            }
+          }}
+          onTaskDeleted={(taskId) => {
+            if (socketRef.current) {
+              socketRef.current.emit('task:delete', { workspaceId: workspace.id, taskId });
+            }
+          }}
+          onReviewCreated={(review) => {
+            setOpenReviewsCount(prev => prev + 1);
+            if (socketRef.current) {
+              socketRef.current.emit('review:create', { workspaceId: workspace.id, review });
+            }
+          }}
+          onReviewUpdated={(review) => {
+            if (socketRef.current) {
+              socketRef.current.emit('review:update_status', { workspaceId: workspace.id, review });
             }
           }}
         />

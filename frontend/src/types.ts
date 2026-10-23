@@ -33,6 +33,7 @@ export interface WorkspaceMember {
   editorLocked?: boolean;
   handRaised?: boolean;
   studentAccess?: StudentAccessLevel;
+  activeFile?: string;
   joinedAt: string;
   User?: { id: number; username: string; email: string };
 }
@@ -112,3 +113,41 @@ export interface WorkspaceApiResponse {
   workspaces?: Workspace[];
   error?: string;
 }
+
+// ── Professional Workspace Types ──
+export type TaskStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type ReviewStatus = 'open' | 'approved' | 'changes_requested' | 'closed';
+
+export interface ProjectTask {
+  id: number;
+  workspaceId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignedTo?: number | null;
+  createdBy: number;
+  filePath?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  assignee?: { id: number; username: string; email: string };
+  creator?: { id: number; username: string; email: string };
+}
+
+export interface CodeReview {
+  id: number;
+  workspaceId: string;
+  title: string;
+  description?: string;
+  filePath: string;
+  status: ReviewStatus;
+  authorId: number;
+  reviewerId?: number | null;
+  reviewNote?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  author?: { id: number; username: string; email: string };
+  reviewer?: { id: number; username: string; email: string };
+}
+

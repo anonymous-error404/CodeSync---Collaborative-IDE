@@ -733,6 +733,77 @@ function initWorkspaceSockets(io) {
       }
     });
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── PROFESSIONAL WORKSPACE (TASKS, REVIEWS, DEV FOCUS) ───────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * developer:focus_file — Developer or member broadcasts what file they are currently working on.
+     */
+    socket.on('developer:focus_file', ({ workspaceId, filePath }) => {
+      if (!inRoom(workspaceId)) return;
+      socket.to(`workspace:${workspaceId}`).emit('developer:file_focused', {
+        userId: socket.userId,
+        username: socket.username,
+        filePath: filePath || null,
+      });
+    });
+
+    /**
+     * task:created — Broadcast newly created task.
+     */
+    socket.on('task:create', ({ workspaceId, task }) => {
+      if (!inRoom(workspaceId) || !task) return;
+      workspaceNamespace.to(`workspace:${workspaceId}`).emit('task:created', {
+        task,
+        createdBy: socket.username,
+      });
+    });
+
+    /**
+     * task:updated — Broadcast updated task.
+     */
+    socket.on('task:update', ({ workspaceId, task }) => {
+      if (!inRoom(workspaceId) || !task) return;
+      workspaceNamespace.to(`workspace:${workspaceId}`).emit('task:updated', {
+        task,
+        updatedBy: socket.username,
+      });
+    });
+
+    /**
+     * task:deleted — Broadcast deleted task ID.
+     */
+    socket.on('task:delete', ({ workspaceId, taskId }) => {
+      if (!inRoom(workspaceId) || !taskId) return;
+      workspaceNamespace.to(`workspace:${workspaceId}`).emit('task:deleted', {
+        taskId,
+        deletedBy: socket.username,
+      });
+    });
+
+    /**
+     * review:create — Broadcast new code review request.
+     */
+    socket.on('review:create', ({ workspaceId, review }) => {
+      if (!inRoom(workspaceId) || !review) return;
+      workspaceNamespace.to(`workspace:${workspaceId}`).emit('review:created', {
+        review,
+        authorName: socket.username,
+      });
+    });
+
+    /**
+     * review:update_status — Broadcast review status change (approved, changes_requested, etc).
+     */
+    socket.on('review:update_status', ({ workspaceId, review }) => {
+      if (!inRoom(workspaceId) || !review) return;
+      workspaceNamespace.to(`workspace:${workspaceId}`).emit('review:status_changed', {
+        review,
+        updatedBy: socket.username,
+      });
+    });
+
     // Disconnect handler
     socket.on('disconnect', () => {
       if (currentWorkspaceId) {

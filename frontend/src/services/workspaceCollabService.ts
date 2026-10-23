@@ -1,4 +1,12 @@
-import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole } from '../types';
+import type {
+  WorkspaceMember,
+  WorkspaceInvite,
+  WorkspaceRole,
+  ProjectTask,
+  CodeReview,
+  TaskPriority,
+  ReviewStatus,
+} from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -85,4 +93,45 @@ export const collabService = {
 
   unlockAllStudents: (wsId: string, token: string | null) =>
     req<{ success: boolean; message: string }>(`/api/workspaces/${wsId}/session/unlock-all`, token, { method: 'POST' }),
+
+  // Professional Workspace (Tasks & Code Reviews)
+  getTasks: (wsId: string, token: string | null) =>
+    req<{ success: boolean; tasks: ProjectTask[] }>(`/api/workspaces/${wsId}/tasks`, token),
+
+  createTask: (wsId: string, data: { title: string; description?: string; priority?: TaskPriority; assignedTo?: number | null; filePath?: string | null }, token: string | null) =>
+    req<{ success: boolean; task: ProjectTask }>(`/api/workspaces/${wsId}/tasks`, token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateTask: (wsId: string, taskId: number, updates: Partial<ProjectTask>, token: string | null) =>
+    req<{ success: boolean; task: ProjectTask }>(`/api/workspaces/${wsId}/tasks/${taskId}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  deleteTask: (wsId: string, taskId: number, token: string | null) =>
+    req<{ success: boolean; message: string; taskId: number }>(`/api/workspaces/${wsId}/tasks/${taskId}`, token, {
+      method: 'DELETE',
+    }),
+
+  getReviews: (wsId: string, token: string | null) =>
+    req<{ success: boolean; reviews: CodeReview[] }>(`/api/workspaces/${wsId}/reviews`, token),
+
+  createReview: (wsId: string, data: { title: string; description?: string; filePath: string }, token: string | null) =>
+    req<{ success: boolean; review: CodeReview }>(`/api/workspaces/${wsId}/reviews`, token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateReviewStatus: (wsId: string, reviewId: number, data: { status: ReviewStatus; reviewNote?: string }, token: string | null) =>
+    req<{ success: boolean; review: CodeReview }>(`/api/workspaces/${wsId}/reviews/${reviewId}/status`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteReview: (wsId: string, reviewId: number, token: string | null) =>
+    req<{ success: boolean; message: string; reviewId: number }>(`/api/workspaces/${wsId}/reviews/${reviewId}`, token, {
+      method: 'DELETE',
+    }),
 };
