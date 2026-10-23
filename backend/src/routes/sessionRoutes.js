@@ -7,6 +7,9 @@ import {
   endSession,
   getSession,
   assignSessionRole,
+  toggleStudentLock,
+  lockAllStudents,
+  unlockAllStudents,
   setFocusMode,
   getMySessionRole,
 } from '../controllers/sessionController.js';
@@ -53,6 +56,9 @@ router.get(
  * Teacher controls
  * ─────────────────────────────────────────────────────────────────
  * PATCH  /workspaces/:id/session/members/:userId/role   teacher → reassign session role
+ * PATCH  /workspaces/:id/session/members/:userId/lock   teacher → lock/unlock individual student
+ * POST   /workspaces/:id/session/lock-all               teacher → lock all students
+ * POST   /workspaces/:id/session/unlock-all             teacher → unlock all students
  * PATCH  /workspaces/:id/session/focus                  teacher → toggle focus mode / pin file
  */
 router.patch(
@@ -60,6 +66,27 @@ router.patch(
   authenticateToken,
   requireTeacher,
   assignSessionRole
+);
+
+router.patch(
+  '/workspaces/:id/session/members/:userId/lock',
+  authenticateToken,
+  requireTeacher,
+  toggleStudentLock
+);
+
+router.post(
+  '/workspaces/:id/session/lock-all',
+  authenticateToken,
+  requireTeacher,
+  lockAllStudents
+);
+
+router.post(
+  '/workspaces/:id/session/unlock-all',
+  authenticateToken,
+  requireTeacher,
+  unlockAllStudents
 );
 
 router.patch(

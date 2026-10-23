@@ -15,7 +15,7 @@ async function req<T>(path: string, token: string | null, options: RequestInit =
 }
 
 export const collabService = {
-  // Members
+  // Members (Professional RBAC)
   getMembers: (wsId: string, token: string | null) =>
     req<{ success: boolean; members: WorkspaceMember[] }>(`/api/workspaces/${wsId}/members`, token),
 
@@ -31,7 +31,7 @@ export const collabService = {
   leaveWorkspace: (wsId: string, token: string | null) =>
     req(`/api/workspaces/${wsId}/members/me`, token, { method: 'DELETE' }),
 
-  // Invites
+  // Invites (Professional RBAC)
   createInvite: (wsId: string, params: { role: WorkspaceRole; expiresInHours?: number; maxUses?: number }, token: string | null) =>
     req<{ success: boolean; invite: WorkspaceInvite }>(`/api/workspaces/${wsId}/invites`, token, {
       method: 'POST',
@@ -48,4 +48,35 @@ export const collabService = {
     req<{ success: boolean; workspaceId: string; role: WorkspaceRole }>(`/api/invites/${inviteId}/join`, token, {
       method: 'POST',
     }),
+
+  // Teaching Sessions (Education RBAC)
+  startSession: (wsId: string, token: string | null) =>
+    req<{ success: boolean; session: any }>(`/api/workspaces/${wsId}/session/start`, token, { method: 'POST' }),
+
+  endSession: (wsId: string, token: string | null) =>
+    req<{ success: boolean; message: string }>(`/api/workspaces/${wsId}/session/end`, token, { method: 'POST' }),
+
+  getSession: (wsId: string, token: string | null) =>
+    req<{ success: boolean; active: boolean; session?: any; members?: WorkspaceMember[] }>(`/api/workspaces/${wsId}/session`, token),
+
+  getMySessionRole: (wsId: string, token: string | null) =>
+    req<{ success: boolean; sessionRole: 'teacher' | 'student' | 'none'; editorLocked?: boolean; handRaised?: boolean; sessionActive: boolean }>(`/api/workspaces/${wsId}/session/my-role`, token),
+
+  setFocusMode: (wsId: string, focusMode: boolean, focusedFilePath: string | null, token: string | null) =>
+    req<{ success: boolean; focusMode: boolean; focusedFilePath: string | null }>(`/api/workspaces/${wsId}/session/focus`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ focusMode, focusedFilePath }),
+    }),
+
+  toggleStudentLock: (wsId: string, userId: number, locked: boolean, token: string | null) =>
+    req<{ success: boolean; member: { userId: number; editorLocked: boolean } }>(`/api/workspaces/${wsId}/session/members/${userId}/lock`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ locked }),
+    }),
+
+  lockAllStudents: (wsId: string, token: string | null) =>
+    req<{ success: boolean; message: string }>(`/api/workspaces/${wsId}/session/lock-all`, token, { method: 'POST' }),
+
+  unlockAllStudents: (wsId: string, token: string | null) =>
+    req<{ success: boolean; message: string }>(`/api/workspaces/${wsId}/session/unlock-all`, token, { method: 'POST' }),
 };

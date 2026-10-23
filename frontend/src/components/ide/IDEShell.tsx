@@ -4,10 +4,12 @@ import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder,
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
-  Phone, PhoneOff, Mic, MicOff, Headphones
+  Phone, PhoneOff, Mic, MicOff, Headphones,
+  Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap, School,
+  AlertTriangle, Eye, ShieldAlert, Send, EyeOff
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
-import type { Workspace, FileItem, WorkspaceRole } from '../../types';
+import type { Workspace, FileItem, WorkspaceRole, SessionRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
@@ -15,6 +17,7 @@ import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
+import { collabService } from '../../services/workspaceCollabService';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -92,6 +95,28 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // ── Education & Professional RBAC State ──
+  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionRole, setSessionRole] = useState<SessionRole>('none');
+  const [isEditorLocked, setIsEditorLocked] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [focusedFilePath, setFocusedFilePath] = useState<string | null>(null);
+  const [raisedHands, setRaisedHands] = useState<Array<{ socketId?: string; userId: number; username: string; timestamp?: number }>>([]);
+  const [myHandRaised, setMyHandRaised] = useState(false);
+  const [showHandsDropdown, setShowHandsDropdown] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpMessage, setHelpMessage] = useState('');
+  const [helpNotification, setHelpNotification] = useState<{ username: string; message: string; timestamp: number } | null>(null);
+  const [pingAlert, setPingAlert] = useState<{ message: string; from?: string } | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+
+  const isViewer = myRole === 'viewer';
+  const canAdmin = myRole === 'owner' || myRole === 'admin';
+  const canEdit = myRole === 'owner' || myRole === 'admin' || myRole === 'editor';
+  const isTeacher = sessionRole === 'teacher';
+  const isStudent = sessionRole === 'student';
+  const isEffectiveReadOnly = isViewer || (isStudent && isEditorLocked);
+
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
   const socketRef = useRef<Socket | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
@@ -99,15 +124,54 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const prevTabPathRef = useRef<string | null>(null);
   const localOffsetRef = useRef<number>(0);
 
-  const isViewer = myRole === 'viewer';
-
-  // ── Voice call (teacher -> students) ── NEW
-  const isTeacher = myRole === 'owner';
+  // ── Voice call (broadcast from teacher or owner/admin) ──
+  const isBroadcaster = sessionActive ? isTeacher : canAdmin;
   const voice = useVoiceCall(
     socketConnected ? socketRef.current : null,
     workspace.id,
-    isTeacher
+    isBroadcaster
   );
+  // ── Tab & File operations ──────────────────────────────────────────────────
+  const openFileByPath = useCallback(async (filePath: string) => {
+    if (!filePath) return;
+    const existing = tabs.find(t => t.path === filePath);
+    if (existing) { setActiveTabId(existing.id); return; }
+    const filename = filePath.split('/').pop() || filePath;
+    try {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${workspace.id}/files/content?filePath=${encodeURIComponent(filePath)}`,
+        { headers: authHeaders() }
+      );
+      const d = await res.json();
+      const content = d.success ? (d.content ?? '') : `// Error: ${d.error ?? 'unknown'}`;
+      const tab: Tab = { id: `tab-${filePath}`, name: filename, path: filePath, content, dirty: false };
+      setTabs(prev => [...prev, tab]);
+      setActiveTabId(tab.id);
+    } catch {
+      const tab: Tab = { id: `tab-${filePath}`, name: filename, path: filePath, content: '', dirty: false };
+      setTabs(prev => [...prev, tab]);
+      setActiveTabId(tab.id);
+    }
+  }, [tabs, workspace.id, authHeaders]);
+
+  const openFile = useCallback(async (node: FileItem) => {
+    if (node.type === 'directory') return;
+    await openFileByPath(node.path);
+  }, [openFileByPath]);
+
+  const loadTree = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `${BASE_URL}/api/workspaces/${workspace.id}/files/tree`,
+        { headers: authHeaders() }
+      );
+      const d = await res.json();
+      if (d.success && d.fileTree) setTree(d.fileTree);
+    } catch { /* ignore */ }
+  }, [workspace.id, authHeaders]);
+
+  useEffect(() => { loadTree(); }, [loadTree]);
+
   // ── Socket.io connection ───────────────────────────────────────────────────
   useEffect(() => {
     const socket = io(`${BASE_URL}/workspace`, {
@@ -252,51 +316,120 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setOutput(prev => prev + `\n[Error] ${message}`);
     });
 
+    // ── Session socket events ──
+    socket.on('session:active', (data: { active: boolean; teacherSocketId?: string; teacherId?: number; focusMode?: boolean; focusFilePath?: string; lockedAll?: boolean }) => {
+      setSessionActive(data.active);
+      if (data.active) {
+        if (data.teacherId && user?.id) {
+          setSessionRole(data.teacherId === user.id ? 'teacher' : 'student');
+        }
+        setIsFocusMode(!!data.focusMode);
+        setFocusedFilePath(data.focusFilePath || null);
+        if (data.lockedAll && data.teacherId !== user?.id) {
+          setIsEditorLocked(true);
+        }
+      }
+    });
+
+    socket.on('session:started', (data: { teacherId: number; teacherUsername: string }) => {
+      setSessionActive(true);
+      const iamTeacher = user?.id === data.teacherId;
+      setSessionRole(iamTeacher ? 'teacher' : 'student');
+      if (!iamTeacher) {
+        setIsEditorLocked(false);
+        setMyHandRaised(false);
+      }
+    });
+
+    socket.on('session:ended', () => {
+      setSessionActive(false);
+      setSessionRole('none');
+      setIsEditorLocked(false);
+      setIsFocusMode(false);
+      setFocusedFilePath(null);
+      setRaisedHands([]);
+      setMyHandRaised(false);
+    });
+
+    socket.on('session:editor_locked', () => {
+      setIsEditorLocked(true);
+    });
+
+    socket.on('session:editor_unlocked', () => {
+      setIsEditorLocked(false);
+    });
+
+    socket.on('session:focus_changed', (data: { focusMode: boolean; filePath?: string }) => {
+      setIsFocusMode(data.focusMode);
+      setFocusedFilePath(data.filePath || null);
+      if (data.focusMode && data.filePath) {
+        openFileByPath(data.filePath);
+      }
+    });
+
+    socket.on('session:hand_raised', (data: { socketId?: string; userId: number; username: string }) => {
+      setRaisedHands(prev => {
+        if (prev.some(h => h.userId === data.userId)) return prev;
+        return [...prev, { ...data, timestamp: Date.now() }];
+      });
+      if (data.userId === user?.id) {
+        setMyHandRaised(true);
+      }
+    });
+
+    socket.on('session:hand_lowered', (data: { socketId?: string; userId: number }) => {
+      setRaisedHands(prev => prev.filter(h => h.userId !== data.userId));
+      if (data.userId === user?.id) {
+        setMyHandRaised(false);
+      }
+    });
+
+    socket.on('session:help_requested', (data: { studentUsername: string; message: string; timestamp: number }) => {
+      setHelpNotification({ username: data.studentUsername, message: data.message, timestamp: data.timestamp });
+      setTimeout(() => setHelpNotification(null), 10000);
+    });
+
+    socket.on('session:ping', (data: { message: string; from?: string }) => {
+      setPingAlert(data);
+      setTimeout(() => setPingAlert(null), 6000);
+    });
+
+    socket.on('session:open_file', (data: { filePath: string }) => {
+      if (data.filePath) openFileByPath(data.filePath);
+    });
+
+    socket.on('session:kicked', (data: { reason: string }) => {
+      alert(`You have been removed from the session: ${data.reason || 'By teacher'}`);
+      setSessionRole('none');
+    });
+
     return () => { socket.disconnect(); };
-  }, [workspace.id, user?.username, token]);
+  }, [workspace.id, user?.id, user?.username, token, openFileByPath]);
 
-  // Auto-scroll output to bottom
+  // Initial session fetch
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [output]);
+    let mounted = true;
+    collabService.getMySessionRole(workspace.id, token).then(res => {
+      if (!mounted) return;
+      if (res.success) {
+        setSessionActive(res.sessionActive);
+        setSessionRole(res.sessionRole);
+        setIsEditorLocked(!!res.editorLocked);
+        setMyHandRaised(!!res.handRaised);
+      }
+    }).catch(() => {});
 
-  // ── File tree ──────────────────────────────────────────────────────────────
-  const loadTree = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `${BASE_URL}/api/workspaces/${workspace.id}/files/tree`,
-        { headers: authHeaders() }
-      );
-      const d = await res.json();
-      if (d.success && d.fileTree) setTree(d.fileTree);
-    } catch { /* ignore */ }
-  }, [workspace.id, authHeaders]);
+    collabService.getSession(workspace.id, token).then(res => {
+      if (!mounted) return;
+      if (res.success && res.active && res.session) {
+        setSessionActive(true);
+        setIsFocusMode(!!res.session.focusMode);
+        setFocusedFilePath(res.session.focusedFilePath || null);
+      }
+    }).catch(() => {});
 
-  useEffect(() => { loadTree(); }, [loadTree]);
-
-  // ── Tab management ─────────────────────────────────────────────────────────
-  const openFile = async (node: FileItem) => {
-    if (node.type === 'directory') return;
-    const existing = tabs.find(t => t.path === node.path);
-    if (existing) { setActiveTabId(existing.id); return; }
-    try {
-      const res = await fetch(
-        `${BASE_URL}/api/workspaces/${workspace.id}/files/content?filePath=${encodeURIComponent(node.path)}`,
-        { headers: authHeaders() }
-      );
-      const d = await res.json();
-      const content = d.success ? (d.content ?? '') : `// Error: ${d.error ?? 'unknown'}`;
-      const tab: Tab = { id: `tab-${node.path}`, name: node.name, path: node.path, content, dirty: false };
-      setTabs(prev => [...prev, tab]);
-      setActiveTabId(tab.id);
-    } catch {
-      const tab: Tab = { id: `tab-${node.path}`, name: node.name, path: node.path, content: '', dirty: false };
-      setTabs(prev => [...prev, tab]);
-      setActiveTabId(tab.id);
-    }
-  };
+    return () => { mounted = false; };
+  }, [workspace.id, token]);
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -342,7 +475,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       });
     }
 
-    if (activeTab && socketRef.current?.connected && !isViewer) {
+    if (activeTab && socketRef.current?.connected && !isEffectiveReadOnly) {
       socketRef.current.emit('file-change', {
         workspaceId: workspace.id,
         filePath: activeTab.path,
@@ -354,7 +487,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // ── File operations ────────────────────────────────────────────────────────
   const saveActive = useCallback(async () => {
-    if (!activeTab) return;
+    if (!activeTab || isEffectiveReadOnly) return;
     setSaving(true);
     try {
       await fetch(`${BASE_URL}/api/workspaces/${workspace.id}/files/content`, {
@@ -366,9 +499,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [activeTab, activeTabId, workspace.id, authHeaders]);
+  }, [activeTab, activeTabId, workspace.id, authHeaders, isEffectiveReadOnly]);
 
   const createFile = async () => {
+    if (isEffectiveReadOnly) return;
     const name = newFileName.trim();
     if (!name) return;
     try {
@@ -382,7 +516,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         await loadTree();
         setShowNewFile(false);
         setNewFileName('');
-        openFile({ id: name, name, path: name, type: 'file' });
+        openFileByPath(name);
       } else {
         setOutput(prev => prev + `\n[Error] ${d.error ?? 'Could not create file'}`);
       }
@@ -393,6 +527,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const deleteFile = async (filePath: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isEffectiveReadOnly) return;
     if (!confirm(`Delete "${filePath.split('/').pop()}"? This cannot be undone.`)) return;
     // Close open tab if present
     setTabs(prev => {
@@ -411,12 +546,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const startRename = (filePath: string, currentName: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isEffectiveReadOnly) return;
     setRenamingPath(filePath);
     setRenameValue(currentName);
   };
 
   const commitRename = async () => {
-    if (!renamingPath || !renameValue.trim()) { setRenamingPath(null); return; }
+    if (isEffectiveReadOnly || !renamingPath || !renameValue.trim()) { setRenamingPath(null); return; }
     const dir = renamingPath.includes('/')
       ? renamingPath.slice(0, renamingPath.lastIndexOf('/') + 1)
       : '';
@@ -442,7 +578,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // ── Code execution ─────────────────────────────────────────────────────────
   const runFile = async () => {
-    if (!activeTab || running) return;
+    if (!activeTab || running || isEffectiveReadOnly) return;
     const socket = socketRef.current;
     if (!socket?.connected) {
       setOutput('[Error] Not connected to backend. Is the server running?\n');
@@ -454,6 +590,96 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const stopExecution = () => {
     socketRef.current?.emit('stop-execution', { workspaceId: workspace.id });
+  };
+
+  // ── Classroom Session Handlers (Teacher) ──
+  const handleStartSession = async () => {
+    setSessionLoading(true);
+    try {
+      const res = await collabService.startSession(workspace.id, token);
+      if (res.success) {
+        setSessionActive(true);
+        setSessionRole('teacher');
+        socketRef.current?.emit('session:announce_start', { workspaceId: workspace.id });
+      } else {
+        alert((res as any).error || 'Failed to start session');
+      }
+    } catch {
+      alert('Network error starting session');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!confirm('Are you sure you want to end this classroom session?')) return;
+    setSessionLoading(true);
+    try {
+      const res = await collabService.endSession(workspace.id, token);
+      if (res.success) {
+        setSessionActive(false);
+        setSessionRole('none');
+        setIsFocusMode(false);
+        setFocusedFilePath(null);
+        setRaisedHands([]);
+        socketRef.current?.emit('session:announce_end', { workspaceId: workspace.id });
+      }
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const handleToggleFocusMode = async () => {
+    const next = !isFocusMode;
+    const currentPath = activeTab?.path || null;
+    setIsFocusMode(next);
+    setFocusedFilePath(next ? currentPath : null);
+    socketRef.current?.emit('session:focus', { workspaceId: workspace.id, filePath: currentPath, enabled: next });
+    await collabService.setFocusMode(workspace.id, next, currentPath, token).catch(() => {});
+  };
+
+  const handleLockAll = async () => {
+    await collabService.lockAllStudents(workspace.id, token).catch(() => {});
+    socketRef.current?.emit('session:lock_all', { workspaceId: workspace.id });
+  };
+
+  const handleUnlockAll = async () => {
+    await collabService.unlockAllStudents(workspace.id, token).catch(() => {});
+    socketRef.current?.emit('session:unlock_all', { workspaceId: workspace.id });
+  };
+
+  const handlePingStudents = () => {
+    socketRef.current?.emit('session:ping_students', {
+      workspaceId: workspace.id,
+      message: 'Teacher has requested everyone\'s attention!'
+    });
+  };
+
+  const handleLowerStudentHand = (targetUserId: number) => {
+    socketRef.current?.emit('session:lower_hand', { workspaceId: workspace.id, targetUserId });
+    setRaisedHands(prev => prev.filter(h => h.userId !== targetUserId));
+  };
+
+  // ── Classroom Session Handlers (Student) ──
+  const handleToggleHand = () => {
+    if (myHandRaised) {
+      socketRef.current?.emit('session:lower_hand', { workspaceId: workspace.id });
+      setMyHandRaised(false);
+    } else {
+      socketRef.current?.emit('session:raise_hand', { workspaceId: workspace.id });
+      setMyHandRaised(true);
+    }
+  };
+
+  const handleSendHelp = () => {
+    if (!helpMessage.trim()) return;
+    socketRef.current?.emit('session:request_help', {
+      workspaceId: workspace.id,
+      message: helpMessage.trim(),
+    });
+    setHelpMessage('');
+    setShowHelpModal(false);
+    alert('Help request sent to teacher!');
   };
 
   // ── Smart editor hook ──────────────────────────────────────────────────────
@@ -561,7 +787,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
 
             {/* Hover action buttons */}
-            {!isViewer && (
+            {!isEffectiveReadOnly && (
               <div
                 className="absolute right-1 top-0 bottom-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ display: 'flex' }}
@@ -697,7 +923,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </button>
 
           {/* Save indicator */}
-          {activeTab?.dirty && !isViewer && (
+          {activeTab?.dirty && !isEffectiveReadOnly && (
             <button
               onClick={saveActive}
               className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-sm transition-colors"
@@ -707,8 +933,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           )}
 
+          {/* Start Class button (Education mode) */}
+          {!sessionActive && canEdit && (
+            <button
+              onClick={handleStartSession}
+              disabled={sessionLoading}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors mr-1"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--accent)', color: 'var(--accent)', cursor: 'pointer' }}
+              title="Start a live classroom session"
+            >
+              <GraduationCap size={14} />
+              {sessionLoading ? 'Starting…' : 'Start Class'}
+            </button>
+          )}
+
           {/* ── Voice call controls ── */}
-          {isTeacher ? (
+          {isBroadcaster ? (
             voice.joined ? (
               <div className="flex items-center gap-1.5 mr-1">
                 <span className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
@@ -745,7 +985,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <button onClick={voice.joinCall}
                 className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1 animate-pulse"
                 style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
-                title={`${voice.teacherName} is speaking`}>
+                title={`${voice.teacherName || 'Broadcaster'} is speaking`}>
                 <Headphones size={13} />Join &amp; Listen
               </button>
             )
@@ -774,7 +1014,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </button>
 
           {/* Run / Stop button */}
-          {!isViewer && (
+          {!isEffectiveReadOnly && (
             running ? (
               <button
                 onClick={stopExecution}
@@ -807,6 +1047,234 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         </div>
       </header>
 
+      {/* ── Ping Alert Banner ── */}
+      {pingAlert && (
+        <div
+          className="flex items-center justify-between px-5 py-2.5 shrink-0 animate-bounce-once z-40"
+          style={{ background: '#f85149', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+        >
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <Radio size={16} />
+            <span>ATTENTION: {pingAlert.message}</span>
+          </div>
+          <button
+            onClick={() => setPingAlert(null)}
+            className="text-xs px-2.5 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* ── Help Request Toast for Teacher ── */}
+      {isTeacher && helpNotification && (
+        <div
+          className="flex items-center justify-between px-5 py-2 shrink-0 animate-fade-in z-40"
+          style={{ background: '#2f81f7', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+        >
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <HelpCircle size={14} />
+            <span>Help Request from <b>{helpNotification.username}</b>: &quot;{helpNotification.message}&quot;</span>
+          </div>
+          <button
+            onClick={() => setHelpNotification(null)}
+            className="text-[11px] px-2 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* ── Classroom Session Strip ── */}
+      {sessionActive && (
+        <div
+          className="flex items-center justify-between px-5 py-1.5 shrink-0 select-none text-xs z-30"
+          style={{
+            background: isTeacher ? 'linear-gradient(90deg, #1f293d 0%, #161b22 100%)' : 'linear-gradient(90deg, #1c2826 0%, #161b22 100%)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          {/* Left badge */}
+          <div className="flex items-center gap-3">
+            <span
+              className="flex items-center gap-1.5 font-bold px-2.5 py-0.5 rounded-full text-[11px]"
+              style={{
+                background: isTeacher ? 'rgba(88, 166, 255, 0.2)' : 'rgba(63, 185, 80, 0.2)',
+                color: isTeacher ? '#58a6ff' : '#3fb950',
+                border: `1px solid ${isTeacher ? '#58a6ff55' : '#3fb95055'}`,
+              }}
+            >
+              <GraduationCap size={13} />
+              {isTeacher ? 'TEACHER MODE' : 'STUDENT MODE'}
+            </span>
+
+            {isFocusMode && (
+              <span className="flex items-center gap-1 font-semibold text-[11px]" style={{ color: 'var(--accent)' }}>
+                <Eye size={12} />
+                Focus Mode Active {focusedFilePath ? `(${focusedFilePath.split('/').pop()})` : ''}
+              </span>
+            )}
+
+            {isStudent && (
+              <span
+                className="flex items-center gap-1 font-semibold text-[11px] px-2 py-0.5 rounded-full"
+                style={{
+                  background: isEditorLocked ? 'rgba(210, 153, 34, 0.2)' : 'rgba(63, 185, 80, 0.15)',
+                  color: isEditorLocked ? '#d29922' : '#3fb950',
+                  border: `1px solid ${isEditorLocked ? '#d2992255' : '#3fb95055'}`,
+                }}
+              >
+                {isEditorLocked ? <Lock size={11} /> : <Unlock size={11} />}
+                {isEditorLocked ? 'Editor Locked' : 'Editor Unlocked'}
+              </span>
+            )}
+          </div>
+
+          {/* Right controls */}
+          <div className="flex items-center gap-2">
+            {isTeacher ? (
+              <>
+                {/* Focus Mode toggle */}
+                <button
+                  onClick={handleToggleFocusMode}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{
+                    background: isFocusMode ? 'var(--accent)' : 'var(--surface-2)',
+                    color: isFocusMode ? '#fff' : 'var(--text)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                  }}
+                  title="Students will automatically follow whatever file you open"
+                >
+                  {isFocusMode ? <Eye size={12} /> : <EyeOff size={12} />}
+                  {isFocusMode ? 'Focus Mode ON' : 'Focus Mode OFF'}
+                </button>
+
+                {/* Lock All / Unlock All */}
+                <button
+                  onClick={handleLockAll}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--warning)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  title="Lock all student editors"
+                >
+                  <Lock size={12} />
+                  Lock All
+                </button>
+                <button
+                  onClick={handleUnlockAll}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--success)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  title="Unlock all student editors"
+                >
+                  <Unlock size={12} />
+                  Unlock All
+                </button>
+
+                {/* Ping Class */}
+                <button
+                  onClick={handlePingStudents}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--accent)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  title="Alert students to look at the screen"
+                >
+                  <Bell size={12} />
+                  Ping Class
+                </button>
+
+                {/* Raised Hands Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowHandsDropdown(v => !v)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                    style={{
+                      background: raisedHands.length > 0 ? 'var(--warning)' : 'var(--surface-2)',
+                      color: raisedHands.length > 0 ? '#0d1117' : 'var(--muted)',
+                      border: '1px solid var(--border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Hand size={12} />
+                    Hands ({raisedHands.length})
+                  </button>
+
+                  {showHandsDropdown && (
+                    <div
+                      className="absolute right-0 top-full mt-1.5 w-60 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2"
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                    >
+                      <div className="flex items-center justify-between text-xs font-bold" style={{ color: 'var(--text)' }}>
+                        <span>Raised Hands</span>
+                        <span className="text-[10px] font-normal" style={{ color: 'var(--muted)' }}>{raisedHands.length} waiting</span>
+                      </div>
+                      {raisedHands.length === 0 ? (
+                        <p className="text-xs py-2 text-center" style={{ color: 'var(--muted)' }}>No raised hands</p>
+                      ) : (
+                        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+                          {raisedHands.map(h => (
+                            <div
+                              key={h.userId}
+                              className="flex items-center justify-between p-1.5 rounded text-xs"
+                              style={{ background: 'var(--surface-2)' }}
+                            >
+                              <span className="font-semibold truncate max-w-[120px]" style={{ color: 'var(--text)' }}>
+                                ✋ {h.username}
+                              </span>
+                              <button
+                                onClick={() => handleLowerStudentHand(h.userId)}
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                                style={{ background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                              >
+                                Lower
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* End Class */}
+                <button
+                  onClick={handleEndSession}
+                  disabled={sessionLoading}
+                  className="flex items-center gap-1 px-3 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--error)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                >
+                  End Class
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Student Controls */}
+                <button
+                  onClick={handleToggleHand}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-semibold transition-all"
+                  style={{
+                    background: myHandRaised ? 'var(--warning)' : 'var(--surface-2)',
+                    color: myHandRaised ? '#0d1117' : 'var(--text)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Hand size={12} />
+                  {myHandRaised ? 'Hand Raised ✋' : 'Raise Hand'}
+                </button>
+
+                <button
+                  onClick={() => setShowHelpModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--accent)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                >
+                  <HelpCircle size={12} />
+                  Ask for Help
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
 
@@ -826,7 +1294,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             >
               Explorer
             </span>
-            {!isViewer && (
+            {!isEffectiveReadOnly && (
               <button
                 onClick={() => setShowNewFile(v => !v)}
                 title="New file"
@@ -869,34 +1337,34 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
         {/* ── Main Pane ── */}
         <main className="flex-1 flex flex-col overflow-hidden" style={{ background: '#0d1117' }}>
-          {activeView === 'whiteboard' ? (
+          {/* Whiteboard view - kept mounted to preserve in-memory drawing state across tab shifts */}
+          <div
+            className="w-full h-full flex flex-col"
+            style={{ display: activeView === 'whiteboard' ? 'flex' : 'none' }}
+          >
             <IntelligentWhiteboard
               workspace={workspace}
               boardId={workspace.id}
-              initialData={{
-                id: workspace.id,
-                workspaceId: workspace.id,
-                title: `${workspace.name} Whiteboard`,
-                elements: [],
-                viewport: { x: 0, y: 0, zoom: 1 },
-                metadata: {},
-              }}
               socket={socketRef.current}
               username={user?.username ?? 'Anonymous'}
+              readOnly={isEffectiveReadOnly}
               onOpenFile={filePath => {
                 setActiveView('editor');
-                const filename = filePath.split('/').pop() || filePath;
-                openFile({ id: filePath, name: filename, path: filePath, type: 'file' });
+                openFileByPath(filePath);
               }}
               onOpenInIDE={filePath => {
                 setActiveView('editor');
-                const filename = filePath.split('/').pop() || filePath;
-                openFile({ id: filePath, name: filename, path: filePath, type: 'file' });
+                openFileByPath(filePath);
               }}
             />
-          ) : (
-            <>
-              {/* Tab bar */}
+          </div>
+
+          {/* Editor view */}
+          <div
+            className="w-full h-full flex flex-col overflow-hidden"
+            style={{ display: activeView === 'editor' ? 'flex' : 'none' }}
+          >
+            {/* Tab bar */}
           <div
             className="flex items-end overflow-x-auto shrink-0"
             style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
@@ -935,6 +1403,34 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
               {/* Code editor */}
               <div className="flex-1 overflow-hidden relative flex flex-col">
+                {/* Locked banner */}
+                {isEditorLocked && (
+                  <div
+                    className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
+                    style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Lock size={13} />
+                      Your editor is currently locked by the teacher. Editing and code execution are paused.
+                    </span>
+                    {isStudent && (
+                      <button
+                        onClick={handleToggleHand}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-colors"
+                        style={{
+                          background: myHandRaised ? 'var(--warning)' : 'var(--surface-2)',
+                          color: myHandRaised ? '#0d1117' : 'var(--text)',
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Hand size={12} />
+                        {myHandRaised ? 'Lower Hand' : 'Raise Hand'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Active file collaborators bar */}
                 {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-1 text-xs shrink-0" style={{ background: '#161b22', borderBottom: '1px solid var(--border)' }}>
@@ -989,7 +1485,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     onFocus={() => emitCursor(false)}
                     onScroll={e => setEditorScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft })}
                     spellCheck={false}
-                    readOnly={isViewer}
+                    readOnly={isEffectiveReadOnly}
                     wrap="off"
                     className="flex-1 py-4 px-3 resize-none focus:outline-none"
                     style={{
@@ -1002,13 +1498,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       tabSize: 2,
                       whiteSpace: 'pre',
                       overflowX: 'auto',
-                      opacity: isViewer ? 0.8 : 1,
+                      opacity: isEffectiveReadOnly ? 0.8 : 1,
                     }}
                   />
-                  {isViewer && (
-                    <div className="absolute top-4 right-6 pointer-events-none px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider z-20"
-                      style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
-                      View Only
+                  {isEffectiveReadOnly && (
+                    <div className="absolute top-4 right-6 pointer-events-none px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider z-20 flex items-center gap-1.5"
+                      style={{
+                        background: 'var(--surface-2)',
+                        color: isEditorLocked ? 'var(--warning)' : 'var(--muted)',
+                        border: `1px solid ${isEditorLocked ? 'var(--warning)' : 'var(--border)'}`,
+                      }}>
+                      {isEditorLocked ? <Lock size={12} /> : null}
+                      {isEditorLocked ? 'Locked by Teacher' : 'View Only'}
                     </div>
                   )}
                 </div>
@@ -1061,11 +1562,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             <div className="flex-1 flex flex-col items-center justify-center" style={{ color: 'var(--muted)' }}>
               <FileCode size={40} className="mb-4 opacity-20" />
               <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
-              {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
+              {!isEffectiveReadOnly && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
             </div>
           )}
-        </>
-      )}
+          </div>
         </main>
       </div>
 
@@ -1096,6 +1596,66 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             workspaceId={workspace.id}
             onClose={() => setShowChat(false)}
           />
+        </div>
+      )}
+
+      {/* Ask for Help Modal (Student) */}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-scale-in"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HelpCircle size={18} style={{ color: 'var(--accent)' }} />
+                <h3 className="text-base font-bold" style={{ color: 'var(--text)' }}>Ask Teacher for Help</h3>
+              </div>
+              <button
+                onClick={() => setShowHelpModal(false)}
+                className="text-muted hover:text-text cursor-pointer bg-none border-none"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              Send a real-time question or request to the teacher. This will alert them directly.
+            </p>
+
+            <textarea
+              value={helpMessage}
+              onChange={e => setHelpMessage(e.target.value)}
+              placeholder="e.g. Could you explain the recursive step on line 24?"
+              rows={4}
+              autoFocus
+              className="w-full p-3 rounded-xl text-sm focus:outline-none resize-none"
+              style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowHelpModal(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendHelp}
+                disabled={!helpMessage.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+                style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: helpMessage.trim() ? 'pointer' : 'not-allowed' }}
+              >
+                <Send size={13} />
+                Send Request
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

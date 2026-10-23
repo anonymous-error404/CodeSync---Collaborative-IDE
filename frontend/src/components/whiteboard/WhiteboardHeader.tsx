@@ -11,6 +11,7 @@ import {
   Undo2, Redo2, Download, LayoutDashboard, Terminal,
   FileText, ShieldCheck, Maximize2,
   CheckCircle, AlertCircle, Clock, ChevronDown, Loader2,
+  Sun, Moon,
 } from 'lucide-react';
 import type { LayoutAlgorithm } from '../../types/whiteboard';
 
@@ -31,6 +32,8 @@ interface Props {
   onOpenTextToDiagram: () => void;
   onOpenValidation: () => void;
   selectedCount: number;
+  boardTheme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
 const LAYOUT_OPTIONS: { value: LayoutAlgorithm; label: string }[] = [
@@ -156,6 +159,8 @@ export function WhiteboardHeader({
   onOpenTextToDiagram,
   onOpenValidation,
   selectedCount,
+  boardTheme = 'dark',
+  onToggleTheme,
 }: Props) {
   const [editingTitle, setEditingTitle] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -255,6 +260,29 @@ export function WhiteboardHeader({
 
       {/* Separator */}
       <div style={{ flex: 1 }} />
+
+      {/* Theme toggle (Whiteboard only) */}
+      {onToggleTheme && (
+        <button
+          onClick={onToggleTheme}
+          title={boardTheme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs hover:opacity-80 transition-all"
+          style={{
+            color: 'var(--text)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            cursor: 'pointer',
+          }}
+        >
+          {boardTheme === 'light' ? <Moon size={13} /> : <Sun size={13} style={{ color: '#e3b341' }} />}
+          <span className="hidden sm:inline font-medium">
+            {boardTheme === 'light' ? 'Dark' : 'Light'}
+          </span>
+        </button>
+      )}
+
+      {/* Separator */}
+      <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
 
       {/* Export */}
       <DropdownMenu

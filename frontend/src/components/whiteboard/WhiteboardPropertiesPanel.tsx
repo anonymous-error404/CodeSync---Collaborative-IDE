@@ -19,6 +19,7 @@ interface Props {
   selectedIds: string[];
   onUpdate: (el: CanvasElement) => void;
   onOpenInIDE?: (path: string) => void;
+  boardTheme?: 'dark' | 'light';
 }
 
 // ─── Options lists ────────────────────────────────────────────────────────────
@@ -121,23 +122,15 @@ function Select<T extends string>({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function WhiteboardPropertiesPanel({ elements, selectedIds, onUpdate, onOpenInIDE }: Props) {
+export function WhiteboardPropertiesPanel({ elements, selectedIds, onUpdate, onOpenInIDE, boardTheme = 'dark' }: Props) {
+  const isLight = boardTheme === 'light';
   if (selectedIds.length === 0) {
-    return (
-      <div
-        className="absolute top-20 right-4 z-30 w-64 rounded-2xl border p-4 shadow-xl"
-        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
-      >
-        <div className="text-xs text-center" style={{ color: 'var(--muted)' }}>
-          Select an element to edit its properties
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // Multi-selection: only show shared properties
   if (selectedIds.length > 1) {
-    return <MultiSelectPanel count={selectedIds.length} />;
+    return <MultiSelectPanel count={selectedIds.length} boardTheme={boardTheme} />;
   }
 
   const el = elements.find(e => e.id === selectedIds[0]);
@@ -145,8 +138,8 @@ export function WhiteboardPropertiesPanel({ elements, selectedIds, onUpdate, onO
 
   return (
     <div
-      className="absolute top-20 right-4 z-30 w-72 rounded-2xl border shadow-xl flex flex-col overflow-hidden animate-fade-in"
-      style={{ background: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 'calc(100vh - 140px)' }}
+      className="absolute top-3 right-3 z-30 w-72 rounded-2xl border shadow-xl flex flex-col overflow-hidden animate-fade-in"
+      style={{ background: isLight ? '#ffffff' : 'var(--surface)', borderColor: isLight ? '#d0d7de' : 'var(--border)', color: isLight ? '#1f2328' : 'var(--text)', maxHeight: 'calc(100vh - 140px)' }}
     >
       <div
         className="px-4 py-3 border-b text-xs font-semibold"
@@ -173,7 +166,11 @@ export function WhiteboardPropertiesPanel({ elements, selectedIds, onUpdate, onO
         )}
 
         {/* Semantic node properties (everything that isn't a connector/code/stroke) */}
-        {el.type !== 'connector' && el.type !== 'arrow' && el.type !== 'stroke' && el.type !== 'code_cell' && (
+        {el.type === 'text' && (
+          <TextProps el={el} onUpdate={onUpdate} />
+        )}
+
+        {el.type !== 'connector' && el.type !== 'arrow' && el.type !== 'stroke' && el.type !== 'code_cell' && el.type !== 'text' && (
           <SemanticNodeProps el={el} onUpdate={onUpdate} />
         )}
       </div>
@@ -279,6 +276,43 @@ function CodeCellProps({ el, onUpdate, onOpenInIDE }: { el: CanvasElement; onUpd
 }
 
 // ─── Semantic node sub-panel ──────────────────────────────────────────────────
+
+// ─── Text block sub-panel ─────────────────────────────────────────────────────
+
+function TextProps({ el, onUpdate }: { el: CanvasElement; onUpdate: (e: CanvasElement) => void }) {
+  return (
+    <Section title="Text Block">
+      <Row label="Content">
+        <textarea
+          value={el.text ?? ''}
+          onChange={e => onUpdate({ ...el, text: e.target.value })}
+          rows={3}
+          className="w-full px-2 py-1 rounded text-xs focus:outline-none resize-y"
+          style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      </Row>
+      <Row label="Font size">
+        <input
+          type="number"
+          value={el.fontSize ?? 14}
+          min={10}
+          max={72}
+          onChange={e => onUpdate({ ...el, fontSize: Number(e.target.value) })}
+          className="w-full px-2 py-1 rounded text-xs focus:outline-none"
+          style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      </Row>
+      <Row label="Color">
+        <input
+          type="color"
+          value={el.strokeColor ?? '#e6edf3'}
+          onChange={e => onUpdate({ ...el, strokeColor: e.target.value })}
+          className="w-8 h-6 rounded cursor-pointer border-0 bg-transparent"
+        />
+      </Row>
+    </Section>
+  );
+}
 
 function SemanticNodeProps({ el, onUpdate }: { el: CanvasElement; onUpdate: (e: CanvasElement) => void }) {
   const isUml = el.diagramType === 'uml_class' || el.diagramType === 'uml_interface' || el.diagramType === 'uml_abstract';
@@ -481,16 +515,17 @@ function FieldsEditor({ el, onUpdate, showMethods }: { el: CanvasElement; onUpda
 
 // ─── Multi-selection placeholder ──────────────────────────────────────────────
 
-function MultiSelectPanel({ count }: { count: number }) {
+function MultiSelectPanel({ count, boardTheme = 'dark' }: { count: number; boardTheme?: 'dark' | 'light' }) {
+  const isLight = boardTheme === 'light';
   return (
     <div
-      className="absolute top-20 right-4 z-30 w-64 rounded-2xl border p-4 shadow-xl"
-      style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+      className="absolute top-3 right-3 z-30 w-64 rounded-2xl border p-4 shadow-xl"
+      style={{ background: isLight ? '#ffffff' : 'var(--surface)', borderColor: isLight ? '#d0d7de' : 'var(--border)' }}
     >
-      <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>
+      <div className="text-xs font-semibold mb-1" style={{ color: isLight ? '#1f2328' : 'var(--text)' }}>
         {count} elements selected
       </div>
-      <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+      <div className="text-[11px]" style={{ color: isLight ? '#57606a' : 'var(--muted)' }}>
         Use the command palette (⌘K) to align, arrange, group, or run layout on the selection.
       </div>
     </div>

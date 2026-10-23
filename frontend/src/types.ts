@@ -9,13 +9,17 @@ export interface FileItem {
   updatedAt?: string;
 }
 
-export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
+export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer';
+export type SessionRole = 'teacher' | 'student' | 'none';
 
 export interface WorkspaceMember {
   id: number;
   workspaceId: string;
   userId: number;
   role: WorkspaceRole;
+  sessionRole?: SessionRole;
+  editorLocked?: boolean;
+  handRaised?: boolean;
   joinedAt: string;
   User?: { id: number; username: string; email: string };
 }
@@ -39,6 +43,19 @@ export interface Workspace {
   updatedAt?: string;
   activeUsers?: number;
   myRole?: WorkspaceRole;
+  mySessionRole?: SessionRole;
+}
+
+export interface TeachingSessionState {
+  id?: string;
+  active: boolean;
+  teacherUserId?: number;
+  teacherName?: string;
+  focusMode: boolean;
+  focusedFilePath?: string | null;
+  mySessionRole: SessionRole;
+  editorLocked?: boolean;
+  handRaised?: boolean;
 }
 
 export interface ExecutionResult {

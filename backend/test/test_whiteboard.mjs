@@ -499,10 +499,74 @@ describe('Stroke Recognition - Geometric shapes', () => {
     }));
   }
 
+  function makeCircle(cx, cy, r, steps = 30) {
+    return Array.from({ length: steps }, (_, i) => {
+      const a = (i / (steps - 1)) * 2 * Math.PI;
+      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    });
+  }
+
+  function makeTriangle(x, y, w, h) {
+    const v1 = { x: x + w / 2, y };
+    const v2 = { x: x + w, y: y + h };
+    const v3 = { x, y: y + h };
+    const pts = [];
+    const addSegment = (p1, p2, n = 8) => {
+      for (let i = 0; i < n; i++) {
+        pts.push({ x: p1.x + (p2.x - p1.x) * (i / n), y: p1.y + (p2.y - p1.y) * (i / n) });
+      }
+    };
+    addSegment(v1, v2);
+    addSegment(v2, v3);
+    addSegment(v3, v1);
+    pts.push({ ...v1 });
+    return pts;
+  }
+
+  function makeDiamond(x, y, w, h) {
+    const top = { x: x + w / 2, y };
+    const right = { x: x + w, y: y + h / 2 };
+    const bottom = { x: x + w / 2, y: y + h };
+    const left = { x, y: y + h / 2 };
+    const pts = [];
+    const addSegment = (p1, p2, n = 6) => {
+      for (let i = 0; i < n; i++) {
+        pts.push({ x: p1.x + (p2.x - p1.x) * (i / n), y: p1.y + (p2.y - p1.y) * (i / n) });
+      }
+    };
+    addSegment(top, right);
+    addSegment(right, bottom);
+    addSegment(bottom, left);
+    addSegment(left, top);
+    pts.push({ ...top });
+    return pts;
+  }
+
   it('recognizes a closed path as rectangle', () => {
     const pts = makeRect(50, 50, 120, 80);
     const result = recognitionService.recognizeStroke(pts);
     expect(result?.type).toBe('rectangle');
+    expect(result?.confidence).toBeGreaterThan(0.7);
+  });
+
+  it('recognizes a circle path as circle', () => {
+    const pts = makeCircle(100, 100, 50);
+    const result = recognitionService.recognizeStroke(pts);
+    expect(result?.type).toBe('circle');
+    expect(result?.confidence).toBeGreaterThan(0.7);
+  });
+
+  it('recognizes a triangle path as triangle', () => {
+    const pts = makeTriangle(50, 50, 100, 100);
+    const result = recognitionService.recognizeStroke(pts);
+    expect(result?.type).toBe('triangle');
+    expect(result?.confidence).toBeGreaterThan(0.7);
+  });
+
+  it('recognizes a diamond path as diamond', () => {
+    const pts = makeDiamond(50, 50, 100, 100);
+    const result = recognitionService.recognizeStroke(pts);
+    expect(result?.type).toBe('diamond');
     expect(result?.confidence).toBeGreaterThan(0.7);
   });
 

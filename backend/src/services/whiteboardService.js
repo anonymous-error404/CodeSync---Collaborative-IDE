@@ -8,7 +8,18 @@ export async function getWorkspaceWhiteboards(workspaceId) {
 }
 
 export async function getWhiteboardById(id) {
-  return await Whiteboard.findByPk(id);
+  let whiteboard = null;
+  const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+  if (isUuid) {
+    whiteboard = await Whiteboard.findByPk(id);
+  }
+  if (!whiteboard) {
+    whiteboard = await Whiteboard.findOne({
+      where: { workspaceId: id },
+      order: [['updatedAt', 'DESC']],
+    });
+  }
+  return whiteboard;
 }
 
 export async function createWhiteboard(workspaceId, data = {}) {
@@ -24,8 +35,28 @@ export async function createWhiteboard(workspaceId, data = {}) {
 }
 
 export async function updateWhiteboard(id, updates = {}) {
-  const whiteboard = await Whiteboard.findByPk(id);
-  if (!whiteboard) return null;
+  let whiteboard = null;
+  const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+  if (isUuid) {
+    whiteboard = await Whiteboard.findByPk(id);
+  }
+  if (!whiteboard) {
+    whiteboard = await Whiteboard.findOne({
+      where: { workspaceId: id },
+      order: [['updatedAt', 'DESC']],
+    });
+  }
+  if (!whiteboard) {
+    whiteboard = await Whiteboard.create({
+      workspaceId: updates.workspaceId || id,
+      title: updates.title || 'Untitled Whiteboard',
+      mode: updates.mode || 'development',
+      elements: updates.elements || [],
+      viewport: updates.viewport || { x: 0, y: 0, zoom: 1 },
+      metadata: updates.metadata || {},
+    });
+    return whiteboard;
+  }
 
   if (updates.title !== undefined) whiteboard.title = updates.title;
   if (updates.mode !== undefined) whiteboard.mode = updates.mode;

@@ -20,7 +20,7 @@ WorkspaceMember.init(
       allowNull: false,
     },
     role: {
-      type: DataTypes.ENUM('owner', 'editor', 'viewer'),
+      type: DataTypes.ENUM('owner', 'admin', 'editor', 'viewer'),
       allowNull: false,
       defaultValue: 'viewer',
     },
@@ -29,6 +29,18 @@ WorkspaceMember.init(
       type: DataTypes.ENUM('teacher', 'student', 'none'),
       allowNull: false,
       defaultValue: 'none',
+    },
+    // Education editor lock state: if true, student editor is read-only
+    editorLocked: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    // Education hand raised state
+    handRaised: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
     joinedAt: {
       type: DataTypes.DATE,

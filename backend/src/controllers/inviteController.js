@@ -2,14 +2,18 @@ import { WorkspaceInvite, WorkspaceMember, User } from '../models/index.js';
 import asyncWrapper from '../utils/asyncWrapper.js';
 import { FRONTEND_URL } from '../config/oauthConfig.js';
 import workspaceService from '../services/workspaceService.js';
-import { Op } from 'sequelize';
+import { canCreateInviteRole } from '../middleware/rbacMiddleware.js';
 
 export const createInvite = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { role, expiresInHours, maxUses } = req.body;
 
-  if (!['editor', 'viewer'].includes(role)) {
-    return res.status(400).json({ success: false, error: 'Invalid role' });
+  const actorRole = req.membership?.role || 'viewer';
+  if (!canCreateInviteRole(actorRole, role)) {
+    return res.status(403).json({
+      success: false,
+      error: `Access denied: role '${actorRole}' cannot create an invite with role '${role}'`,
+    });
   }
 
   let expiresAt = null;
@@ -30,8 +34,8 @@ export const createInvite = asyncWrapper(async (req, res) => {
     success: true,
     invite: {
       ...invite.toJSON(),
-      inviteUrl: `${FRONTEND_URL}/?join=${invite.id}`
-    }
+      inviteUrl: `${FRONTEND_URL}/?join=${invite.id}`,
+    },
   });
 });
 
@@ -40,7 +44,7 @@ export const getInvites = asyncWrapper(async (req, res) => {
   
   const invites = await WorkspaceInvite.findAll({
     where: { workspaceId: id, active: true },
-    include: [{ model: User, as: 'creator', attributes: ['id', 'username', 'email'] }]
+    include: [{ model: User, as: 'creator', attributes: ['id', 'username', 'email'] }],
   });
 
   res.status(200).json({ success: true, invites });
@@ -103,6 +107,9 @@ export const joinViaInvite = asyncWrapper(async (req, res) => {
       workspaceId: invite.workspaceId,
       userId,
       role: invite.role,
+      sessionRole: 'none',
+      editorLocked: false,
+      handRaised: false,
     });
 
     invite.usedCount += 1;

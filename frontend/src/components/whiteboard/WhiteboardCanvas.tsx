@@ -73,10 +73,12 @@ interface ConnectorProps {
   conn: CanvasElement;
   elements: CanvasElement[];
   isSelected: boolean;
+  activeTool: ToolType;
   onSelect: (id: string) => void;
+  onErase: (id: string) => void;
 }
 
-function ConnectorSVG({ conn, elements, isSelected, onSelect }: ConnectorProps) {
+function ConnectorSVG({ conn, elements, isSelected, activeTool, onSelect, onErase }: ConnectorProps) {
   let startPt: { x: number; y: number };
   let endPt: { x: number; y: number };
 
@@ -84,7 +86,6 @@ function ConnectorSVG({ conn, elements, isSelected, onSelect }: ConnectorProps) 
     const src = elements.find(e => e.id === conn.sourceId);
     const tgt = elements.find(e => e.id === conn.targetId);
     if (!src || !tgt) {
-      // Broken connector — render in error color
       return null;
     }
     const { srcAnchor, tgtAnchor } = conn.sourceAnchor && conn.targetAnchor
@@ -110,7 +111,7 @@ function ConnectorSVG({ conn, elements, isSelected, onSelect }: ConnectorProps) 
   const midX = (startPt.x + endPt.x) / 2;
   const midY = (startPt.y + endPt.y) / 2;
 
-  // Hit-test path (wider invisible path for clicking)
+  // Hit-test path (wider hit path for clicking or erasing)
   const pathD = `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
 
   return (
@@ -130,10 +131,17 @@ function ConnectorSVG({ conn, elements, isSelected, onSelect }: ConnectorProps) 
       <path
         d={pathD}
         stroke="transparent"
-        strokeWidth={14}
+        strokeWidth={16}
         fill="none"
-        className="cursor-pointer pointer-events-auto"
-        onClick={(e) => { e.stopPropagation(); onSelect(conn.id); }}
+        style={{ pointerEvents: 'auto', cursor: activeTool === 'eraser' ? 'cell' : 'pointer' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (activeTool === 'eraser') {
+            onErase(conn.id);
+          } else {
+            onSelect(conn.id);
+          }
+        }}
       />
 
       {/* Visible line */}
@@ -176,7 +184,7 @@ function FreehandSVG({ el, isSelected, activeTool, onSelect, onErase }: {
 }) {
   if (!el.points || el.points.length < 2) return null;
   const d = el.points.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
-  const hitWidth = Math.max((el.strokeWidth ?? 3) + 10, 14);
+  const hitWidth = Math.max((el.strokeWidth ?? 3) + 12, 16);
   return (
     <svg className="absolute inset-0 overflow-visible" style={{ zIndex: 5, pointerEvents: 'none' }}>
       {/* Wide invisible hit-target so eraser/select can interact */}
@@ -214,21 +222,20 @@ interface Props {
   elements: CanvasElement[];
   activeTool: ToolType;
   selectedIds: string[];
-  highlightIds?: string[];           // elements to emphasise (from find/deps)
+  highlightIds?: string[];
   onSelect: (ids: string[]) => void;
   onAddElement: (el: CanvasElement) => void;
   onUpdateElement: (el: CanvasElement) => void;
   onDeleteElement?: (id: string) => void;
-  onStrokeComplete?: (points: Array<{ x: number; y: number }>) => void;
+  onStrokeComplete?: (points: Array<{ x: number; y: number }>, strokeId?: string) => void;
   onOpenInIDE?: (filePath: string) => void;
   remoteCursors?: RemoteWhiteboardCursor[];
   onCursorMove?: (pos: { x: number; y: number }) => void;
-  /** Controlled viewport for external fit-canvas commands. */
   viewport?: { x: number; y: number; zoom: number };
   onViewportChange?: (vp: { x: number; y: number; zoom: number }) => void;
-  /** Pending connector creation: user clicked source, now picking target. */
   pendingConnectorSourceId?: string | null;
   onConnectorTargetPicked?: (targetId: string) => void;
+  boardTheme?: 'dark' | 'light';
 }
 
 export function WhiteboardCanvas({
@@ -248,7 +255,9 @@ export function WhiteboardCanvas({
   onViewportChange,
   pendingConnectorSourceId,
   onConnectorTargetPicked,
+  boardTheme = 'dark',
 }: Props) {
+  const isLight = boardTheme === 'light';
   const containerRef = useRef<HTMLDivElement>(null);
   const [internalViewport, setInternalViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const viewport = controlledViewport ?? internalViewport;
@@ -263,6 +272,13 @@ export function WhiteboardCanvas({
   const [currentStroke, setCurrentStroke] = useState<Array<{ x: number; y: number }>>([]);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
 
+  // Continuous erasing state
+  const [isErasing, setIsErasing] = useState(false);
+
+  // Inline text editing state
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [inlineTextValue, setInlineTextValue] = useState<string>('');
+
   // Panning
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -270,11 +286,6 @@ export function WhiteboardCanvas({
   // Dragging
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
-
-  // Resize
-  const [resizingId, setResizingId] = useState<string | null>(null);
-  const [resizeStart, setResizeStart] = useState<{ mx: number; my: number; elX: number; elY: number; elW: number; elH: number } | null>(null);
-  void resizingId; void setResizingId; void resizeStart; void setResizeStart;
 
   // Multi-select rubber band
   const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
@@ -287,6 +298,45 @@ export function WhiteboardCanvas({
       y: (clientY - rect.top - viewport.y) / viewport.zoom,
     };
   }, [viewport]);
+
+  // ─── Native Wheel Listener (passive: false) ───────────────────────────────
+  // Crucial: Must be native with { passive: false } so e.preventDefault() stops
+  // browser zoom from zooming the entire webpage.
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom whiteboard canvas centered at mouse coordinates
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.88;
+        const newZoom = Math.min(Math.max(viewport.zoom * factor, 0.1), 5);
+        setViewport({
+          zoom: newZoom,
+          x: mx - (mx - viewport.x) * (newZoom / viewport.zoom),
+          y: my - (my - viewport.y) * (newZoom / viewport.zoom),
+        });
+      } else {
+        // Regular wheel pans the canvas
+        setViewport({
+          ...viewport,
+          x: viewport.x - e.deltaX,
+          y: viewport.y - e.deltaY,
+        });
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [viewport, setViewport]);
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────
 
@@ -315,31 +365,105 @@ export function WhiteboardCanvas({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedIds, elements, onDeleteElement, onSelect, onUpdateElement]);
 
-  // ─── Wheel zoom ───────────────────────────────────────────────────────────
+  // ─── Hit testing (Handles ALL element types) ──────────────────────────────
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = e.deltaY < 0 ? 1.12 : 0.88;
-      const newZoom = Math.min(Math.max(viewport.zoom * factor, 0.1), 4);
-      setViewport({
-        zoom: newZoom,
-        x: mx - (mx - viewport.x) * (newZoom / viewport.zoom),
-        y: my - (my - viewport.y) * (newZoom / viewport.zoom),
-      });
-    } else {
-      setViewport({ ...viewport, x: viewport.x - e.deltaX, y: viewport.y - e.deltaY });
+  function ptSegDistSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return (px - ax) ** 2 + (py - ay) ** 2;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return (px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2;
+  }
+
+  const hitTest = useCallback((el: CanvasElement, pos: { x: number; y: number }, margin = 14): boolean => {
+    // 1. Freehand strokes
+    if (el.type === 'stroke') {
+      if (!el.points || el.points.length < 2) return false;
+      const threshold = Math.max((el.strokeWidth ?? 3) / 2 + margin, 14);
+      for (let i = 0; i < el.points.length - 1; i++) {
+        const a = el.points[i], b = el.points[i + 1];
+        if (ptSegDistSq(pos.x, pos.y, a.x, a.y, b.x, b.y) <= threshold * threshold) return true;
+      }
+      return false;
     }
-  }, [viewport, setViewport]);
+
+    // 2. Connectors & Arrows
+    if (el.type === 'connector' || el.type === 'arrow') {
+      const threshold = 16;
+      if (el.sourceId && el.targetId) {
+        const src = elements.find(e => e.id === el.sourceId);
+        const tgt = elements.find(e => e.id === el.targetId);
+        if (!src || !tgt) return false;
+        const { srcAnchor, tgtAnchor } = el.sourceAnchor && el.targetAnchor
+          ? { srcAnchor: el.sourceAnchor, tgtAnchor: el.targetAnchor }
+          : chooseAnchors(src, tgt);
+        const startPt = getAnchorPoint(src, srcAnchor);
+        const endPt = getAnchorPoint(tgt, tgtAnchor);
+        return ptSegDistSq(pos.x, pos.y, startPt.x, startPt.y, endPt.x, endPt.y) <= threshold * threshold;
+      } else if (el.points && el.points.length >= 2) {
+        for (let i = 0; i < el.points.length - 1; i++) {
+          const a = el.points[i], b = el.points[i + 1];
+          if (ptSegDistSq(pos.x, pos.y, a.x, a.y, b.x, b.y) <= threshold * threshold) return true;
+        }
+      }
+      return false;
+    }
+
+    // 3. Rectangles, circles, triangles, diamonds, texts, stickies, frames, code cells
+    const w = el.width ?? (el.type === 'circle' ? 100 : el.type === 'code_cell' ? 280 : 160);
+    const h = el.height ?? (el.type === 'circle' ? 100 : el.type === 'text' ? 36 : el.type === 'code_cell' ? 140 : 70);
+
+    if (el.type === 'circle') {
+      const cx = el.x + w / 2;
+      const cy = el.y + h / 2;
+      const r = Math.max(w, h) / 2 + margin;
+      return Math.hypot(pos.x - cx, pos.y - cy) <= r;
+    }
+
+    return (
+      pos.x >= el.x - margin &&
+      pos.x <= el.x + w + margin &&
+      pos.y >= el.y - margin &&
+      pos.y <= el.y + h + margin
+    );
+  }, [elements]);
+
+  // ─── Eraser action helper ─────────────────────────────────────────────────
+
+  const eraseAt = useCallback((pos: { x: number; y: number }) => {
+    const hits = elements.filter(el => hitTest(el, pos, 14));
+    if (hits.length > 0) {
+      hits.forEach(hit => onDeleteElement?.(hit.id));
+      const hitIds = hits.map(h => h.id);
+      onSelect(selectedIds.filter(id => !hitIds.includes(id)));
+    }
+  }, [elements, hitTest, onDeleteElement, onSelect, selectedIds]);
+
+  // ─── Finish inline text editing ───────────────────────────────────────────
+
+  const finishEditingText = useCallback((id: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      onDeleteElement?.(id);
+    } else {
+      const el = elements.find(e => e.id === id);
+      if (el) {
+        onUpdateElement({ ...el, text: trimmed });
+      }
+    }
+    setEditingTextId(null);
+    setInlineTextValue('');
+  }, [elements, onDeleteElement, onUpdateElement]);
 
   // ─── Mouse down ───────────────────────────────────────────────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const pos = screenToWorld(e.clientX, e.clientY);
+
+    // If currently editing text and clicked elsewhere, commit the text
+    if (editingTextId) {
+      finishEditingText(editingTextId, inlineTextValue);
+    }
 
     if (activeTool === 'hand' || e.button === 1) {
       setIsPanning(true);
@@ -348,17 +472,37 @@ export function WhiteboardCanvas({
     }
 
     if (activeTool === 'eraser') {
-      const hit = [...elements].reverse().find(el => hitTest(el, pos));
-      if (hit) { onDeleteElement?.(hit.id); onSelect([]); }
+      setIsErasing(true);
+      eraseAt(pos);
+      return;
+    }
+
+    // Direct normal text box creation: click to place an active editable text box
+    if (activeTool === 'text') {
+      const textId = `text-${Date.now()}`;
+      const newEl: CanvasElement = {
+        id: textId,
+        type: 'text',
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
+        width: 180,
+        height: 36,
+        text: '',
+        strokeColor: isLight ? '#1f2328' : '#e6edf3',
+        fontSize: 14,
+        diagramType: 'generic',
+      };
+      onAddElement(newEl);
+      setEditingTextId(textId);
+      setInlineTextValue('');
+      onSelect([]);
       return;
     }
 
     if (activeTool === 'select') {
-      // Check for resize handle first (handled in element mouse-down via data attr)
-      const hit = [...elements].reverse().find(el => hitTest(el, pos));
+      const hit = [...elements].reverse().find(el => hitTest(el, pos, 6));
       if (hit) {
         if (e.shiftKey) {
-          // Toggle multi-select
           const already = selectedIds.includes(hit.id);
           onSelect(already ? selectedIds.filter(id => id !== hit.id) : [...selectedIds, hit.id]);
         } else {
@@ -391,13 +535,18 @@ export function WhiteboardCanvas({
     // Shape creation tools — start draw
     setIsDrawing(true);
     setDrawStart(pos);
-  }, [activeTool, elements, screenToWorld, viewport, selectedIds, onSelect, onDeleteElement]);
+  }, [activeTool, elements, screenToWorld, viewport, selectedIds, onSelect, eraseAt, editingTextId, inlineTextValue, finishEditingText, onAddElement, hitTest]);
 
   // ─── Mouse move ───────────────────────────────────────────────────────────
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const pos = screenToWorld(e.clientX, e.clientY);
     onCursorMove?.(pos);
+
+    if (isErasing && activeTool === 'eraser') {
+      eraseAt(pos);
+      return;
+    }
 
     if (isPanning) {
       setViewport({ ...viewport, x: e.clientX - panStart.x, y: e.clientY - panStart.y });
@@ -423,11 +572,16 @@ export function WhiteboardCanvas({
     if (isDrawing && ['pen', 'highlighter', 'smart_pen'].includes(activeTool)) {
       setCurrentStroke(prev => [...prev, pos]);
     }
-  }, [isPanning, draggingIds, rubberBand, isDrawing, activeTool, screenToWorld, viewport, panStart, elements, dragOffsets, onUpdateElement, onCursorMove, setViewport]);
+  }, [isPanning, isErasing, activeTool, draggingIds, rubberBand, isDrawing, screenToWorld, viewport, panStart, elements, dragOffsets, onUpdateElement, onCursorMove, setViewport, eraseAt]);
 
   // ─── Mouse up ─────────────────────────────────────────────────────────────
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (isErasing) {
+      setIsErasing(false);
+      return;
+    }
+
     if (isPanning) { setIsPanning(false); return; }
 
     if (draggingIds.length > 0) {
@@ -461,18 +615,21 @@ export function WhiteboardCanvas({
 
     if (['pen', 'highlighter', 'smart_pen'].includes(activeTool)) {
       if (currentStroke.length > 1) {
+        const strokeId = `stroke-${Date.now()}`;
         const newEl: CanvasElement = {
-          id: `stroke-${Date.now()}`,
+          id: strokeId,
           type: 'stroke',
           x: currentStroke[0].x,
           y: currentStroke[0].y,
           points: currentStroke,
-          strokeColor: activeTool === 'highlighter' ? 'rgba(240,136,62,0.5)' : '#2f81f7',
+          strokeColor: activeTool === 'highlighter' ? (isLight ? 'rgba(234,88,12,0.4)' : 'rgba(240,136,62,0.5)') : (isLight ? '#0969da' : '#2f81f7'),
           strokeWidth: activeTool === 'highlighter' ? 14 : 3,
           opacity: activeTool === 'highlighter' ? 0.5 : 1,
         };
         onAddElement(newEl);
-        if (activeTool === 'smart_pen') onStrokeComplete?.(currentStroke);
+        if (activeTool === 'smart_pen') {
+          onStrokeComplete?.(currentStroke, strokeId);
+        }
       }
       setCurrentStroke([]);
       return;
@@ -486,14 +643,22 @@ export function WhiteboardCanvas({
       const x = rawW >= 0 ? drawStart.x : drawStart.x - width;
       const y = rawH >= 0 ? drawStart.y : drawStart.y - height;
 
+      // Dimension normalization for geometric shapes
+      const isCircle = activeTool === 'circle';
+      const finalW = isCircle ? Math.max(width, height) : width;
+      const finalH = isCircle ? Math.max(width, height) : height;
+
       const newEl: CanvasElement = {
         id: `${activeTool}-${Date.now()}`,
         type: activeTool as any,
-        x, y, width, height,
-        strokeColor: '#2f81f7',
-        fillColor: activeTool === 'sticky' ? '#21262d' : 'transparent',
+        x,
+        y,
+        width: finalW,
+        height: finalH,
+        strokeColor: isLight ? '#0969da' : '#2f81f7',
+        fillColor: activeTool === 'sticky' ? (isLight ? '#fff8c5' : '#21262d') : 'transparent',
         strokeWidth: 2,
-        text: activeTool === 'text' ? 'New Text' : activeTool === 'sticky' ? '📝 Note' : '',
+        text: activeTool === 'sticky' ? '📝 Note' : '',
         codeLanguage: activeTool === 'code_cell' ? 'javascript' : undefined,
         codeContent: activeTool === 'code_cell' ? '// code snippet' : undefined,
         codeLinkType: activeTool === 'code_cell' ? 'static' : undefined,
@@ -504,41 +669,16 @@ export function WhiteboardCanvas({
       onSelect([newEl.id]);
       setDrawStart(null);
     }
-  }, [isPanning, draggingIds, rubberBand, isDrawing, activeTool, currentStroke, drawStart, screenToWorld, elements, onAddElement, onSelect, onStrokeComplete]);
+  }, [isErasing, isPanning, draggingIds, rubberBand, isDrawing, activeTool, currentStroke, drawStart, screenToWorld, elements, onAddElement, onSelect, onStrokeComplete]);
 
-  // ─── Hit test ─────────────────────────────────────────────────────────────
-
-  /** Point-to-segment distance squared. */
-  function ptSegDistSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-    const dx = bx - ax, dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return (px - ax) ** 2 + (py - ay) ** 2;
-    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
-    return (px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2;
-  }
-
-  function hitTest(el: CanvasElement, pos: { x: number; y: number }): boolean {
-    if (el.type === 'stroke') {
-      if (!el.points || el.points.length < 2) return false;
-      const threshold = Math.max((el.strokeWidth ?? 3) / 2 + 6, 10);
-      for (let i = 0; i < el.points.length - 1; i++) {
-        const a = el.points[i], b = el.points[i + 1];
-        if (ptSegDistSq(pos.x, pos.y, a.x, a.y, b.x, b.y) <= threshold * threshold) return true;
-      }
-      return false;
-    }
-    if (el.type === 'connector' || el.type === 'arrow') return false; // SVG handles it
-    if (!el.width || !el.height) return false;
-    return pos.x >= el.x && pos.x <= el.x + el.width && pos.y >= el.y && pos.y <= el.y + el.height;
-  }
-
-  // ─── Connector cursor indicator ───────────────────────────────────────────
+  // ─── Cursor indicator ─────────────────────────────────────────────────────
 
   const cursorStyle = pendingConnectorSourceId
     ? 'cursor-crosshair'
     : activeTool === 'hand' ? 'cursor-grab'
     : activeTool === 'eraser' ? 'cursor-cell'
     : activeTool === 'select' ? 'cursor-default'
+    : activeTool === 'text' ? 'cursor-text'
     : 'cursor-crosshair';
 
   // ─── Rubber band rect in world space ──────────────────────────────────────
@@ -550,9 +690,8 @@ export function WhiteboardCanvas({
     h: Math.abs(rubberBand.endY - rubberBand.startY),
   } : null;
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Element layering ─────────────────────────────────────────────────────
 
-  // Separate connectors from nodes for layering
   const connectorEls = elements.filter(el => el.type === 'connector' || el.type === 'arrow');
   const strokeEls = elements.filter(el => el.type === 'stroke');
   const nodeEls = elements.filter(el => el.type !== 'connector' && el.type !== 'arrow' && el.type !== 'stroke');
@@ -560,14 +699,15 @@ export function WhiteboardCanvas({
   return (
     <div
       ref={containerRef}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       className={`relative w-full h-full overflow-hidden select-none ${cursorStyle}`}
       style={{
-        background: 'var(--bg)',
-        backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)',
+        background: isLight ? '#fcfcfd' : 'var(--bg)',
+        backgroundImage: isLight
+          ? 'radial-gradient(circle, #cbd5e1 1.2px, transparent 1.2px)'
+          : 'radial-gradient(circle, var(--border) 1px, transparent 1px)',
         backgroundSize: `${24 * viewport.zoom}px ${24 * viewport.zoom}px`,
         backgroundPosition: `${viewport.x}px ${viewport.y}px`,
       }}
@@ -595,15 +735,61 @@ export function WhiteboardCanvas({
             conn={conn}
             elements={elements}
             isSelected={selectedIds.includes(conn.id)}
+            activeTool={activeTool}
             onSelect={id => onSelect([id])}
+            onErase={id => { onDeleteElement?.(id); onSelect(selectedIds.filter(s => s !== id)); }}
           />
         ))}
 
-        {/* ── Nodes ────────────────────────────────────────────────────── */}
+        {/* ── Nodes & Shapes ───────────────────────────────────────────── */}
         {nodeEls.map(el => {
           const isSelected = selectedIds.includes(el.id);
           const isHighlighted = highlightIds.includes(el.id);
           const isPendingTarget = !!pendingConnectorSourceId && el.id !== pendingConnectorSourceId;
+
+          // Inline text editing mode for this element
+          if (editingTextId === el.id) {
+            return (
+              <div
+                key={el.id}
+                className="absolute z-50"
+                style={{ left: el.x, top: el.y }}
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <textarea
+                  autoFocus
+                  value={inlineTextValue}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setInlineTextValue(val);
+                    const lines = val.split('\n');
+                    const maxLen = Math.max(...lines.map(l => l.length), 10);
+                    const newW = Math.max(160, maxLen * 9 + 20);
+                    const newH = Math.max(36, lines.length * 22 + 16);
+                    onUpdateElement({ ...el, text: val, width: newW, height: newH });
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault();
+                      finishEditingText(el.id, inlineTextValue);
+                    }
+                  }}
+                  onBlur={() => {
+                    finishEditingText(el.id, inlineTextValue);
+                  }}
+                  placeholder="Type text here..."
+                  rows={Math.max(1, inlineTextValue.split('\n').length)}
+                  className={`p-1.5 rounded border ${isLight ? 'border-blue-600 bg-white text-[#1f2328]' : 'border-blue-500 bg-[#161b22] text-[#e6edf3]'} text-sm font-sans focus:outline-none resize-none shadow-2xl`}
+                  style={{
+                    minWidth: 160,
+                    fontSize: el.fontSize ?? 14,
+                    lineHeight: 1.4,
+                  }}
+                />
+              </div>
+            );
+          }
 
           if (el.type === 'code_cell') {
             return (
@@ -613,6 +799,11 @@ export function WhiteboardCanvas({
                 style={{ left: el.x, top: el.y, zIndex: isSelected ? 30 : 20 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (activeTool === 'eraser') {
+                    onDeleteElement?.(el.id);
+                    onSelect(selectedIds.filter(i => i !== el.id));
+                    return;
+                  }
                   if (pendingConnectorSourceId) { onConnectorTargetPicked?.(el.id); return; }
                   onSelect(e.shiftKey ? (selectedIds.includes(el.id) ? selectedIds.filter(i => i !== el.id) : [...selectedIds, el.id]) : [el.id]);
                 }}
@@ -629,8 +820,20 @@ export function WhiteboardCanvas({
               style={{ left: el.x, top: el.y, zIndex: isSelected ? 30 : 20 }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (activeTool === 'eraser') {
+                  onDeleteElement?.(el.id);
+                  onSelect(selectedIds.filter(i => i !== el.id));
+                  return;
+                }
                 if (pendingConnectorSourceId) { onConnectorTargetPicked?.(el.id); return; }
                 onSelect(e.shiftKey ? (selectedIds.includes(el.id) ? selectedIds.filter(i => i !== el.id) : [...selectedIds, el.id]) : [el.id]);
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (el.type === 'text' || el.type === 'sticky') {
+                  setEditingTextId(el.id);
+                  setInlineTextValue(el.text ?? '');
+                }
               }}
               onMouseDown={(e) => {
                 if (pendingConnectorSourceId) return;
@@ -652,6 +855,7 @@ export function WhiteboardCanvas({
                 isSelected={isSelected}
                 isHighlighted={isHighlighted}
                 onOpenInIDE={onOpenInIDE}
+                boardTheme={boardTheme}
               />
             </div>
           );
@@ -723,7 +927,6 @@ export function WhiteboardCanvas({
             className="absolute z-50 pointer-events-none flex items-center gap-1.5"
             style={{ left: rc.cursor.x, top: rc.cursor.y, transform: 'translate(-2px, -2px)' }}
           >
-            {/* Remote selection highlights */}
             {(rc.selectedIds ?? []).map(id => {
               const el = elements.find(e => e.id === id);
               if (!el || !el.width || !el.height) return null;
@@ -751,12 +954,65 @@ export function WhiteboardCanvas({
         ))}
       </div>
 
-      {/* ── Zoom indicator (outside world transform) ─────────────────── */}
+      {/* ── Zoom Controls (Bottom Right) ─────────────────────────────── */}
       <div
-        className="absolute bottom-4 right-4 text-[11px] px-2 py-1 rounded font-mono pointer-events-none"
-        style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+        className="absolute bottom-4 right-4 flex items-center gap-1 p-1 rounded-xl shadow-lg border text-xs font-mono select-none z-30"
+        style={{
+          background: isLight ? '#ffffff' : 'var(--surface)',
+          borderColor: isLight ? '#d0d7de' : 'var(--border)',
+          color: isLight ? '#1f2328' : 'var(--text)',
+        }}
       >
-        {Math.round(viewport.zoom * 100)}%
+        <button
+          onClick={() => {
+            const newZoom = Math.max(viewport.zoom * 0.85, 0.1);
+            if (containerRef.current) {
+              const { clientWidth: cw, clientHeight: ch } = containerRef.current;
+              setViewport({
+                zoom: newZoom,
+                x: cw / 2 - (cw / 2 - viewport.x) * (newZoom / viewport.zoom),
+                y: ch / 2 - (ch / 2 - viewport.y) * (newZoom / viewport.zoom),
+              });
+            }
+          }}
+          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-2)] text-[var(--text)] transition-colors cursor-pointer text-sm font-bold"
+          title="Zoom Out"
+        >
+          -
+        </button>
+        <button
+          onClick={() => {
+            if (containerRef.current) {
+              const { clientWidth: cw, clientHeight: ch } = containerRef.current;
+              setViewport({
+                zoom: 1,
+                x: cw / 2 - (cw / 2 - viewport.x) / viewport.zoom,
+                y: ch / 2 - (ch / 2 - viewport.y) / viewport.zoom,
+              });
+            }
+          }}
+          className="px-2 py-0.5 rounded hover:bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--text)] text-[11px] transition-colors cursor-pointer"
+          title="Reset Zoom to 100%"
+        >
+          {Math.round(viewport.zoom * 100)}%
+        </button>
+        <button
+          onClick={() => {
+            const newZoom = Math.min(viewport.zoom * 1.15, 5);
+            if (containerRef.current) {
+              const { clientWidth: cw, clientHeight: ch } = containerRef.current;
+              setViewport({
+                zoom: newZoom,
+                x: cw / 2 - (cw / 2 - viewport.x) * (newZoom / viewport.zoom),
+                y: ch / 2 - (ch / 2 - viewport.y) * (newZoom / viewport.zoom),
+              });
+            }
+          }}
+          className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-2)] text-[var(--text)] transition-colors cursor-pointer text-sm font-bold"
+          title="Zoom In"
+        >
+          +
+        </button>
       </div>
     </div>
   );

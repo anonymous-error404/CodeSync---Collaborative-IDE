@@ -91,6 +91,10 @@ const saveFileContent = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { filePath, content } = req.body;
 
+  if (req.membership?.sessionRole === 'student' && req.membership?.editorLocked) {
+    return res.status(403).json({ success: false, error: 'Your editor is locked by the teacher' });
+  }
+
   if (!filePath) {
     return res.status(400).json({ success: false, error: 'Body parameter filePath is required' });
   }
@@ -106,6 +110,10 @@ const saveFileContent = asyncWrapper(async (req, res) => {
 const createItem = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { filePath, isDirectory } = req.body;
+
+  if (req.membership?.sessionRole === 'student' && req.membership?.editorLocked) {
+    return res.status(403).json({ success: false, error: 'Your editor is locked by the teacher' });
+  }
 
   if (!filePath) {
     return res.status(400).json({ success: false, error: 'Body parameter filePath is required' });
@@ -123,6 +131,10 @@ const deleteItem = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { filePath } = req.query;
 
+  if (req.membership?.sessionRole === 'student' && req.membership?.editorLocked) {
+    return res.status(403).json({ success: false, error: 'Your editor is locked by the teacher' });
+  }
+
   if (!filePath) {
     return res.status(400).json({ success: false, error: 'Query param filePath is required' });
   }
@@ -138,6 +150,10 @@ const deleteItem = asyncWrapper(async (req, res) => {
 const renameItem = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { oldPath, newPath } = req.body;
+
+  if (req.membership?.sessionRole === 'student' && req.membership?.editorLocked) {
+    return res.status(403).json({ success: false, error: 'Your editor is locked by the teacher' });
+  }
 
   if (!oldPath || !newPath) {
     return res.status(400).json({ success: false, error: 'Parameters oldPath and newPath are required' });

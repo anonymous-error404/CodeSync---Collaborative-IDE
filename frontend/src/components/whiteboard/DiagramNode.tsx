@@ -16,6 +16,7 @@ interface Props {
   isSelected: boolean;
   isHighlighted?: boolean;
   onOpenInIDE?: (filePath: string) => void;
+  boardTheme?: 'dark' | 'light';
 }
 
 // ─── Node type metadata ───────────────────────────────────────────────────────
@@ -117,6 +118,15 @@ function CircleShape({ w, h, color, fill }: { w: number; h: number; color: strin
   );
 }
 
+function TriangleShape({ w, h, color, fill }: { w: number; h: number; color: string; fill: string }) {
+  const pts = `${w / 2},3 ${w - 3},${h - 3} 3,${h - 3}`;
+  return (
+    <svg width={w} height={h} className="absolute inset-0">
+      <polygon points={pts} fill={fill} stroke={color} strokeWidth={2} />
+    </svg>
+  );
+}
+
 function ActorShape({ w, h, color }: { w: number; h: number; color: string }) {
   // Stick figure
   const cx = w / 2;
@@ -139,12 +149,13 @@ function ActorShape({ w, h, color }: { w: number; h: number; color: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInIDE }: Props) {
+export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInIDE, boardTheme = 'dark' }: Props) {
+  const isLight = boardTheme === 'light';
   const w = el.width ?? 160;
   const h = el.height ?? 70;
   const meta = NODE_META[el.diagramType ?? 'generic'] ?? NODE_META.generic;
   const color = el.strokeColor ?? meta.defaultColor;
-  const fill = el.fillColor ?? 'var(--surface)';
+  const fill = el.fillColor ?? (isLight ? '#ffffff' : 'var(--surface)');
   const isUml = el.diagramType === 'uml_class' || el.diagramType === 'uml_interface' || el.diagramType === 'uml_abstract';
   const isEr = el.diagramType === 'er_entity' || el.diagramType === 'er_weak_entity';
   const hasSections = (isUml || isEr) && ((el.fields?.length ?? 0) > 0 || (el.methods?.length ?? 0) > 0);
@@ -155,19 +166,25 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
     ? `0 0 0 2px #f0883e, 0 2px 10px rgba(240,136,62,0.3)`
     : 'var(--shadow-md)';
 
+  // Shape resolution: explicit element shape takes precedence over generic diagramType
+  const shapeType = ['circle', 'triangle', 'diamond', 'cylinder', 'hexagon', 'rectangle'].includes(el.type)
+    ? el.type
+    : meta.shape;
+
   // Shape-specific outer element
   const renderShape = () => {
-    switch (meta.shape) {
+    switch (shapeType) {
       case 'cylinder':  return <CylinderShape w={w} h={h} color={color} fill={fill} />;
       case 'hexagon':   return <HexagonShape w={w} h={h} color={color} fill={fill} />;
       case 'diamond':   return <DiamondShape w={w} h={h} color={color} fill={fill} />;
       case 'circle':    return <CircleShape w={w} h={h} color={color} fill={fill} />;
+      case 'triangle':  return <TriangleShape w={w} h={h} color={color} fill={fill} />;
       case 'actor':     return <ActorShape w={w} h={h} color={color} />;
       default: return null;
     }
   };
 
-  const usesvgShape = ['cylinder', 'hexagon', 'diamond', 'circle', 'actor'].includes(meta.shape);
+  const usesvgShape = ['cylinder', 'hexagon', 'diamond', 'circle', 'triangle', 'actor'].includes(shapeType);
 
   // Frame node
   if (el.type === 'frame') {
@@ -197,15 +214,15 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
       <div
         style={{
           width: w, height: h,
-          background: el.fillColor ?? '#21262d',
-          border: `1px solid ${color}`,
+          background: el.fillColor ?? (isLight ? '#fff8c5' : '#21262d'),
+          border: `1px solid ${isLight ? '#d4a72c' : color}`,
           borderRadius: 4,
           borderTopRightRadius: 20,
           boxShadow,
           padding: 10,
           fontFamily: 'var(--font-sans)',
           fontSize: 13,
-          color: 'var(--text)',
+          color: isLight ? '#1f2328' : 'var(--text)',
           whiteSpace: 'pre-wrap',
           overflow: 'hidden',
         }}
@@ -224,7 +241,7 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
           fontFamily: 'var(--font-sans)',
           fontSize: el.fontSize ?? 14,
           fontWeight: el.fontWeight ?? 'normal',
-          color: el.strokeColor ?? 'var(--text)',
+          color: el.strokeColor ?? (isLight ? '#1f2328' : 'var(--text)'),
           padding: '2px 4px',
           outline: isSelected ? `2px solid ${color}` : undefined,
           borderRadius: 4,
@@ -237,13 +254,15 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
     );
   }
 
+  const isGenericShape = (!el.diagramType || el.diagramType === 'generic') && !hasSections;
+
   return (
     <div
       style={{
         width: w,
         minHeight: h,
         position: 'relative',
-        borderRadius: meta.shape === 'rect' ? 8 : 0,
+        borderRadius: (shapeType === 'rect' || shapeType === 'rectangle') ? 8 : 0,
         border: !usesvgShape ? `2px solid ${color}` : 'none',
         background: !usesvgShape ? fill : 'transparent',
         boxShadow,
@@ -255,7 +274,28 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
       {/* SVG shape overlay */}
       {usesvgShape && renderShape()}
 
-      {/* Content layer (above SVG shape) */}
+      {/* Content layer: clean centered text for generic shapes, semantic layout for architecture nodes */}
+      {isGenericShape ? (
+        <div
+          className="absolute inset-0 flex items-center justify-center p-2 text-center pointer-events-none select-none"
+          style={{ zIndex: 2 }}
+        >
+          {el.text ? (
+            <span
+              style={{
+                fontSize: el.fontSize ?? 13,
+                fontWeight: el.fontWeight ?? 600,
+                color: el.strokeColor ?? (isLight ? '#1f2328' : 'var(--text)'),
+                wordBreak: 'break-word',
+                maxWidth: shapeType === 'triangle' ? '65%' : '85%',
+                marginTop: shapeType === 'triangle' ? (h * 0.22) : 0,
+              }}
+            >
+              {el.text}
+            </span>
+          ) : null}
+        </div>
+      ) : (
       <div
         className="absolute inset-0 flex flex-col"
         style={{ zIndex: 2 }}
@@ -418,6 +458,7 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

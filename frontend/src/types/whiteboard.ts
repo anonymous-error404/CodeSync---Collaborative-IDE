@@ -70,6 +70,7 @@ export type ElementType =
   | 'stroke'
   | 'rectangle'
   | 'circle'
+  | 'triangle'
   | 'diamond'
   | 'parallelogram'
   | 'cylinder'

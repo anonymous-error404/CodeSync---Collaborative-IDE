@@ -30,7 +30,7 @@ export function recognizeStroke(points) {
 
   if (width < 15 && height < 15) return null;
 
-  const isClosed = distanceStartEnd < Math.max(width, height) * 0.4;
+  const isClosed = distanceStartEnd < Math.max(width, height) * 0.45;
 
   if (isClosed) {
     const aspectRatio = width / height;
@@ -38,17 +38,100 @@ export function recognizeStroke(points) {
     const centerY = minY + height / 2;
     const avgRadius = (width + height) / 4;
 
-    let isCircleLike = true;
-    for (let i = 0; i < points.length; i += Math.ceil(points.length / 12)) {
+    // 1. Radial deviation for circle check
+    let totalRadialDev = 0;
+    const sampleStep = Math.max(1, Math.floor(points.length / 24));
+    let sampleCount = 0;
+    for (let i = 0; i < points.length; i += sampleStep) {
       const r = Math.hypot(points[i].x - centerX, points[i].y - centerY);
-      if (Math.abs(r - avgRadius) > avgRadius * 0.4) { isCircleLike = false; break; }
+      totalRadialDev += Math.abs(r - avgRadius);
+      sampleCount++;
+    }
+    const meanRadialDev = sampleCount > 0 ? (totalRadialDev / sampleCount) / avgRadius : 1;
+
+    // 2. Triangle analysis via slice widths
+    const topPoints = points.filter(p => p.y < minY + height * 0.25);
+    const botPoints = points.filter(p => p.y > maxY - height * 0.25);
+    const midPoints = points.filter(p => p.y >= minY + height * 0.35 && p.y <= maxY - height * 0.35);
+
+    const spanX = (pts) => {
+      if (pts.length < 2) return 0;
+      return Math.max(...pts.map(p => p.x)) - Math.min(...pts.map(p => p.x));
+    };
+    const spanY = (pts) => {
+      if (pts.length < 2) return 0;
+      return Math.max(...pts.map(p => p.y)) - Math.min(...pts.map(p => p.y));
+    };
+
+    const topSpan = spanX(topPoints);
+    const botSpan = spanX(botPoints);
+    const midSpan = spanX(midPoints);
+
+    const isUprightTriangle = topPoints.length > 0 && botPoints.length > 0 &&
+      topSpan < width * 0.35 && botSpan > width * 0.60;
+
+    const isInvertedTriangle = topPoints.length > 0 && botPoints.length > 0 &&
+      botSpan < width * 0.35 && topSpan > width * 0.60;
+
+    const leftPoints = points.filter(p => p.x < minX + width * 0.25);
+    const rightPoints = points.filter(p => p.x > maxX - width * 0.25);
+    const leftSpan = spanY(leftPoints);
+    const rightSpan = spanY(rightPoints);
+    const isLeftTriangle = leftPoints.length > 0 && rightPoints.length > 0 && leftSpan < height * 0.35 && rightSpan > height * 0.60;
+    const isRightTriangle = leftPoints.length > 0 && rightPoints.length > 0 && rightSpan < height * 0.35 && leftSpan > height * 0.60;
+
+    const isTriangle = isUprightTriangle || isInvertedTriangle || isLeftTriangle || isRightTriangle;
+
+    // 3. Diamond analysis
+    const isDiamond = !isTriangle &&
+      topSpan < width * 0.40 &&
+      botSpan < width * 0.40 &&
+      midSpan > width * 0.70 &&
+      aspectRatio >= 0.65 && aspectRatio <= 1.5;
+
+    // Match circle
+    if (meanRadialDev < 0.20 && aspectRatio >= 0.72 && aspectRatio <= 1.38 && !isTriangle && !isDiamond) {
+      const size = Math.max(width, height);
+      return {
+        type: 'circle',
+        x: centerX - size / 2,
+        y: centerY - size / 2,
+        width: size,
+        height: size,
+        confidence: 0.92,
+      };
     }
 
-    if (isCircleLike && aspectRatio >= 0.7 && aspectRatio <= 1.3) {
-      return { type: 'circle', x: minX, y: minY, width: Math.max(width, height), height: Math.max(width, height), confidence: 0.88 };
+    if (isTriangle) {
+      return {
+        type: 'triangle',
+        x: minX,
+        y: minY,
+        width,
+        height,
+        confidence: 0.88,
+      };
     }
 
-    return { type: 'rectangle', x: minX, y: minY, width, height, confidence: 0.82 };
+    if (isDiamond) {
+      return {
+        type: 'diamond',
+        x: minX,
+        y: minY,
+        width,
+        height,
+        confidence: 0.86,
+      };
+    }
+
+    return {
+      type: 'rectangle',
+      x: minX,
+      y: minY,
+      width,
+      height,
+      confidence: 0.84,
+    };
   }
 
   // Open shape: line or arrow
@@ -60,8 +143,14 @@ export function recognizeStroke(points) {
   const straightLength = distanceStartEnd;
   const straightness = straightLength / (totalPathLength || 1);
 
-  if (straightness > 0.85) {
-    return { type: 'arrow', x: start.x, y: start.y, points: [start, end], confidence: 0.9 };
+  if (straightness > 0.80) {
+    return {
+      type: 'arrow',
+      x: start.x,
+      y: start.y,
+      points: [start, end],
+      confidence: 0.90,
+    };
   }
 
   return null;

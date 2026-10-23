@@ -22,13 +22,13 @@ export const startSession = asyncWrapper(async (req, res) => {
   // Create the session
   const session = await TeachingSession.create({ workspaceId, teacherUserId });
 
-  // Assign teacher role to caller, student role to all other members
+  // Assign teacher role to caller, student role to all other members, reset locks
   await WorkspaceMember.update(
-    { sessionRole: 'student' },
+    { sessionRole: 'student', editorLocked: false, handRaised: false },
     { where: { workspaceId } }
   );
   await WorkspaceMember.update(
-    { sessionRole: 'teacher' },
+    { sessionRole: 'teacher', editorLocked: false, handRaised: false },
     { where: { workspaceId, userId: teacherUserId } }
   );
 
@@ -52,7 +52,10 @@ export const endSession = asyncWrapper(async (req, res) => {
   await session.save();
 
   // Reset all sessionRoles
-  await WorkspaceMember.update({ sessionRole: 'none' }, { where: { workspaceId } });
+  await WorkspaceMember.update(
+    { sessionRole: 'none', editorLocked: false, handRaised: false },
+    { where: { workspaceId } }
+  );
 
   res.status(200).json({ success: true, message: 'Session ended successfully' });
 });
@@ -95,6 +98,8 @@ export const getSession = asyncWrapper(async (req, res) => {
       username: m.User?.username,
       sessionRole: m.sessionRole,
       role: m.role,
+      editorLocked: m.editorLocked,
+      handRaised: m.handRaised,
     })),
   });
 });
@@ -130,9 +135,79 @@ export const assignSessionRole = asyncWrapper(async (req, res) => {
   }
 
   member.sessionRole = sessionRole;
+  if (sessionRole === 'teacher') {
+    member.editorLocked = false;
+    member.handRaised = false;
+  }
   await member.save();
 
-  res.status(200).json({ success: true, member: { userId: member.userId, sessionRole: member.sessionRole } });
+  res.status(200).json({
+    success: true,
+    member: {
+      userId: member.userId,
+      sessionRole: member.sessionRole,
+      editorLocked: member.editorLocked,
+      handRaised: member.handRaised,
+    },
+  });
+});
+
+/**
+ * PATCH /workspaces/:id/session/members/:userId/lock
+ * Teacher locks or unlocks a student's editor.
+ * Requires: sessionRole === 'teacher'.
+ */
+export const toggleStudentLock = asyncWrapper(async (req, res) => {
+  const { id: workspaceId, userId } = req.params;
+  const { locked } = req.body;
+
+  const member = await WorkspaceMember.findOne({ where: { workspaceId, userId } });
+  if (!member) {
+    return res.status(404).json({ success: false, error: 'Member not found' });
+  }
+
+  member.editorLocked = Boolean(locked);
+  await member.save();
+
+  res.status(200).json({
+    success: true,
+    member: {
+      userId: member.userId,
+      editorLocked: member.editorLocked,
+    },
+  });
+});
+
+/**
+ * POST /workspaces/:id/session/lock-all
+ * Teacher locks all students' editors.
+ * Requires: sessionRole === 'teacher'.
+ */
+export const lockAllStudents = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+
+  await WorkspaceMember.update(
+    { editorLocked: true },
+    { where: { workspaceId, sessionRole: 'student' } }
+  );
+
+  res.status(200).json({ success: true, message: 'All student editors locked' });
+});
+
+/**
+ * POST /workspaces/:id/session/unlock-all
+ * Teacher unlocks all students' editors.
+ * Requires: sessionRole === 'teacher'.
+ */
+export const unlockAllStudents = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+
+  await WorkspaceMember.update(
+    { editorLocked: false },
+    { where: { workspaceId, sessionRole: 'student' } }
+  );
+
+  res.status(200).json({ success: true, message: 'All student editors unlocked' });
 });
 
 /**
@@ -174,6 +249,8 @@ export const getMySessionRole = asyncWrapper(async (req, res) => {
   res.status(200).json({
     success: true,
     sessionRole: member.sessionRole,
+    editorLocked: member.editorLocked,
+    handRaised: member.handRaised,
     sessionActive: !!session,
   });
 });

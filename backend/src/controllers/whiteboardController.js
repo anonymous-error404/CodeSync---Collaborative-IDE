@@ -1,6 +1,8 @@
 import whiteboardService from '../services/whiteboardService.js';
 import diagramRecognitionService from '../services/diagramRecognitionService.js';
 import nlpDiagramService from '../services/nlpDiagramService.js';
+import { WorkspaceMember } from '../models/index.js';
+import { roleRanks } from '../middleware/rbacMiddleware.js';
 
 export async function generateFromPrompt(req, res, next) {
   try {
@@ -29,6 +31,16 @@ export async function getWhiteboard(req, res, next) {
     if (!whiteboard) {
       return res.status(404).json({ success: false, error: 'Whiteboard not found' });
     }
+
+    if (whiteboard.workspaceId && req.user?.id) {
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId: whiteboard.workspaceId, userId: req.user.id }
+      });
+      if (!membership) {
+        return res.status(403).json({ success: false, error: 'Access denied: not a member of this workspace' });
+      }
+    }
+
     res.status(200).json({ success: true, whiteboard });
   } catch (error) {
     next(error);
@@ -59,7 +71,25 @@ export async function createWhiteboard(req, res, next) {
 export async function updateWhiteboard(req, res, next) {
   try {
     const { id } = req.params;
-    const { title, mode, elements, viewport, metadata } = req.body;
+    const { title, mode, elements, viewport, metadata, workspaceId } = req.body;
+
+    const existing = await whiteboardService.getWhiteboardById(id);
+    const targetWsId = existing?.workspaceId || workspaceId;
+
+    if (targetWsId && req.user?.id) {
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId: targetWsId, userId: req.user.id }
+      });
+      if (!membership) {
+        return res.status(403).json({ success: false, error: 'Access denied: not a member of this workspace' });
+      }
+      if (roleRanks[membership.role] < roleRanks.editor) {
+        return res.status(403).json({ success: false, error: 'Access denied: viewers cannot edit whiteboards' });
+      }
+      if (membership.sessionRole === 'student' && membership.editorLocked) {
+        return res.status(403).json({ success: false, error: 'Whiteboard editing is locked by the teacher' });
+      }
+    }
 
     const whiteboard = await whiteboardService.updateWhiteboard(id, {
       title,
@@ -82,10 +112,24 @@ export async function updateWhiteboard(req, res, next) {
 export async function deleteWhiteboard(req, res, next) {
   try {
     const { id } = req.params;
-    const success = await whiteboardService.deleteWhiteboard(id);
-    if (!success) {
+    const existing = await whiteboardService.getWhiteboardById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Whiteboard not found' });
     }
+
+    if (existing.workspaceId && req.user?.id) {
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId: existing.workspaceId, userId: req.user.id }
+      });
+      if (!membership) {
+        return res.status(403).json({ success: false, error: 'Access denied: not a member of this workspace' });
+      }
+      if (roleRanks[membership.role] < roleRanks.editor) {
+        return res.status(403).json({ success: false, error: 'Access denied: viewers cannot delete whiteboards' });
+      }
+    }
+
+    const success = await whiteboardService.deleteWhiteboard(id);
     res.status(200).json({ success: true, message: 'Whiteboard deleted successfully' });
   } catch (error) {
     next(error);
@@ -104,9 +148,9 @@ export async function recognizeStroke(req, res, next) {
 
 export async function cleanLayout(req, res, next) {
   try {
-    const { elements } = req.body;
-    const aligned = diagramRecognitionService.autoAlignLayout(elements);
-    res.status(200).json({ success: true, elements: aligned });
+    const { elements, algorithm, targetIds } = req.body;
+    const laid = diagramRecognitionService.cleanLayout(elements, algorithm, targetIds);
+    res.status(200).json({ success: true, elements: laid });
   } catch (error) {
     next(error);
   }
@@ -114,38 +158,10 @@ export async function cleanLayout(req, res, next) {
 
 export async function generateTaskProposals(req, res, next) {
   try {
-    const { selectedElements } = req.body;
-    if (!Array.isArray(selectedElements) || selectedElements.length === 0) {
-      return res.status(400).json({ success: false, error: 'No elements selected' });
-    }
-
-    const tasks = selectedElements
-      .filter(el => el.text || el.type === 'rectangle' || el.type === 'code_cell')
-      .map((el, idx) => ({
-        id: `task-prop-${idx}-${Date.now()}`,
-        title: el.text ? `Implement ${el.text.slice(0, 40)}` : `Build Component ${idx + 1}`,
-        description: `Task generated from whiteboard architecture object (${el.type}).\nLinked file path: ${el.linkedFilePath || 'None'}`,
-        status: 'proposed',
-        sourceElementId: el.id,
-        acceptanceCriteria: [
-          'Verify visual interface & integration contract',
-          'Add unit tests for implementation logic',
-        ],
-      }));
-
-    res.status(200).json({ success: true, tasks });
+    const { elements } = req.body;
+    const proposals = diagramRecognitionService.generateTaskProposals(elements);
+    res.status(200).json({ success: true, proposals });
   } catch (error) {
     next(error);
   }
 }
-
-export default {
-  listWhiteboards,
-  getWhiteboard,
-  createWhiteboard,
-  updateWhiteboard,
-  deleteWhiteboard,
-  recognizeStroke,
-  cleanLayout,
-  generateTaskProposals,
-};

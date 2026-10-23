@@ -11,19 +11,20 @@ import {
   generateFromPrompt,
 } from '../controllers/whiteboardController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { requireWorkspaceMember } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
-// Workspace whiteboard routes
-router.get('/workspaces/:workspaceId/whiteboards', authenticateToken, listWhiteboards);
-router.post('/workspaces/:workspaceId/whiteboards', authenticateToken, createWhiteboard);
+// Workspace whiteboard routes - protected by workspace RBAC
+router.get('/workspaces/:workspaceId/whiteboards', authenticateToken, requireWorkspaceMember('viewer'), listWhiteboards);
+router.post('/workspaces/:workspaceId/whiteboards', authenticateToken, requireWorkspaceMember('editor'), createWhiteboard);
 
-// Individual whiteboard routes
+// Individual whiteboard routes - verified against workspace membership
 router.get('/whiteboards/:id', authenticateToken, getWhiteboard);
 router.put('/whiteboards/:id', authenticateToken, updateWhiteboard);
 router.delete('/whiteboards/:id', authenticateToken, deleteWhiteboard);
 
-// Smart AI features endpoints
+// Smart diagram utilities
 router.post('/whiteboards/recognize-stroke', authenticateToken, recognizeStroke);
 router.post('/whiteboards/clean-layout', authenticateToken, cleanLayout);
 router.post('/whiteboards/generate-tasks', authenticateToken, generateTaskProposals);
