@@ -11,33 +11,40 @@ import {
 
 class ExecutionService {
   constructor() {
-    // Map<workspaceId, { process: ChildProcess, containerName: string }>
+    // Map<envKey, { process: ChildProcess, containerName: string, workspaceId: string, userId: string|number, username: string, isGlobal: boolean, filePath: string, startedAt: number }>
     this.runningContainers = new Map();
   }
 
   /**
-   * Executes a code file inside an isolated Docker container.
+   * Executes a code file inside an isolated Docker container for a specific member or globally.
    * Streams stdout/stderr in real-time via callbacks, then auto-removes the container.
    *
    * @param {Object}   params
    * @param {string}   params.workspaceId
+   * @param {string|number} [params.userId='global']
+   * @param {string}   [params.username='User']
+   * @param {boolean}  [params.isGlobal=false]
    * @param {string}   params.filePath   - Relative path within the workspace
    * @param {Function} params.onStdout   - Called with each stdout chunk
    * @param {Function} params.onStderr   - Called with each stderr chunk
    * @param {Function} params.onExit     - Called with exit code when done
    */
-  executeFile({ workspaceId, filePath, onStdout, onStderr, onExit }) {
+  executeFile({ workspaceId, userId = 'global', username = 'User', isGlobal = false, filePath, onStdout, onStderr, onExit }) {
     // Validate path — throws on traversal attempts
     resolveSafePath(workspaceId, filePath);
     const workspaceDir = getWorkspacePath(workspaceId);
 
-    // Kill any currently running container for this workspace
-    this.stopExecution(workspaceId);
+    const envKey = isGlobal ? `${workspaceId}:global` : `${workspaceId}:${userId}`;
+
+    // Kill any currently running container for this member's environment
+    this.stopExecution(envKey);
 
     const ext           = path.extname(filePath).toLowerCase();
     const fileName      = path.basename(filePath);
     const fileSubDir    = path.dirname(filePath);
-    const containerName = `${CONTAINER_NAME_PREFIX}-${workspaceId}`;
+    const containerName = isGlobal
+      ? `${CONTAINER_NAME_PREFIX}-${workspaceId}-global`
+      : `${CONTAINER_NAME_PREFIX}-${workspaceId}-u${userId}`;
 
     // Working directory inside the container (where the file lives)
     const containerWorkDir =
@@ -54,19 +61,28 @@ class ExecutionService {
       ext,
     });
 
-    console.log(`[Docker Engine] Launching container: ${containerName}`);
+    console.log(`[Docker Engine] Launching container for ${envKey}: ${containerName}`);
     console.log(`[Docker Engine] docker ${dockerArgs.join(' ')}`);
 
     const child = spawn('docker', dockerArgs, { shell: false });
-    this.runningContainers.set(workspaceId, { process: child, containerName });
+    this.runningContainers.set(envKey, {
+      process: child,
+      containerName,
+      workspaceId,
+      userId,
+      username,
+      isGlobal,
+      filePath,
+      startedAt: Date.now(),
+    });
 
     // Hard timeout — kill the container if it runs too long
     const timeoutHandle = setTimeout(() => {
-      if (this.runningContainers.has(workspaceId)) {
+      if (this.runningContainers.has(envKey)) {
         onStderr(
           `\n[Server] Execution timed out (${EXECUTION_TIMEOUT_MS / 1000}s limit reached).\n`
         );
-        this.stopExecution(workspaceId);
+        this.stopExecution(envKey);
       }
     }, EXECUTION_TIMEOUT_MS);
 
@@ -76,7 +92,7 @@ class ExecutionService {
 
     child.on('error', (err) => {
       clearTimeout(timeoutHandle);
-      this.runningContainers.delete(workspaceId);
+      this.runningContainers.delete(envKey);
       // Friendly hint when Docker daemon is not running
       const hint = err.code === 'ENOENT'
         ? ' — Is Docker installed and running?'
@@ -87,7 +103,7 @@ class ExecutionService {
 
     child.on('close', (code) => {
       clearTimeout(timeoutHandle);
-      this.runningContainers.delete(workspaceId);
+      this.runningContainers.delete(envKey);
       onExit(code ?? 0);
     });
   }
@@ -141,16 +157,27 @@ class ExecutionService {
   }
 
   /**
-   * Stops the running Docker container for a workspace (if any).
-   * @param {string} workspaceId
+   * Stops a running Docker container by environment key.
+   * @param {string} envKey - either "workspaceId:userId", "workspaceId:global", or "workspaceId" (for backward compat)
    * @returns {boolean} true if a container was killed, false if nothing was running
    */
-  stopExecution(workspaceId) {
-    const entry = this.runningContainers.get(workspaceId);
+  stopExecution(envKey) {
+    let targetKey = envKey;
+    if (!this.runningContainers.has(targetKey)) {
+      // Check if it was passed just workspaceId
+      for (const [k, v] of this.runningContainers.entries()) {
+        if (k === envKey || v.workspaceId === envKey) {
+          targetKey = k;
+          break;
+        }
+      }
+    }
+
+    const entry = this.runningContainers.get(targetKey);
     if (!entry) return false;
 
     const { process: child, containerName } = entry;
-    console.log(`[Docker Engine] Killing container: ${containerName}`);
+    console.log(`[Docker Engine] Killing container for ${targetKey}: ${containerName}`);
 
     // Send SIGKILL to the container via Docker (immediate, no graceful shutdown)
     spawn('docker', ['kill', containerName], { shell: false })
@@ -159,8 +186,93 @@ class ExecutionService {
     // Also terminate the `docker run` child process on the host side
     try { child.kill('SIGKILL'); } catch { /* already exited */ }
 
-    this.runningContainers.delete(workspaceId);
+    this.runningContainers.delete(targetKey);
     return true;
+  }
+
+  /**
+   * Stops execution for a specific user within a workspace.
+   */
+  stopUserExecution(workspaceId, userId) {
+    return this.stopExecution(`${workspaceId}:${userId}`);
+  }
+
+  /**
+   * Stops all running containers associated with a workspace.
+   */
+  stopWorkspaceExecutions(workspaceId) {
+    let stoppedAny = false;
+    for (const [key, entry] of this.runningContainers.entries()) {
+      if (entry.workspaceId === workspaceId) {
+        this.stopExecution(key);
+        stoppedAny = true;
+      }
+    }
+    return stoppedAny;
+  }
+
+  /**
+   * Lists all running execution environments for a workspace.
+   */
+  listEnvironments(workspaceId) {
+    const list = [];
+    for (const [envKey, entry] of this.runningContainers.entries()) {
+      if (entry.workspaceId === workspaceId) {
+        list.push({
+          envKey,
+          userId: entry.userId,
+          username: entry.username,
+          isGlobal: entry.isGlobal,
+          containerName: entry.containerName,
+          filePath: entry.filePath,
+          startedAt: entry.startedAt,
+          uptimeSec: Math.round((Date.now() - entry.startedAt) / 1000),
+          status: 'running',
+        });
+      }
+    }
+    return list;
+  }
+
+  /**
+   * Returns metadata about all supported and depended execution environments.
+   */
+  getSupportedEnvironments() {
+    return [
+      {
+        id: 'node',
+        name: 'Node.js',
+        runtime: 'Node.js 20.x (Alpine Linux)',
+        image: DOCKER_IMAGES.node,
+        extensions: ['.js', '.mjs', '.cjs'],
+        memoryLimit: DOCKER_MEMORY_LIMIT,
+        cpuLimit: DOCKER_CPU_LIMIT,
+        status: 'ready',
+        description: 'V8 JavaScript runtime with sandboxed execution.',
+      },
+      {
+        id: 'python',
+        name: 'Python',
+        runtime: 'Python 3.11 (Alpine Linux)',
+        image: DOCKER_IMAGES.python,
+        extensions: ['.py'],
+        memoryLimit: DOCKER_MEMORY_LIMIT,
+        cpuLimit: DOCKER_CPU_LIMIT,
+        status: 'ready',
+        description: 'CPython 3.11 interpreter with unbuffered I/O.',
+      },
+      {
+        id: 'java',
+        name: 'Java',
+        runtime: 'OpenJDK 17 (Alpine Linux)',
+        image: DOCKER_IMAGES.java,
+        extensions: ['.java'],
+        memoryLimit: DOCKER_MEMORY_LIMIT,
+        cpuLimit: DOCKER_CPU_LIMIT,
+        status: 'ready',
+        description: 'Full JDK compilation and runtime environment.',
+      },
+    ];
   }
 }
 

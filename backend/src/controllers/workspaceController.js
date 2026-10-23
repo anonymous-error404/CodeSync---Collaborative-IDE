@@ -2,6 +2,7 @@ import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import asyncWrapper from '../utils/asyncWrapper.js';
 import { WorkspaceMember } from '../models/index.js';
+import { checkPathLocked } from './lockController.js';
 
 /**
  * POST /api/workspaces
@@ -164,6 +165,11 @@ const saveFileContent = asyncWrapper(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Body parameter filePath is required' });
   }
 
+  const lockCheck = await checkPathLocked(id, filePath, req.user?.id);
+  if (lockCheck.isLocked) {
+    return res.status(423).json({ success: false, error: `File is locked by ${lockCheck.lock.lockedByName}` });
+  }
+
   const result = await storageService.writeFile(id, filePath, content);
   res.status(200).json({ success: true, ...result });
 });
@@ -212,6 +218,11 @@ const deleteItem = asyncWrapper(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Query param filePath is required' });
   }
 
+  const lockCheck = await checkPathLocked(id, filePath, req.user?.id);
+  if (lockCheck.isLocked) {
+    return res.status(423).json({ success: false, error: `Cannot delete: locked by ${lockCheck.lock.lockedByName}` });
+  }
+
   const result = await storageService.deleteItem(id, filePath);
   res.status(200).json({ success: true, ...result });
 });
@@ -234,6 +245,11 @@ const renameItem = asyncWrapper(async (req, res) => {
 
   if (!oldPath || !newPath) {
     return res.status(400).json({ success: false, error: 'Parameters oldPath and newPath are required' });
+  }
+
+  const lockCheck = await checkPathLocked(id, oldPath, req.user?.id);
+  if (lockCheck.isLocked) {
+    return res.status(423).json({ success: false, error: `Cannot rename: locked by ${lockCheck.lock.lockedByName}` });
   }
 
   const result = await storageService.renameItem(id, oldPath, newPath);

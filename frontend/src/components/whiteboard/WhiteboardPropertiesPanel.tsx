@@ -155,6 +155,34 @@ export function WhiteboardPropertiesPanel({ elements, selectedIds, onUpdate, onO
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Dimensions */}
+        {el.width !== undefined && el.height !== undefined && el.type !== 'stroke' && el.type !== 'connector' && el.type !== 'arrow' && (
+          <Section title="Dimensions">
+            <Row label="Width">
+              <input
+                type="number"
+                min={30}
+                max={2000}
+                value={Math.round(el.width)}
+                onChange={e => onUpdate({ ...el, width: Math.max(30, Number(e.target.value)) })}
+                className="w-full px-2 py-1 rounded text-xs focus:outline-none"
+                style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              />
+            </Row>
+            <Row label="Height">
+              <input
+                type="number"
+                min={20}
+                max={2000}
+                value={Math.round(el.height)}
+                onChange={e => onUpdate({ ...el, height: Math.max(20, Number(e.target.value)) })}
+                className="w-full px-2 py-1 rounded text-xs focus:outline-none"
+                style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              />
+            </Row>
+          </Section>
+        )}
+
         {/* Connector properties */}
         {(el.type === 'connector' || el.type === 'arrow') && (
           <ConnectorProps el={el} onUpdate={onUpdate} />

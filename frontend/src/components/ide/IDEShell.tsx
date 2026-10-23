@@ -7,7 +7,8 @@ import {
   Phone, PhoneOff, Mic, MicOff, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
   Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
-  Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest
+  Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest, Crown,
+  Cpu
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
@@ -20,6 +21,8 @@ import { ProfessionalPanel } from './ProfessionalPanel';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 import { collabService } from '../../services/workspaceCollabService';
+import { EnvironmentModal } from './EnvironmentModal';
+import { LockManagerModal, type WorkspaceLockItem } from './LockManagerModal';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -118,6 +121,12 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [openReviewsCount, setOpenReviewsCount] = useState<number>(0);
   const [projectToast, setProjectToast] = useState<string | null>(null);
 
+  // Resource Locks & Execution Environment state
+  const [workspaceLocks, setWorkspaceLocks] = useState<WorkspaceLockItem[]>([]);
+  const [showLockManager, setShowLockManager] = useState(false);
+  const [showEnvironmentModal, setShowEnvironmentModal] = useState(false);
+  const [globalExecutionMode, setGlobalExecutionMode] = useState(false);
+
   const [currentRole, setCurrentRole] = useState<WorkspaceRole>(workspace.myRole || myRole || 'owner');
   const [studentAccess, setStudentAccess] = useState<StudentAccessLevel>(workspace.studentAccess || 'editor');
 
@@ -128,10 +137,19 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const isNoView = (isStudent && studentAccess === 'no-view') || currentRole === 'no-view';
   const isViewer = currentRole === 'viewer' || (isStudent && studentAccess === 'viewer');
   const canAdmin = currentRole === 'owner' || currentRole === 'admin' || currentRole === 'teacher' || currentRole === 'team_leader';
-  const canEdit = !isNoView && !isViewer && (!isStudent || studentAccess === 'editor') && !(isStudent && isEditorLocked);
-  const isEffectiveReadOnly = isNoView || isViewer || (isStudent && isEditorLocked);
+  const canLock = canAdmin || currentRole === 'editor' || studentAccess === 'editor' || (workspaceType === 'professional' && currentRole === 'developer');
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
+
+  // Compute file lock status for active tab
+  const activeFileLock = activeTab ? workspaceLocks.find(l =>
+    l.targetPath === activeTab.path ||
+    (l.lockType === 'folder' && activeTab.path.startsWith(l.targetPath.endsWith('/') ? l.targetPath : `${l.targetPath}/`))
+  ) : null;
+  const isFileLockedByOther = Boolean(activeFileLock && activeFileLock.lockedBy !== user?.id && !canAdmin);
+
+  const canEdit = !isNoView && !isViewer && (!isStudent || studentAccess === 'editor') && !(isStudent && isEditorLocked) && !isFileLockedByOther;
+  const isEffectiveReadOnly = isNoView || isViewer || (isStudent && isEditorLocked) || isFileLockedByOther;
   const socketRef = useRef<Socket | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const isRemoteUpdatingRef = useRef<boolean>(false);
@@ -374,9 +392,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       });
     });
 
-    socket.on('execution-started', ({ filePath }: { filePath: string }) => {
+    socket.on('execution-started', ({ filePath, isGlobal, initiatedBy }: { filePath: string; isGlobal?: boolean; initiatedBy?: string }) => {
       setRunning(true);
-      setOutput(`> Running ${filePath}...\n`);
+      const prefix = isGlobal ? `> [Global Broadcast by ${initiatedBy || 'Admin'}] ` : '> ';
+      setOutput(`${prefix}Running ${filePath}...\n`);
     });
 
     socket.on('execution-stdout', ({ chunk }: { chunk: string }) => {
@@ -387,9 +406,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setOutput(prev => prev + chunk);
     });
 
-    socket.on('execution-finished', ({ exitCode }: { exitCode: number }) => {
+    socket.on('execution-finished', ({ exitCode, isGlobal }: { exitCode: number; isGlobal?: boolean }) => {
       setRunning(false);
-      setOutput(prev => prev + `\n> Process finished with exit code ${exitCode}`);
+      setOutput(prev => prev + `\n> Process finished with exit code ${exitCode}${isGlobal ? ' [Global]' : ''}`);
     });
 
     socket.on('workspace-ready', (data: {
@@ -399,12 +418,26 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       mySessionRole?: SessionRole;
       editorLocked?: boolean;
       studentAccess?: StudentAccessLevel;
+      locks?: WorkspaceLockItem[];
     }) => {
       if (data.myRole) setCurrentRole(data.myRole);
       if (data.mySessionRole) setSessionRole(data.mySessionRole);
       if (data.editorLocked !== undefined) setIsEditorLocked(data.editorLocked);
       if (data.studentAccess) setStudentAccess(data.studentAccess);
       if (data.fileTree) setTree(data.fileTree);
+      if (data.locks) setWorkspaceLocks(data.locks);
+    });
+
+    socket.on('lock:created', ({ lock }: { lock: WorkspaceLockItem }) => {
+      setWorkspaceLocks(prev => [...prev.filter(l => l.id !== lock.id), lock]);
+      setProjectToast(`Resource locked: ${lock.targetPath} (${lock.lockType}) by ${lock.lockedByName}`);
+      setTimeout(() => setProjectToast(null), 4000);
+    });
+
+    socket.on('lock:released', ({ lockId, targetPath }: { lockId: string; targetPath: string }) => {
+      setWorkspaceLocks(prev => prev.filter(l => l.id !== lockId));
+      setProjectToast(`Resource unlocked: ${targetPath}`);
+      setTimeout(() => setProjectToast(null), 3000);
     });
 
     socket.on('member:access_updated', (data: { workspaceId: string; studentAccess: StudentAccessLevel; updatedBy: string }) => {
@@ -413,11 +446,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         setTabs([]);
         setActiveTabId(null);
         setTree([]);
-        setOutput(prev => prev + `\n[Notice] Teacher (${data.updatedBy}) updated your access to No-View.`);
       } else {
         loadTree();
-        setOutput(prev => prev + `\n[Notice] Teacher (${data.updatedBy}) updated your access to ${data.studentAccess}.`);
       }
+      setProjectToast(`Teacher (${data.updatedBy}) set your access to ${data.studentAccess}`);
+      setTimeout(() => setProjectToast(null), 5000);
     });
 
     socket.on('member:access_changed', () => {
@@ -425,7 +458,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     });
 
     socket.on('workspace-error', ({ message }: { message: string }) => {
-      setOutput(prev => prev + `\n[Error] ${message}`);
+      setProjectToast(message);
+      setTimeout(() => setProjectToast(null), 5000);
     });
 
     // ── Session socket events ──
@@ -691,10 +725,12 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         setNewFileName('');
         openFileByPath(name);
       } else {
-        setOutput(prev => prev + `\n[Error] ${d.error ?? 'Could not create file'}`);
+        setProjectToast(d.error ?? 'Could not create file');
+        setTimeout(() => setProjectToast(null), 4000);
       }
     } catch {
-      setOutput(prev => prev + '\n[Error] Could not connect to server');
+      setProjectToast('Could not connect to server');
+      setTimeout(() => setProjectToast(null), 4000);
     }
   };
 
@@ -760,11 +796,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     setIsTerminalOpen(true);
     setIsTerminalCollapsed(false);
     await saveActive();
-    socket.emit('execute-code', { workspaceId: workspace.id, filePath: activeTab.path });
+    socket.emit('execute-code', {
+      workspaceId: workspace.id,
+      filePath: activeTab.path,
+      isGlobal: Boolean(globalExecutionMode && canAdmin),
+    });
   };
 
   const stopExecution = () => {
-    socketRef.current?.emit('stop-execution', { workspaceId: workspace.id });
+    socketRef.current?.emit('stop-execution', {
+      workspaceId: workspace.id,
+      isGlobal: Boolean(globalExecutionMode && canAdmin),
+    });
   };
 
   // ── Classroom Session Handlers (Teacher) ──
@@ -937,60 +980,116 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
         ) : (
           // ── Normal file row ──
-          <div className="relative flex items-center">
-            <button
-              onClick={() => openFile(node)}
-              className="flex-1 flex items-center gap-2 py-1.5 text-left transition-colors"
-              style={{
-                paddingLeft: 12 + depth * 14,
-                paddingRight: 48,
-                background: 'transparent',
-                border: 'none',
-                color: tabs.find(t => t.path === node.path) ? 'var(--accent)' : 'var(--text-secondary)',
-                fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
-                fontSize: 13,
-                cursor: 'pointer',
-                width: '100%',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              {node.type === 'directory'
-                ? <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
-                : <FileCode size={13} style={{ color: extColor(node.name), flexShrink: 0 }} />
-              }
-              <span className="truncate">{node.name}</span>
-            </button>
+          (() => {
+            const itemLock = workspaceLocks.find(l =>
+              l.targetPath === node.path ||
+              (l.lockType === 'folder' && node.path.startsWith(l.targetPath.endsWith('/') ? l.targetPath : `${l.targetPath}/`))
+            );
+            const isLocker = itemLock && itemLock.lockedBy === user?.id;
+            const canRelease = itemLock && (isLocker || canAdmin);
 
-            {/* Hover action buttons */}
-            {!isEffectiveReadOnly && (
-              <div
-                className="absolute right-1 top-0 bottom-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ display: 'flex' }}
-              >
+            return (
+              <div className="relative flex items-center">
                 <button
-                  onClick={e => startRename(node.path, node.name, e)}
-                  title="Rename"
-                  className="flex items-center justify-center w-5 h-5 rounded"
-                  style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                  onClick={() => openFile(node)}
+                  className="flex-1 flex items-center gap-2 py-1.5 text-left transition-colors"
+                  style={{
+                    paddingLeft: 12 + depth * 14,
+                    paddingRight: 64,
+                    background: 'transparent',
+                    border: 'none',
+                    color: tabs.find(t => t.path === node.path) ? 'var(--accent)' : 'var(--text-secondary)',
+                    fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <Pencil size={11} />
+                  {node.type === 'directory'
+                    ? <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+                    : <FileCode size={13} style={{ color: extColor(node.name), flexShrink: 0 }} />
+                  }
+                  <span className="truncate">{node.name}</span>
+                  {itemLock && (
+                    <span
+                      title={`Locked by ${itemLock.lockedByName} (${itemLock.lockType})`}
+                      className="ml-auto mr-1 flex items-center"
+                    >
+                      <Lock size={11} className="text-amber-400 shrink-0" />
+                    </span>
+                  )}
                 </button>
-                <button
-                  onClick={e => deleteFile(node.path, e)}
-                  title="Delete"
-                  className="flex items-center justify-center w-5 h-5 rounded"
-                  style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--error)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+
+                {/* Hover action buttons */}
+                <div
+                  className="absolute right-1 top-0 bottom-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ display: 'flex' }}
                 >
-                  <Trash2 size={11} />
-                </button>
+                  {/* Lock/Unlock button for editors & admins */}
+                  {canLock && (
+                    itemLock ? (
+                      canRelease && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: itemLock.id });
+                          }}
+                          title={`Unlock ${node.name}`}
+                          className="flex items-center justify-center w-5 h-5 rounded text-amber-400 hover:text-amber-200"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none' }}
+                        >
+                          <Unlock size={11} />
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          socketRef.current?.emit('lock:create', {
+                            workspaceId: workspace.id,
+                            lockType: node.type === 'directory' ? 'folder' : 'file',
+                            targetPath: node.path,
+                          });
+                        }}
+                        title={`Lock ${node.name}`}
+                        className="flex items-center justify-center w-5 h-5 rounded hover:text-amber-400"
+                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                      >
+                        <Lock size={11} />
+                      </button>
+                    )
+                  )}
+
+                  {!isEffectiveReadOnly && (!itemLock || isLocker || canAdmin) && (
+                    <>
+                      <button
+                        onClick={e => startRename(node.path, node.name, e)}
+                        title="Rename"
+                        className="flex items-center justify-center w-5 h-5 rounded"
+                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        onClick={e => deleteFile(node.path, e)}
+                        title="Delete"
+                        className="flex items-center justify-center w-5 h-5 rounded"
+                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--error)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })()
         )}
         {node.type === 'directory' && node.children && renderTree(node.children, depth + 1)}
       </div>
@@ -1062,16 +1161,16 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             }}
           >
             {isTeacher ? (
-              <>🎓 Teacher</>
+              <span className="flex items-center gap-1"><GraduationCap size={11} /> Teacher</span>
             ) : isStudent ? (
-              <>
+              <span className="flex items-center gap-1">
                 {studentAccess === 'no-view' ? <EyeOff size={11} /> : studentAccess === 'viewer' ? <Eye size={11} /> : <Edit3 size={11} />}
                 Student: {studentAccess}
-              </>
+              </span>
             ) : currentRole === 'team_leader' ? (
-              <>👑 Team Leader</>
+              <span className="flex items-center gap-1"><Crown size={11} /> Team Leader</span>
             ) : currentRole === 'developer' ? (
-              <>💻 Developer</>
+              <span className="flex items-center gap-1"><Code2 size={11} /> Developer</span>
             ) : (
               <>{currentRole}</>
             )}
@@ -1282,6 +1381,70 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
           </button>
 
+          {/* Environment button */}
+          <button
+            onClick={() => setShowEnvironmentModal(true)}
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: showEnvironmentModal ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
+              color: showEnvironmentModal ? '#60a5fa' : 'var(--text)',
+              border: `1px solid ${showEnvironmentModal ? '#3b82f6' : 'var(--border)'}`,
+              cursor: 'pointer',
+            }}
+            title="Execution Environment Settings & Sandbox Status"
+          >
+            <Cpu size={13} className="text-blue-400" />
+            <span className="hidden sm:inline">Env</span>
+            {globalExecutionMode && canAdmin && (
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" title="Global Execution Mode ON" />
+            )}
+          </button>
+
+          {/* Locks button */}
+          <button
+            onClick={() => setShowLockManager(true)}
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all relative"
+            style={{
+              background: showLockManager ? 'rgba(210, 153, 34, 0.2)' : 'var(--surface-2)',
+              color: showLockManager ? '#d29922' : 'var(--text)',
+              border: `1px solid ${showLockManager ? '#d29922' : 'var(--border)'}`,
+              cursor: 'pointer',
+            }}
+            title="Manage Resource Locks"
+          >
+            <Lock size={13} className={workspaceLocks.length > 0 ? 'text-amber-400' : 'text-gray-400'} />
+            <span className="hidden sm:inline">Locks</span>
+            {workspaceLocks.length > 0 && (
+              <span className="px-1 py-0.2 text-[9px] rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {workspaceLocks.length}
+              </span>
+            )}
+          </button>
+
+          {/* Lock / Unlock Active File button */}
+          {canLock && activeTab && (
+            <button
+              onClick={() => {
+                if (activeFileLock) {
+                  socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id });
+                } else {
+                  socketRef.current?.emit('lock:create', { workspaceId: workspace.id, lockType: 'file', targetPath: activeTab.path });
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors border"
+              style={{
+                background: activeFileLock ? 'rgba(210, 153, 34, 0.15)' : 'transparent',
+                borderColor: activeFileLock ? 'rgba(210, 153, 34, 0.4)' : 'var(--border)',
+                color: activeFileLock ? '#d29922' : 'var(--muted)',
+                cursor: 'pointer',
+              }}
+              title={activeFileLock ? 'Unlock active file' : 'Lock active file from edits'}
+            >
+              {activeFileLock ? <Unlock size={12} /> : <Lock size={12} />}
+              <span className="hidden md:inline">{activeFileLock ? 'Unlock' : 'Lock File'}</span>
+            </button>
+          )}
+
           {/* Run / Stop button */}
           {!isEffectiveReadOnly && (
             running ? (
@@ -1296,10 +1459,17 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <button
                 onClick={runFile}
                 disabled={!activeTab || !socketConnected}
-                className="flex items-center gap-2 px-4 h-8 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
-                style={{ background: 'var(--accent)', color: 'white', border: 'none', cursor: activeTab && socketConnected ? 'pointer' : 'not-allowed' }}
+                className="flex items-center gap-2 px-3.5 h-8 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all shadow-sm"
+                style={{
+                  background: globalExecutionMode && canAdmin ? '#8b5cf6' : 'var(--accent)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: activeTab && socketConnected ? 'pointer' : 'not-allowed',
+                }}
+                title={globalExecutionMode && canAdmin ? 'Run in Global Environment (Broadcasts to all members)' : 'Run in Isolated Private Member Environment'}
               >
-                <Play size={12} />Run
+                <Play size={12} />
+                {globalExecutionMode && canAdmin ? 'Global Run' : 'Run'}
               </button>
             )
           )}
@@ -1522,8 +1692,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                               className="flex items-center justify-between p-1.5 rounded text-xs"
                               style={{ background: 'var(--surface-2)' }}
                             >
-                              <span className="font-semibold truncate max-w-[120px]" style={{ color: 'var(--text)' }}>
-                                ✋ {h.username}
+                              <span className="font-semibold truncate max-w-[120px] flex items-center gap-1" style={{ color: 'var(--text)' }}>
+                                <Hand size={11} className="text-amber-400" /> {h.username}
                               </span>
                               <button
                                 onClick={() => handleLowerStudentHand(h.userId)}
@@ -1563,8 +1733,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     cursor: 'pointer',
                   }}
                 >
-                  <Hand size={12} />
-                  {myHandRaised ? 'Hand Raised ✋' : 'Raise Hand'}
+                  <Hand size={12} className={myHandRaised ? 'text-amber-400' : ''} />
+                  {myHandRaised ? 'Hand Raised' : 'Raise Hand'}
                 </button>
 
                 <button
@@ -1751,6 +1921,42 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       </span>
                     </div>
                   )}
+
+                  {/* Resource Lock Banner */}
+                  {isFileLockedByOther && activeFileLock && (
+                    <div
+                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
+                      style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Lock size={13} />
+                        Locked by {activeFileLock.lockedByName} ({activeFileLock.lockType.replace('_', ' ')}): Read-only access
+                        {activeFileLock.reason ? ` · "${activeFileLock.reason}"` : ''}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
+                        Locked Resource
+                      </span>
+                    </div>
+                  )}
+
+                  {activeFileLock && activeFileLock.lockedBy === user?.id && (
+                    <div
+                      className="flex items-center justify-between px-4 py-1.5 text-xs font-semibold shrink-0"
+                      style={{ background: 'rgba(47, 129, 247, 0.12)', borderBottom: '1px solid rgba(47, 129, 247, 0.3)', color: '#58a6ff' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Lock size={12} />
+                        You have locked this {activeFileLock.lockType.replace('_', ' ')}. Collaborators cannot edit it.
+                      </span>
+                      <button
+                        onClick={() => socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id })}
+                        className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors"
+                      >
+                        Release Lock
+                      </button>
+                    </div>
+                  )}
+
                   {/* Locked banner */}
                   {isEditorLocked && (
                     <div
@@ -1990,6 +2196,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           currentUserId={user?.id ?? 0}
           token={token}
           activeMemberFiles={activeMemberFiles}
+          socket={socketRef.current}
           onClose={() => setShowMembersPanel(false)}
           onStudentAccessUpdated={(userId, access) => {
             if (socketRef.current) {
@@ -2120,6 +2327,31 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
         </div>
       )}
+
+      {/* Environment Management Modal */}
+      <EnvironmentModal
+        workspaceId={workspace.id}
+        isOpen={showEnvironmentModal}
+        onClose={() => setShowEnvironmentModal(false)}
+        socket={socketRef.current}
+        isAdmin={canAdmin}
+        currentUserId={user?.id ?? 0}
+        globalExecutionMode={globalExecutionMode}
+        onToggleGlobalExecution={setGlobalExecutionMode}
+      />
+
+      {/* Resource Locks Manager Modal */}
+      <LockManagerModal
+        workspaceId={workspace.id}
+        isOpen={showLockManager}
+        onClose={() => setShowLockManager(false)}
+        locks={workspaceLocks}
+        socket={socketRef.current}
+        canLock={canLock}
+        isAdmin={canAdmin}
+        currentUserId={user?.id ?? 0}
+        activeFilePath={activeTab?.path}
+      />
 
     </div>
   );

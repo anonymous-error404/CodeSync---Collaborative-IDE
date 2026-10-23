@@ -42,6 +42,11 @@ export const updateMemberRole = asyncWrapper(async (req, res) => {
       });
     }
     member.role = role;
+    if (role === 'viewer') {
+      member.studentAccess = 'viewer';
+    } else if (role === 'editor') {
+      member.studentAccess = 'editor';
+    }
   }
 
   if (studentAccess && ['no-view', 'viewer', 'editor'].includes(studentAccess)) {

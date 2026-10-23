@@ -17,6 +17,7 @@
  *   - Autosave
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { Lock, GitBranch } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import type {
   CanvasElement, WhiteboardData, RemoteWhiteboardCursor,
@@ -804,35 +805,9 @@ export function IntelligentWhiteboard({
 
   const handleSelectTool = useCallback((tool: ToolType) => {
     if (readOnly && tool !== 'select' && tool !== 'hand') return;
-    if (tool.startsWith('node:')) {
-      const nodeType = tool.slice(5) as DiagramNodeType;
-      const defaults = NODE_TYPE_DEFAULTS[nodeType] ?? {};
-      const bb = computeBoundingBox(elements);
-      const newEl: CanvasElement = {
-        id: genId('node'),
-        type: 'rectangle',
-        x: (bb.centerX - 80) + (Math.random() * 60 - 30),
-        y: (bb.centerY - 35) + (Math.random() * 40 - 20),
-        width: defaults.width ?? 160,
-        height: defaults.height ?? 70,
-        diagramType: nodeType,
-        text: nodeType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        strokeColor: defaults.strokeColor ?? '#2f81f7',
-        fillColor: 'var(--surface)',
-        strokeWidth: 2,
-        status: 'proposed',
-      };
-      addElement(newEl);
-      setSelectedIds([newEl.id]);
-      setActiveTool('select');
-    } else if (tool === 'connector') {
-      setActiveTool(tool);
-      setPendingConnectorSourceId(null);
-    } else {
-      setActiveTool(tool);
-      setPendingConnectorSourceId(null);
-    }
-  }, [elements, addElement]);
+    setActiveTool(tool);
+    setPendingConnectorSourceId(null);
+  }, [readOnly]);
 
   // ── Canvas click on connector tool ───────────────────────────────────────
 
@@ -1194,7 +1169,7 @@ export function IntelligentWhiteboard({
               backdropFilter: 'blur(8px)',
             }}
           >
-            <span>🔒 Whiteboard is in Read-Only Mode</span>
+            <Lock size={14} /><span>Whiteboard is in Read-Only Mode</span>
           </div>
         )}
 
@@ -1222,6 +1197,7 @@ export function IntelligentWhiteboard({
           onViewportChange={setViewport}
           pendingConnectorSourceId={pendingConnectorSourceId}
           onConnectorTargetPicked={handleConnectorTargetPicked}
+          onToolReset={() => setActiveTool('select')}
           boardTheme={boardTheme}
         />
 
@@ -1258,7 +1234,7 @@ export function IntelligentWhiteboard({
               pointerEvents: 'none',
             }}
           >
-            🔗 Click a target node to create the connector — Esc to cancel
+            <GitBranch size={14} style={{ display: 'inline', marginRight: 4 }} /> Click a target node to create the connector — Esc to cancel
           </div>
         )}
       </div>

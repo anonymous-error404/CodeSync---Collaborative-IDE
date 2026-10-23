@@ -9,6 +9,7 @@
  *   - Connection point hints on hover
  */
 
+import { FileText } from 'lucide-react';
 import type { CanvasElement, DiagramNodeType, ComponentStatus } from '../../types/whiteboard';
 
 interface Props {
@@ -27,35 +28,35 @@ const NODE_META: Record<DiagramNodeType, {
   defaultColor: string;
   shape: 'rect' | 'cylinder' | 'diamond' | 'circle' | 'hexagon' | 'parallelogram' | 'actor';
 }> = {
-  service:          { icon: '⚙️', label: 'Service',       defaultColor: '#2f81f7', shape: 'rect' },
-  client:           { icon: '💻', label: 'Client',        defaultColor: '#58a6ff', shape: 'rect' },
-  api:              { icon: '🔌', label: 'API',           defaultColor: '#3fb950', shape: 'rect' },
-  database:         { icon: '🛢️', label: 'Database',      defaultColor: '#d29922', shape: 'cylinder' },
-  cache:            { icon: '⚡', label: 'Cache',         defaultColor: '#f0883e', shape: 'cylinder' },
-  queue:            { icon: '📨', label: 'Queue',         defaultColor: '#a371f7', shape: 'hexagon' },
-  worker:           { icon: '⚒️', label: 'Worker',        defaultColor: '#79c0ff', shape: 'rect' },
-  external:         { icon: '🌐', label: 'External',      defaultColor: '#7d8590', shape: 'rect' },
-  component:        { icon: '🧩', label: 'Component',     defaultColor: '#2f81f7', shape: 'rect' },
-  gateway:          { icon: '🔀', label: 'Gateway',       defaultColor: '#2f81f7', shape: 'rect' },
-  load_balancer:    { icon: '⚖️', label: 'Load Balancer', defaultColor: '#58a6ff', shape: 'rect' },
-  cdn:              { icon: '🌍', label: 'CDN',           defaultColor: '#79c0ff', shape: 'rect' },
-  storage:          { icon: '📦', label: 'Storage',       defaultColor: '#d29922', shape: 'cylinder' },
-  uml_class:        { icon: '📐', label: 'Class',         defaultColor: '#58a6ff', shape: 'rect' },
-  uml_interface:    { icon: '📋', label: 'Interface',     defaultColor: '#3fb950', shape: 'rect' },
-  uml_abstract:     { icon: '📐', label: 'Abstract',      defaultColor: '#a371f7', shape: 'rect' },
-  er_entity:        { icon: '🗂️', label: 'Entity',        defaultColor: '#a371f7', shape: 'rect' },
-  er_weak_entity:   { icon: '🗂️', label: 'Weak Entity',   defaultColor: '#7d8590', shape: 'rect' },
-  seq_lifeline:     { icon: '📍', label: 'Lifeline',      defaultColor: '#2f81f7', shape: 'rect' },
-  seq_actor:        { icon: '🧍', label: 'Actor',         defaultColor: '#58a6ff', shape: 'actor' },
-  workflow_step:    { icon: '▶️', label: 'Step',           defaultColor: '#3fb950', shape: 'rect' },
-  workflow_decision:{ icon: '❓', label: 'Decision',       defaultColor: '#f0883e', shape: 'diamond' },
-  workflow_state:   { icon: '⬤',  label: 'State',          defaultColor: '#a371f7', shape: 'circle' },
-  workflow_start:   { icon: '▶',  label: 'Start',          defaultColor: '#3fb950', shape: 'circle' },
-  workflow_end:     { icon: '⏹', label: 'End',            defaultColor: '#f85149', shape: 'circle' },
-  infra_node:       { icon: '🖥️', label: 'Server',         defaultColor: '#d29922', shape: 'rect' },
-  infra_container:  { icon: '🐋', label: 'Container',      defaultColor: '#58a6ff', shape: 'rect' },
-  infra_cloud:      { icon: '☁️', label: 'Cloud',          defaultColor: '#79c0ff', shape: 'rect' },
-  generic:          { icon: '□',  label: '',              defaultColor: '#7d8590', shape: 'rect' },
+  service:          { icon: 'SVC', label: 'Service',       defaultColor: '#2f81f7', shape: 'rect' },
+  client:           { icon: 'CLI', label: 'Client',        defaultColor: '#58a6ff', shape: 'rect' },
+  api:              { icon: 'API', label: 'API',           defaultColor: '#3fb950', shape: 'rect' },
+  database:         { icon: 'DB',  label: 'Database',      defaultColor: '#d29922', shape: 'cylinder' },
+  cache:            { icon: 'CSH', label: 'Cache',         defaultColor: '#f0883e', shape: 'cylinder' },
+  queue:            { icon: 'MQ',  label: 'Queue',         defaultColor: '#a371f7', shape: 'hexagon' },
+  worker:           { icon: 'WKR', label: 'Worker',        defaultColor: '#79c0ff', shape: 'rect' },
+  external:         { icon: 'EXT', label: 'External',      defaultColor: '#7d8590', shape: 'rect' },
+  component:        { icon: 'CMP', label: 'Component',     defaultColor: '#2f81f7', shape: 'rect' },
+  gateway:          { icon: 'GW',  label: 'Gateway',       defaultColor: '#2f81f7', shape: 'rect' },
+  load_balancer:    { icon: 'LB',  label: 'Load Balancer', defaultColor: '#58a6ff', shape: 'rect' },
+  cdn:              { icon: 'CDN', label: 'CDN',           defaultColor: '#79c0ff', shape: 'rect' },
+  storage:          { icon: 'STR', label: 'Storage',       defaultColor: '#d29922', shape: 'cylinder' },
+  uml_class:        { icon: 'CLS', label: 'Class',         defaultColor: '#58a6ff', shape: 'rect' },
+  uml_interface:    { icon: 'ITF', label: 'Interface',     defaultColor: '#3fb950', shape: 'rect' },
+  uml_abstract:     { icon: 'ABS', label: 'Abstract',      defaultColor: '#a371f7', shape: 'rect' },
+  er_entity:        { icon: 'ENT', label: 'Entity',        defaultColor: '#a371f7', shape: 'rect' },
+  er_weak_entity:   { icon: 'WE',  label: 'Weak Entity',   defaultColor: '#7d8590', shape: 'rect' },
+  seq_lifeline:     { icon: 'LFL', label: 'Lifeline',      defaultColor: '#2f81f7', shape: 'rect' },
+  seq_actor:        { icon: 'ACT', label: 'Actor',         defaultColor: '#58a6ff', shape: 'actor' },
+  workflow_step:    { icon: '▶',  label: 'Step',           defaultColor: '#3fb950', shape: 'rect' },
+  workflow_decision:{ icon: '?',   label: 'Decision',       defaultColor: '#f0883e', shape: 'diamond' },
+  workflow_state:   { icon: '●',   label: 'State',          defaultColor: '#a371f7', shape: 'circle' },
+  workflow_start:   { icon: '▶',   label: 'Start',          defaultColor: '#3fb950', shape: 'circle' },
+  workflow_end:     { icon: '■',   label: 'End',            defaultColor: '#f85149', shape: 'circle' },
+  infra_node:       { icon: 'SRV', label: 'Server',         defaultColor: '#d29922', shape: 'rect' },
+  infra_container:  { icon: 'CTR', label: 'Container',      defaultColor: '#58a6ff', shape: 'rect' },
+  infra_cloud:      { icon: 'CLD', label: 'Cloud',          defaultColor: '#79c0ff', shape: 'rect' },
+  generic:          { icon: '□',   label: '',              defaultColor: '#7d8590', shape: 'rect' },
 };
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -384,7 +385,7 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
                   gap: 4,
                 }}
               >
-                <span>{field.isPrimaryKey ? '🔑' : field.isForeignKey ? '🔗' : '·'}</span>
+                <span style={{ fontSize: 9, opacity: 0.8, minWidth: 16 }}>{field.isPrimaryKey ? 'PK' : field.isForeignKey ? 'FK' : '·'}</span>
                 <span style={{ fontWeight: field.isPrimaryKey ? 600 : 400 }}>{field.name}</span>
                 <span style={{ opacity: 0.55 }}>: {field.type}</span>
               </div>
@@ -422,7 +423,7 @@ export function DiagramNode({ element: el, isSelected, isHighlighted, onOpenInID
             className="flex items-center gap-1 px-2.5 pb-1.5 mt-auto"
             style={{ fontSize: 10, color: 'var(--muted)', marginTop: 'auto' }}
           >
-            <span>📄</span>
+            <FileText size={11} />
             <span
               style={{
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

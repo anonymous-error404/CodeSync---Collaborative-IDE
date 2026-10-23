@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Users, UserPlus, Copy, Check, Trash2, Crown, Shield, Eye, EyeOff, Edit3, X,
-  GraduationCap, Lock, FileCode
+  GraduationCap, Lock, FileCode, Hand
 } from 'lucide-react';
 import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceType, StudentAccessLevel } from '../../types';
 import { collabService } from '../../services/workspaceCollabService';
@@ -14,6 +14,7 @@ interface Props {
   currentUserId: number;
   token: string | null;
   activeMemberFiles?: Record<number, string>;
+  socket?: any;
   onClose: () => void;
   onStudentAccessUpdated?: (userId: number, access: StudentAccessLevel) => void;
 }
@@ -25,6 +26,7 @@ export function MembersPanel({
   currentUserId,
   token,
   activeMemberFiles,
+  socket,
   onClose,
   onStudentAccessUpdated,
 }: Props) {
@@ -68,6 +70,17 @@ export function MembersPanel({
     fetchData();
   }, [workspaceId, token, canManageInvites]);
 
+  useEffect(() => {
+    if (!socket) return;
+    const handleAccessChanged = (data: { userId: number; studentAccess: StudentAccessLevel }) => {
+      setMembers(prev => prev.map(m => Number(m.userId) === Number(data.userId) ? { ...m, studentAccess: data.studentAccess } : m));
+    };
+    socket.on('member:access_changed', handleAccessChanged);
+    return () => {
+      socket.off('member:access_changed', handleAccessChanged);
+    };
+  }, [socket]);
+
   const canChangeMember = (targetMember: WorkspaceMember) => {
     if (targetMember.userId === currentUserId) return false;
     if (isOwner) return true;
@@ -95,7 +108,16 @@ export function MembersPanel({
     try {
       const res = await collabService.updateMemberRole(workspaceId, userId, newRole, token);
       if (res && (res as any).success) {
-        setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role: newRole } : m));
+        const nextAccess: StudentAccessLevel | undefined =
+          newRole === 'editor' ? 'editor' : newRole === 'viewer' ? 'viewer' : undefined;
+        setMembers(prev => prev.map(m => m.userId === userId ? {
+          ...m,
+          role: newRole,
+          ...(nextAccess ? { studentAccess: nextAccess } : {}),
+        } : m));
+        if (nextAccess) {
+          onStudentAccessUpdated?.(userId, nextAccess);
+        }
       } else {
         setError((res as any)?.error || 'Failed to update role');
       }
@@ -296,8 +318,9 @@ export function MembersPanel({
                             {workspaceType === 'educational' ? (
                               <>
                                 <option value="student">Student</option>
-                                {isOwner && <option value="teacher">Teacher</option>}
+                                <option value="editor">Editor</option>
                                 <option value="viewer">Viewer</option>
+                                {isOwner && <option value="teacher">Teacher</option>}
                               </>
                             ) : workspaceType === 'professional' ? (
                               <>
@@ -430,7 +453,7 @@ export function MembersPanel({
                         ) : (
                           <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
                             Student {m.editorLocked && <span className="flex items-center text-amber-400 font-bold ml-1"><Lock size={9} /> Locked</span>}
-                            {m.handRaised && <span className="ml-1">✋</span>}
+                            {m.handRaised && <Hand size={10} className="inline ml-1 text-amber-400" />}
                           </span>
                         )}
                       </div>
@@ -455,8 +478,9 @@ export function MembersPanel({
                       {workspaceType === 'educational' ? (
                         <>
                           <option value="student">Student</option>
-                          {isOwner && <option value="teacher">Teacher</option>}
+                          <option value="editor">Editor</option>
                           <option value="viewer">Viewer</option>
+                          {isOwner && <option value="teacher">Teacher</option>}
                         </>
                       ) : workspaceType === 'professional' ? (
                         <>

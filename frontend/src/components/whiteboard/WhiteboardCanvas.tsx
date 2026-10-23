@@ -1,8 +1,27 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { CanvasElement, RemoteWhiteboardCursor, Anchor, RelationshipType } from '../../types/whiteboard';
+import type { CanvasElement, RemoteWhiteboardCursor, Anchor, RelationshipType, DiagramNodeType } from '../../types/whiteboard';
 import type { ToolType } from './WhiteboardToolbar';
 import { CodeCellNode } from './CodeCellNode';
 import { DiagramNode } from './DiagramNode';
+
+const NODE_TYPE_DEFAULTS: Partial<Record<DiagramNodeType, { strokeColor?: string; width?: number; height?: number; type?: string }>> = {
+  service:       { strokeColor: '#2f81f7', width: 160, height: 70 },
+  client:        { strokeColor: '#58a6ff', width: 160, height: 70 },
+  api:           { strokeColor: '#3fb950', width: 160, height: 70 },
+  database:      { strokeColor: '#d29922', width: 140, height: 90, type: 'cylinder' },
+  cache:         { strokeColor: '#f0883e', width: 140, height: 80, type: 'cylinder' },
+  queue:         { strokeColor: '#a371f7', width: 150, height: 70, type: 'hexagon' },
+  worker:        { strokeColor: '#79c0ff', width: 160, height: 70 },
+  gateway:       { strokeColor: '#2f81f7', width: 150, height: 70 },
+  external:      { strokeColor: '#7d8590', width: 150, height: 70 },
+  er_entity:     { strokeColor: '#a371f7', width: 180, height: 120 },
+  uml_class:     { strokeColor: '#58a6ff', width: 200, height: 140 },
+  uml_interface: { strokeColor: '#3fb950', width: 180, height: 100 },
+  seq_lifeline:  { strokeColor: '#2f81f7', width: 120, height: 300 },
+  workflow_step:      { strokeColor: '#3fb950', width: 150, height: 70 },
+  workflow_decision:  { strokeColor: '#f0883e', width: 110, height: 110, type: 'diamond' },
+  infra_container:    { strokeColor: '#58a6ff', width: 160, height: 80 },
+};
 
 // ─── Anchor helpers ───────────────────────────────────────────────────────────
 
@@ -235,6 +254,7 @@ interface Props {
   onViewportChange?: (vp: { x: number; y: number; zoom: number }) => void;
   pendingConnectorSourceId?: string | null;
   onConnectorTargetPicked?: (targetId: string) => void;
+  onToolReset?: () => void;
   boardTheme?: 'dark' | 'light';
 }
 
@@ -255,6 +275,7 @@ export function WhiteboardCanvas({
   onViewportChange,
   pendingConnectorSourceId,
   onConnectorTargetPicked,
+  onToolReset,
   boardTheme = 'dark',
 }: Props) {
   const isLight = boardTheme === 'light';
@@ -271,6 +292,19 @@ export function WhiteboardCanvas({
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<Array<{ x: number; y: number }>>([]);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null);
+
+  // Resizing state
+  const [resizeState, setResizeState] = useState<{
+    handle: string;
+    elId: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    origW: number;
+    origH: number;
+  } | null>(null);
 
   // Continuous erasing state
   const [isErasing, setIsErasing] = useState(false);
@@ -532,9 +566,10 @@ export function WhiteboardCanvas({
       return;
     }
 
-    // Shape creation tools — start draw
+    // Shape / component creation tools — start draw
     setIsDrawing(true);
     setDrawStart(pos);
+    setDrawCurrent(pos);
   }, [activeTool, elements, screenToWorld, viewport, selectedIds, onSelect, eraseAt, editingTextId, inlineTextValue, finishEditingText, onAddElement, hitTest]);
 
   // ─── Mouse move ───────────────────────────────────────────────────────────
@@ -550,6 +585,44 @@ export function WhiteboardCanvas({
 
     if (isPanning) {
       setViewport({ ...viewport, x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+      return;
+    }
+
+    if (resizeState) {
+      const el = elements.find(item => item.id === resizeState.elId);
+      if (el) {
+        const dx = pos.x - resizeState.startX;
+        const dy = pos.y - resizeState.startY;
+        let newX = resizeState.origX;
+        let newY = resizeState.origY;
+        let newW = resizeState.origW;
+        let newH = resizeState.origH;
+
+        if (resizeState.handle.includes('e')) {
+          newW = Math.max(30, Math.round(resizeState.origW + dx));
+        }
+        if (resizeState.handle.includes('s')) {
+          newH = Math.max(20, Math.round(resizeState.origH + dy));
+        }
+        if (resizeState.handle.includes('w')) {
+          const calcW = Math.max(30, Math.round(resizeState.origW - dx));
+          newX = resizeState.origX + (resizeState.origW - calcW);
+          newW = calcW;
+        }
+        if (resizeState.handle.includes('n')) {
+          const calcH = Math.max(20, Math.round(resizeState.origH - dy));
+          newY = resizeState.origY + (resizeState.origH - calcH);
+          newH = calcH;
+        }
+
+        onUpdateElement({
+          ...el,
+          x: newX,
+          y: newY,
+          width: newW,
+          height: newH,
+        });
+      }
       return;
     }
 
@@ -569,10 +642,14 @@ export function WhiteboardCanvas({
       return;
     }
 
-    if (isDrawing && ['pen', 'highlighter', 'smart_pen'].includes(activeTool)) {
-      setCurrentStroke(prev => [...prev, pos]);
+    if (isDrawing) {
+      if (['pen', 'highlighter', 'smart_pen'].includes(activeTool)) {
+        setCurrentStroke(prev => [...prev, pos]);
+      } else if (drawStart) {
+        setDrawCurrent(pos);
+      }
     }
-  }, [isPanning, isErasing, activeTool, draggingIds, rubberBand, isDrawing, screenToWorld, viewport, panStart, elements, dragOffsets, onUpdateElement, onCursorMove, setViewport, eraseAt]);
+  }, [isPanning, isErasing, activeTool, draggingIds, rubberBand, isDrawing, drawStart, resizeState, screenToWorld, viewport, panStart, elements, dragOffsets, onUpdateElement, onCursorMove, setViewport, eraseAt]);
 
   // ─── Mouse up ─────────────────────────────────────────────────────────────
 
@@ -583,6 +660,11 @@ export function WhiteboardCanvas({
     }
 
     if (isPanning) { setIsPanning(false); return; }
+
+    if (resizeState) {
+      setResizeState(null);
+      return;
+    }
 
     if (draggingIds.length > 0) {
       setDraggingIds([]);
@@ -636,12 +718,45 @@ export function WhiteboardCanvas({
     }
 
     if (drawStart) {
-      const rawW = pos.x - drawStart.x;
-      const rawH = pos.y - drawStart.y;
-      const width = Math.max(Math.abs(rawW), 60);
-      const height = Math.max(Math.abs(rawH), 40);
-      const x = rawW >= 0 ? drawStart.x : drawStart.x - width;
-      const y = rawH >= 0 ? drawStart.y : drawStart.y - height;
+      const endPos = drawCurrent || pos;
+      const rawW = endPos.x - drawStart.x;
+      const rawH = endPos.y - drawStart.y;
+      const isDrag = Math.abs(rawW) > 10 || Math.abs(rawH) > 10;
+
+      if (activeTool.startsWith('node:')) {
+        const nodeType = activeTool.slice(5) as DiagramNodeType;
+        const defaults = NODE_TYPE_DEFAULTS[nodeType] ?? {};
+        const width = isDrag ? Math.max(Math.abs(rawW), 40) : (defaults.width ?? 160);
+        const height = isDrag ? Math.max(Math.abs(rawH), 30) : (defaults.height ?? 70);
+        const x = isDrag ? (rawW >= 0 ? drawStart.x : drawStart.x - width) : drawStart.x - width / 2;
+        const y = isDrag ? (rawH >= 0 ? drawStart.y : drawStart.y - height) : drawStart.y - height / 2;
+
+        const newEl: CanvasElement = {
+          id: `node-${Date.now()}`,
+          type: (defaults.type as any) ?? 'rectangle',
+          x: Math.round(x),
+          y: Math.round(y),
+          width: Math.round(width),
+          height: Math.round(height),
+          diagramType: nodeType,
+          text: nodeType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          strokeColor: defaults.strokeColor ?? '#2f81f7',
+          fillColor: isLight ? '#ffffff' : 'var(--surface)',
+          strokeWidth: 2,
+          status: 'proposed',
+        };
+        onAddElement(newEl);
+        onSelect([newEl.id]);
+        onToolReset?.();
+        setDrawStart(null);
+        setDrawCurrent(null);
+        return;
+      }
+
+      const width = isDrag ? Math.max(Math.abs(rawW), 40) : (activeTool === 'sticky' ? 140 : 160);
+      const height = isDrag ? Math.max(Math.abs(rawH), 30) : (activeTool === 'sticky' ? 140 : 80);
+      const x = isDrag ? (rawW >= 0 ? drawStart.x : drawStart.x - width) : drawStart.x - width / 2;
+      const y = isDrag ? (rawH >= 0 ? drawStart.y : drawStart.y - height) : drawStart.y - height / 2;
 
       // Dimension normalization for geometric shapes
       const isCircle = activeTool === 'circle';
@@ -651,14 +766,14 @@ export function WhiteboardCanvas({
       const newEl: CanvasElement = {
         id: `${activeTool}-${Date.now()}`,
         type: activeTool as any,
-        x,
-        y,
-        width: finalW,
-        height: finalH,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(finalW),
+        height: Math.round(finalH),
         strokeColor: isLight ? '#0969da' : '#2f81f7',
         fillColor: activeTool === 'sticky' ? (isLight ? '#fff8c5' : '#21262d') : 'transparent',
         strokeWidth: 2,
-        text: activeTool === 'sticky' ? '📝 Note' : '',
+        text: activeTool === 'sticky' ? 'Note' : '',
         codeLanguage: activeTool === 'code_cell' ? 'javascript' : undefined,
         codeContent: activeTool === 'code_cell' ? '// code snippet' : undefined,
         codeLinkType: activeTool === 'code_cell' ? 'static' : undefined,
@@ -667,9 +782,11 @@ export function WhiteboardCanvas({
       };
       onAddElement(newEl);
       onSelect([newEl.id]);
+      if (activeTool !== 'sticky') onToolReset?.();
       setDrawStart(null);
+      setDrawCurrent(null);
     }
-  }, [isErasing, isPanning, draggingIds, rubberBand, isDrawing, activeTool, currentStroke, drawStart, screenToWorld, elements, onAddElement, onSelect, onStrokeComplete]);
+  }, [isErasing, isPanning, resizeState, draggingIds, rubberBand, isDrawing, activeTool, currentStroke, drawStart, drawCurrent, isLight, onToolReset, screenToWorld, elements, onAddElement, onSelect, onStrokeComplete]);
 
   // ─── Cursor indicator ─────────────────────────────────────────────────────
 
@@ -874,17 +991,99 @@ export function WhiteboardCanvas({
           </svg>
         )}
 
+        {/* ── Selection & Resize Handles ────────────────────────────────────── */}
+        {selectedIds.length === 1 && activeTool === 'select' && (() => {
+          const el = elements.find(e => e.id === selectedIds[0]);
+          if (!el || !el.width || !el.height || el.type === 'stroke' || el.type === 'connector' || el.type === 'arrow') return null;
+          const w = el.width;
+          const h = el.height;
+          const handles = [
+            { dir: 'nw', cursor: 'nwse-resize', x: -5, y: -5 },
+            { dir: 'n',  cursor: 'ns-resize',   x: w / 2 - 4, y: -5 },
+            { dir: 'ne', cursor: 'nesw-resize', x: w - 4, y: -5 },
+            { dir: 'e',  cursor: 'ew-resize',   x: w - 4, y: h / 2 - 4 },
+            { dir: 'se', cursor: 'nwse-resize', x: w - 4, y: h - 4 },
+            { dir: 's',  cursor: 'ns-resize',   x: w / 2 - 4, y: h - 4 },
+            { dir: 'sw', cursor: 'nesw-resize', x: -5, y: h - 4 },
+            { dir: 'w',  cursor: 'ew-resize',   x: -5, y: h / 2 - 4 },
+          ];
+
+          return (
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                left: el.x,
+                top: el.y,
+                width: w,
+                height: h,
+                border: '1.5px dashed #2f81f7',
+                borderRadius: 4,
+                zIndex: 45,
+              }}
+            >
+              {handles.map(hd => (
+                <div
+                  key={hd.dir}
+                  className="absolute bg-white border-2 border-[#2f81f7] rounded-sm pointer-events-auto hover:bg-blue-100 shadow-sm transition-transform hover:scale-125"
+                  style={{
+                    left: hd.x,
+                    top: hd.y,
+                    width: 9,
+                    height: 9,
+                    cursor: hd.cursor,
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    const pos = screenToWorld(e.clientX, e.clientY);
+                    setResizeState({
+                      handle: hd.dir,
+                      elId: el.id,
+                      startX: pos.x,
+                      startY: pos.y,
+                      origX: el.x,
+                      origY: el.y,
+                      origW: el.width!,
+                      origH: el.height!,
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          );
+        })()}
+
         {/* ── Drawing preview ghost ─────────────────────────────────────── */}
         {isDrawing && drawStart && (
-          <div
-            className="absolute border-2 border-dashed rounded"
-            style={{
-              left: drawStart.x, top: drawStart.y,
-              width: 60, height: 40,
-              borderColor: 'var(--accent)',
-              pointerEvents: 'none',
-            }}
-          />
+          (() => {
+            const endPos = drawCurrent || drawStart;
+            const rawW = endPos.x - drawStart.x;
+            const rawH = endPos.y - drawStart.y;
+            const isDrag = Math.abs(rawW) > 5 || Math.abs(rawH) > 5;
+            const w = isDrag ? Math.max(Math.abs(rawW), 20) : 60;
+            const h = isDrag ? Math.max(Math.abs(rawH), 20) : 40;
+            const x = isDrag ? (rawW >= 0 ? drawStart.x : drawStart.x - w) : drawStart.x;
+            const y = isDrag ? (rawH >= 0 ? drawStart.y : drawStart.y - h) : drawStart.y;
+            return (
+              <div
+                className="absolute border-2 border-dashed rounded flex items-center justify-center pointer-events-none"
+                style={{
+                  left: x,
+                  top: y,
+                  width: w,
+                  height: h,
+                  borderColor: 'var(--accent)',
+                  backgroundColor: 'rgba(47, 129, 247, 0.12)',
+                  zIndex: 60,
+                }}
+              >
+                {isDrag && (
+                  <span className="text-[10px] font-mono font-bold text-blue-400 bg-black/70 px-1 py-0.5 rounded shadow">
+                    {Math.round(w)} × {Math.round(h)}
+                  </span>
+                )}
+              </div>
+            );
+          })()
         )}
 
         {/* ── Rubber band selection ─────────────────────────────────────── */}

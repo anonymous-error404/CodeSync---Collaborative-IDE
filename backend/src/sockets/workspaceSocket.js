@@ -4,7 +4,8 @@ import executionService from '../services/executionService.js';
 import attachWhiteboardSocketHandlers from './whiteboardSocket.js';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/authConfig.js';
-import { WorkspaceMember, TeachingSession } from '../models/index.js';
+import { WorkspaceMember, TeachingSession, WorkspaceLock } from '../models/index.js';
+import { checkPathLocked } from '../controllers/lockController.js';
 
 /**
  * Attaches real-time workspace socket event handlers to Socket.io server.
@@ -104,6 +105,7 @@ function initWorkspaceSockets(io) {
       try {
         const isNoView = socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view');
         const fileTree = isNoView ? [] : await storageService.getFileTree(workspaceId);
+        const locks = await WorkspaceLock.findAll({ where: { workspaceId } });
         socket.emit('workspace-ready', {
           workspaceId,
           fileTree,
@@ -111,6 +113,7 @@ function initWorkspaceSockets(io) {
           mySessionRole: socket.sessionRole,
           editorLocked: socket.editorLocked,
           studentAccess: socket.studentAccess,
+          locks,
         });
       } catch (err) {
         socket.emit('workspace-error', { message: err.message });
@@ -135,6 +138,15 @@ function initWorkspaceSockets(io) {
       // Education RBAC: students whose editors are locked cannot modify files
       if (socket.sessionRole === 'student' && socket.editorLocked) {
         socket.emit('workspace-error', { message: 'Your editor is locked by the teacher' });
+        return;
+      }
+
+      // Check if file or containing folder is locked by someone else
+      const lockCheck = await checkPathLocked(workspaceId, filePath, socket.userId);
+      if (lockCheck.isLocked) {
+        socket.emit('workspace-error', {
+          message: `Cannot edit: ${filePath} is locked by ${lockCheck.lock.lockedByName}`,
+        });
         return;
       }
 
@@ -598,8 +610,8 @@ function initWorkspaceSockets(io) {
       }
     });
 
-    // Trigger Code Execution (Professional & Education RBAC)
-    socket.on('execute-code', ({ workspaceId, filePath }) => {
+    // Trigger Code Execution (Per-member isolated container OR admin global run)
+    socket.on('execute-code', ({ workspaceId, filePath, isGlobal }) => {
       if (!workspaceId || !filePath) return;
 
       if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
@@ -618,31 +630,61 @@ function initWorkspaceSockets(io) {
         return;
       }
 
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const runGlobally = Boolean(isGlobal && isAdmin);
+
       const roomName = `workspace:${workspaceId}`;
-      workspaceNamespace.to(roomName).emit('execution-started', { filePath });
+      const userId = socket.userId || 'guest';
+      const username = socket.username || 'User';
+
+      if (runGlobally) {
+        workspaceNamespace.to(roomName).emit('execution-started', { filePath, isGlobal: true, initiatedBy: username });
+      } else {
+        socket.emit('execution-started', { filePath, isGlobal: false, initiatedBy: username });
+      }
 
       try {
         executionService.executeFile({
           workspaceId,
+          userId,
+          username,
+          isGlobal: runGlobally,
           filePath,
           onStdout: (chunk) => {
-            workspaceNamespace.to(roomName).emit('execution-stdout', { chunk });
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-stdout', { chunk, isGlobal: true });
+            } else {
+              socket.emit('execution-stdout', { chunk, isGlobal: false });
+            }
           },
           onStderr: (chunk) => {
-            workspaceNamespace.to(roomName).emit('execution-stderr', { chunk });
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-stderr', { chunk, isGlobal: true });
+            } else {
+              socket.emit('execution-stderr', { chunk, isGlobal: false });
+            }
           },
           onExit: (exitCode) => {
-            workspaceNamespace.to(roomName).emit('execution-finished', { exitCode });
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-finished', { exitCode, isGlobal: true });
+            } else {
+              socket.emit('execution-finished', { exitCode, isGlobal: false });
+            }
           },
         });
       } catch (err) {
-        workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: `Execution failed: ${err.message}\n` });
-        workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: -1 });
+        if (runGlobally) {
+          workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: `Execution failed: ${err.message}\n`, isGlobal: true });
+          workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: -1, isGlobal: true });
+        } else {
+          socket.emit('execution-stderr', { chunk: `Execution failed: ${err.message}\n`, isGlobal: false });
+          socket.emit('execution-finished', { exitCode: -1, isGlobal: false });
+        }
       }
     });
 
     // Stop execution
-    socket.on('stop-execution', ({ workspaceId }) => {
+    socket.on('stop-execution', ({ workspaceId, targetUserId, isGlobal }) => {
       if (!workspaceId) return;
       if (
         socket.role === 'viewer' || 
@@ -653,10 +695,117 @@ function initWorkspaceSockets(io) {
         return;
       }
 
-      const stopped = executionService.stopExecution(workspaceId);
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+
+      if (isGlobal && isAdmin) {
+        const stopped = executionService.stopExecution(`${workspaceId}:global`);
+        if (stopped) {
+          workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-stderr', { chunk: '\n[Server] Global execution stopped by admin.\n', isGlobal: true });
+          workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-finished', { exitCode: -1, isGlobal: true });
+        }
+        return;
+      }
+
+      const targetId = (targetUserId && isAdmin) ? targetUserId : (socket.userId || 'guest');
+      const stopped = executionService.stopUserExecution(workspaceId, targetId);
       if (stopped) {
-        workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n' });
-        workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-finished', { exitCode: -1 });
+        socket.emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n', isGlobal: false });
+        socket.emit('execution-finished', { exitCode: -1, isGlobal: false });
+      }
+    });
+
+    // Environment management socket queries
+    socket.on('env:get_status', ({ workspaceId }) => {
+      if (!workspaceId) return;
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const supported = executionService.getSupportedEnvironments();
+      const allActive = executionService.listEnvironments(workspaceId);
+      const myActive = allActive.filter(e => String(e.userId) === String(socket.userId));
+
+      socket.emit('env:status', {
+        supported,
+        myEnvironment: myActive[0] || null,
+        activeEnvironments: isAdmin ? allActive : myActive,
+        isAdmin,
+      });
+    });
+
+    socket.on('env:stop_member', ({ workspaceId, targetUserId }) => {
+      if (!workspaceId || !targetUserId) return;
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      if (!isAdmin) {
+        socket.emit('workspace-error', { message: 'Only admins can terminate member environments' });
+        return;
+      }
+      executionService.stopUserExecution(workspaceId, targetUserId);
+      const allActive = executionService.listEnvironments(workspaceId);
+      socket.emit('env:status', {
+        supported: executionService.getSupportedEnvironments(),
+        activeEnvironments: allActive,
+        isAdmin: true,
+      });
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── RESOURCE LOCKING (FILE / FOLDER / CODE BLOCK) ─────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+
+    socket.on('lock:create', async ({ workspaceId, lockType, targetPath, startLine, endLine, reason }) => {
+      if (!workspaceId || !targetPath || !lockType) return;
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const isEditor = socket.role === 'editor' || socket.studentAccess === 'editor';
+      if (!isAdmin && !isEditor) {
+        socket.emit('workspace-error', { message: 'Only Admins and Editors can lock resources' });
+        return;
+      }
+      try {
+        const normPath = targetPath.replace(/\\/g, '/');
+        const existing = await WorkspaceLock.findOne({ where: { workspaceId, targetPath: normPath, lockType } });
+        if (existing && existing.lockedBy !== socket.userId) {
+          socket.emit('workspace-error', { message: `Already locked by ${existing.lockedByName}` });
+          return;
+        }
+        const lock = await WorkspaceLock.create({
+          workspaceId,
+          lockType,
+          targetPath: normPath,
+          startLine: startLine ? Number(startLine) : null,
+          endLine: endLine ? Number(endLine) : null,
+          lockedBy: socket.userId,
+          lockedByName: socket.username || 'User',
+          reason: reason || null,
+        });
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('lock:created', { lock });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Lock failed: ${err.message}` });
+      }
+    });
+
+    socket.on('lock:release', async ({ workspaceId, lockId }) => {
+      if (!workspaceId || !lockId) return;
+      try {
+        const lock = await WorkspaceLock.findOne({ where: { id: lockId, workspaceId } });
+        if (!lock) return;
+        const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+        if (lock.lockedBy !== socket.userId && !isAdmin) {
+          socket.emit('workspace-error', { message: 'Only the locker or an Admin can release this lock' });
+          return;
+        }
+        const targetPath = lock.targetPath;
+        await lock.destroy();
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('lock:released', { lockId, targetPath });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Release lock failed: ${err.message}` });
+      }
+    });
+
+    socket.on('lock:list', async ({ workspaceId }) => {
+      if (!workspaceId) return;
+      try {
+        const locks = await WorkspaceLock.findAll({ where: { workspaceId } });
+        socket.emit('lock:list_response', { locks });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Fetch locks failed: ${err.message}` });
       }
     });
 
@@ -696,7 +845,7 @@ function initWorkspaceSockets(io) {
         // Update active connected sockets for target user
         const roomSockets = await workspaceNamespace.in(`workspace:${workspaceId}`).fetchSockets();
         for (const s of roomSockets) {
-          if (s.userId === userId) {
+          if (Number(s.userId) === Number(userId)) {
             s.studentAccess = access;
             s.emit('member:access_updated', {
               workspaceId,

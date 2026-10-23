@@ -6,6 +6,7 @@ import Whiteboard from './Whiteboard.js';
 import TeachingSession from './TeachingSession.js';
 import ProjectTask from './ProjectTask.js';
 import CodeReview from './CodeReview.js';
+import WorkspaceLock from './WorkspaceLock.js';
 
 WorkspaceMember.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(WorkspaceMember, { foreignKey: 'userId' });
@@ -19,6 +20,8 @@ ProjectTask.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 CodeReview.belongsTo(User, { as: 'author', foreignKey: 'authorId' });
 CodeReview.belongsTo(User, { as: 'reviewer', foreignKey: 'reviewerId' });
 
+WorkspaceLock.belongsTo(User, { as: 'locker', foreignKey: 'lockedBy' });
+
 const db = {
   sequelize,
   User,
@@ -28,6 +31,7 @@ const db = {
   TeachingSession,
   ProjectTask,
   CodeReview,
+  WorkspaceLock,
 };
 
 /**
@@ -45,6 +49,7 @@ const syncDatabase = async (options = {}) => {
     await sequelize.query('DROP TABLE IF EXISTS `teaching_sessions_backup`;');
     await sequelize.query('DROP TABLE IF EXISTS `project_tasks_backup`;');
     await sequelize.query('DROP TABLE IF EXISTS `code_reviews_backup`;');
+    await sequelize.query('DROP TABLE IF EXISTS `workspace_locks_backup`;');
 
     await sequelize.sync(options);
     console.log('[Database]: Models synchronized with SQLite database.');
@@ -56,4 +61,4 @@ const syncDatabase = async (options = {}) => {
 
 export { syncDatabase };
 export default db;
-export { User, WorkspaceMember, WorkspaceInvite, Whiteboard, TeachingSession, ProjectTask, CodeReview };
+export { User, WorkspaceMember, WorkspaceInvite, Whiteboard, TeachingSession, ProjectTask, CodeReview, WorkspaceLock };

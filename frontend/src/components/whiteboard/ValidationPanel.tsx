@@ -186,9 +186,9 @@ export function ValidationPanel({ elements, selectedIds, onClose, onSelectElemen
 
                       {/* Suggestion */}
                       {issue.suggestion && (
-                        <p className="text-[11px] leading-snug" style={{ color: 'var(--muted)' }}>
-                          💡 {issue.suggestion}
-                        </p>
+                          <p className="text-[11px] leading-snug flex items-start gap-1" style={{ color: 'var(--muted)' }}>
+                            <Info size={10} style={{ flexShrink: 0, marginTop: 2 }} /> {issue.suggestion}
+                          </p>
                       )}
 
                       {/* Navigate to element */}

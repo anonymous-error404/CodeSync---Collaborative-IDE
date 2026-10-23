@@ -2,7 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import {
   Mail, Lock, User, Eye, EyeOff,
   Sun, Moon, Code2, Terminal, AlertCircle,
-  CheckCircle2, ChevronRight,
+  CheckCircle2, ChevronRight, Zap,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -251,10 +251,11 @@ export function AuthPage() {
                 <button
                   type="button"
                   onClick={() => authService.googleAuthDemo()}
-                  className="mt-1 py-1 px-2.5 rounded text-xs font-semibold self-start transition-opacity hover:opacity-90"
+                  className="mt-1 py-1 px-2.5 rounded text-xs font-semibold self-start transition-opacity hover:opacity-90 flex items-center gap-1.5"
                   style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
                 >
-                  ⚡ Test with Demo Google Account
+                  <Zap size={13} />
+                  <span>Test with Demo Google Account</span>
                 </button>
               )}
             </div>

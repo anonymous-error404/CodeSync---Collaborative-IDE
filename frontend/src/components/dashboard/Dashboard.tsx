@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2,
-  GraduationCap, Briefcase, Trophy, Check, Sparkles
+  GraduationCap, Briefcase, Trophy, Check, Sparkles, Crown
 } from 'lucide-react';
 import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -523,7 +523,17 @@ export function Dashboard({ onOpen }: Props) {
                             color: ws.myRole === 'teacher' ? '#c084fc' : ws.myRole === 'student' ? '#38bdf8' : 'var(--text)',
                             border: '1px solid var(--border)'
                           }}>
-                          {ws.myRole === 'teacher' ? 'Teacher 🎓' : ws.myRole === 'student' ? 'Student 🎒' : ws.myRole}
+                          {ws.myRole === 'teacher' ? (
+                            <span className="flex items-center gap-1"><GraduationCap size={11} /> Teacher</span>
+                          ) : ws.myRole === 'student' ? (
+                            <span className="flex items-center gap-1"><GraduationCap size={11} /> Student</span>
+                          ) : ws.myRole === 'team_leader' ? (
+                            <span className="flex items-center gap-1"><Crown size={11} /> Team Leader</span>
+                          ) : ws.myRole === 'developer' ? (
+                            <span className="flex items-center gap-1"><Code2 size={11} /> Developer</span>
+                          ) : (
+                            ws.myRole
+                          )}
                         </span>
                       )}
                     </div>

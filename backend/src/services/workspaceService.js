@@ -134,6 +134,16 @@ class WorkspaceService {
   getActiveUsers(workspaceId) {
     return this.workspaces.get(workspaceId)?.activeUsers ?? 0;
   }
+
+  async getWorkspace(workspaceId) {
+    if (!this.workspaces.has(workspaceId)) {
+      const meta = await this._readMeta(workspaceId);
+      if (meta) {
+        this.workspaces.set(workspaceId, { activeUsers: 0, type: meta.type || 'educational', ...meta });
+      }
+    }
+    return this.workspaces.get(workspaceId) || null;
+  }
 }
 
 export default new WorkspaceService();

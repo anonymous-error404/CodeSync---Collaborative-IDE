@@ -164,7 +164,7 @@ export function CommandPalette({ elements, selectedIds, onClose, onExecute }: Pr
             {(parsed.ambiguities ?? []).length > 0 && (
               <div className="flex flex-col gap-1">
                 {parsed.ambiguities!.map((a, i) => (
-                  <div key={i} className="text-xs" style={{ color: 'var(--warning)' }}>⚠ {a}</div>
+                  <div key={i} className="text-xs flex items-center gap-1" style={{ color: 'var(--warning)' }}><AlertTriangle size={11} /> {a}</div>
                 ))}
               </div>
             )}
