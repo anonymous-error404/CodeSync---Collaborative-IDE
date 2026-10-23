@@ -4,7 +4,8 @@ import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder,
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
-  Phone, PhoneOff, Mic, MicOff, Headphones
+  Phone, PhoneOff, Mic, MicOff, Headphones,
+  Maximize2, Minimize2, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole } from '../../types';
@@ -100,6 +101,39 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const localOffsetRef = useRef<number>(0);
 
   const isViewer = myRole === 'viewer';
+
+  // ── Terminal / Console sizing & state (VS Code style expandable) ───────────
+  const [terminalHeight, setTerminalHeight] = useState<number>(220);
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState<boolean>(false);
+  const [isTerminalCollapsed, setIsTerminalCollapsed] = useState<boolean>(false);
+  const isDraggingTerminalRef = useRef<boolean>(false);
+  const dragStartYRef = useRef<number>(0);
+  const dragStartHeightRef = useRef<number>(220);
+
+  const handleTerminalMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingTerminalRef.current = true;
+    dragStartYRef.current = e.clientY;
+    dragStartHeightRef.current = terminalHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingTerminalRef.current) return;
+      const deltaY = dragStartYRef.current - moveEvent.clientY;
+      const newHeight = Math.max(90, Math.min(window.innerHeight - 150, dragStartHeightRef.current + deltaY));
+      setTerminalHeight(newHeight);
+      setIsTerminalMaximized(false);
+      setIsTerminalCollapsed(false);
+    };
+
+    const onMouseUp = () => {
+      isDraggingTerminalRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [terminalHeight]);
 
   // ── Voice call (teacher -> students) ── NEW
   const isTeacher = myRole === 'owner';
@@ -934,7 +968,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             <div className="flex-1 flex flex-col overflow-hidden">
 
               {/* Code editor */}
-              <div className="flex-1 overflow-hidden relative flex flex-col">
+              <div
+                className="flex-1 overflow-hidden relative flex flex-col"
+                style={{ display: isTerminalMaximized ? 'none' : 'flex' }}
+              >
                 {/* Active file collaborators bar */}
                 {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-1 text-xs shrink-0" style={{ background: '#161b22', borderBottom: '1px solid var(--border)' }}>
@@ -1014,11 +1051,31 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 </div>
               </div>
 
-              {/* Console / Terminal output */}
-              <div className="shrink-0" style={{ height: 220, borderTop: '1px solid var(--border)' }}>
+              {/* Console / Terminal output (VS Code style expandable & draggable) */}
+              <div
+                className="shrink-0 flex flex-col relative select-none"
+                style={{
+                  height: isTerminalMaximized ? '100%' : isTerminalCollapsed ? 36 : terminalHeight,
+                  flex: isTerminalMaximized ? '1 1 0%' : undefined,
+                  borderTop: '1px solid var(--border)',
+                  background: 'var(--surface)',
+                  transition: isDraggingTerminalRef.current ? 'none' : 'height 0.15s ease',
+                }}
+              >
+                {/* Resizer bar (drag to resize terminal height, double click to maximize) */}
+                {!isTerminalMaximized && (
+                  <div
+                    onMouseDown={handleTerminalMouseDown}
+                    onDoubleClick={() => setIsTerminalMaximized(prev => !prev)}
+                    className="w-full h-2 cursor-row-resize absolute -top-1 left-0 right-0 z-20 hover:bg-[var(--accent)] transition-colors opacity-0 hover:opacity-100"
+                    title="Drag to resize console height, double-click to maximize"
+                  />
+                )}
+
                 <div
-                  className="flex items-center justify-between px-4 py-2"
-                  style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
+                  className="flex items-center justify-between px-4 py-2 shrink-0 cursor-default"
+                  style={{ borderBottom: isTerminalCollapsed ? 'none' : '1px solid var(--border)', background: 'var(--surface)' }}
+                  onDoubleClick={() => setIsTerminalMaximized(prev => !prev)}
                 >
                   <div className="flex items-center gap-2">
                     <Terminal size={13} style={{ color: 'var(--muted)' }} />
@@ -1032,29 +1089,53 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setOutput('')}
-                    className="text-xs px-2 py-0.5 rounded transition-colors"
-                    style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    Clear
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setOutput('')}
+                      className="text-xs px-2 py-0.5 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title="Clear console"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => setIsTerminalCollapsed(prev => !prev)}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title={isTerminalCollapsed ? "Expand console" : "Collapse console"}
+                    >
+                      {isTerminalCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsTerminalMaximized(prev => !prev);
+                        if (isTerminalCollapsed) setIsTerminalCollapsed(false);
+                      }}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title={isTerminalMaximized ? "Restore panel size" : "Maximize console panel"}
+                    >
+                      {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                    </button>
+                  </div>
                 </div>
-                <pre
-                  ref={outputRef}
-                  className="p-4 text-sm leading-relaxed overflow-auto"
-                  style={{
-                    margin: 0,
-                    height: 'calc(100% - 40px)',
-                    background: '#0a0c10',
-                    color: '#e6edf3',
-                    fontFamily: 'var(--font-mono)',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
-                  }}
-                >
-                  {output || <span style={{ color: 'var(--muted)' }}>Console output will appear here after clicking Run…</span>}
-                </pre>
+
+                {!isTerminalCollapsed && (
+                  <pre
+                    ref={outputRef}
+                    className="p-4 text-sm leading-relaxed overflow-auto flex-1 select-text"
+                    style={{
+                      margin: 0,
+                      background: '#0a0c10',
+                      color: '#e6edf3',
+                      fontFamily: 'var(--font-mono)',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {output || <span style={{ color: 'var(--muted)' }}>Console output will appear here after clicking Run…</span>}
+                  </pre>
+                )}
               </div>
             </div>
           ) : (
