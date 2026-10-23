@@ -8,7 +8,7 @@ import {
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
   Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
   Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest, Crown,
-  Cpu
+  Cpu, GitBranch
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
@@ -148,13 +148,41 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   ) : null;
   const isFileLockedByOther = Boolean(activeFileLock && activeFileLock.lockedBy !== user?.id && !canAdmin);
 
-  const canEdit = !isNoView && !isViewer && (!isStudent || studentAccess === 'editor') && !(isStudent && isEditorLocked) && !isFileLockedByOther;
   const isEffectiveReadOnly = isNoView || isViewer || (isStudent && isEditorLocked) || isFileLockedByOther;
   const socketRef = useRef<Socket | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const isRemoteUpdatingRef = useRef<boolean>(false);
   const prevTabPathRef = useRef<string | null>(null);
   const localOffsetRef = useRef<number>(0);
+
+  // ── Sidebar Resizing State (VS Code style resizable explorer) ─────────────
+  const [sidebarWidth, setSidebarWidth] = useState<number>(248);
+  const isDraggingSidebarRef = useRef<boolean>(false);
+  const dragStartXRef = useRef<number>(0);
+  const dragStartWidthRef = useRef<number>(248);
+
+  const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSidebarRef.current = true;
+    dragStartXRef.current = e.clientX;
+    dragStartWidthRef.current = sidebarWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingSidebarRef.current) return;
+      const deltaX = moveEvent.clientX - dragStartXRef.current;
+      const newWidth = Math.max(160, Math.min(Math.round(window.innerWidth * 0.45), dragStartWidthRef.current + deltaX));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingSidebarRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [sidebarWidth]);
 
   // ── Terminal / Console sizing & state (VS Code style expandable) ───────────
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(true);
@@ -463,23 +491,25 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     });
 
     // ── Session socket events ──
-    socket.on('session:active', (data: { active: boolean; teacherSocketId?: string; teacherId?: number; focusMode?: boolean; focusFilePath?: string; lockedAll?: boolean }) => {
+    socket.on('session:active', (data: { active: boolean; teacherSocketId?: string; teacherId?: number; teacherUserId?: number; focusMode?: boolean; focusFilePath?: string; lockedAll?: boolean }) => {
       setSessionActive(data.active);
       if (data.active) {
-        if (data.teacherId && user?.id) {
-          setSessionRole(data.teacherId === user.id ? 'teacher' : 'student');
+        const teacherId = data.teacherId ?? data.teacherUserId;
+        if (teacherId && user?.id) {
+          setSessionRole(teacherId === user.id ? 'teacher' : 'student');
         }
         setIsFocusMode(!!data.focusMode);
         setFocusedFilePath(data.focusFilePath || null);
-        if (data.lockedAll && data.teacherId !== user?.id) {
+        if (data.lockedAll && teacherId !== user?.id) {
           setIsEditorLocked(true);
         }
       }
     });
 
-    socket.on('session:started', (data: { teacherId: number; teacherUsername: string }) => {
+    socket.on('session:started', (data: { teacherId?: number; teacherUserId?: number; teacherUsername?: string; teacherName?: string }) => {
       setSessionActive(true);
-      const iamTeacher = user?.id === data.teacherId;
+      const teacherId = data.teacherId ?? data.teacherUserId;
+      const iamTeacher = user?.id === teacherId;
       setSessionRole(iamTeacher ? 'teacher' : 'student');
       if (!iamTeacher) {
         setIsEditorLocked(false);
@@ -815,33 +845,41 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     setSessionLoading(true);
     try {
       const res = await collabService.startSession(workspace.id, token);
-      if (res.success) {
+      if (res && res.success) {
         setSessionActive(true);
         setSessionRole('teacher');
         socketRef.current?.emit('session:announce_start', { workspaceId: workspace.id });
+        setProjectToast('Classroom session started!');
+        setTimeout(() => setProjectToast(null), 3000);
       } else {
-        alert((res as any).error || 'Failed to start session');
+        setProjectToast((res as any)?.error || 'Could not start classroom session');
+        setTimeout(() => setProjectToast(null), 4000);
       }
-    } catch {
-      alert('Network error starting session');
+    } catch (err) {
+      console.error('[Session Error]', err);
+      setProjectToast('Network error while starting classroom session');
+      setTimeout(() => setProjectToast(null), 4000);
     } finally {
       setSessionLoading(false);
     }
   };
 
   const handleEndSession = async () => {
-    if (!confirm('Are you sure you want to end this classroom session?')) return;
     setSessionLoading(true);
     try {
       const res = await collabService.endSession(workspace.id, token);
-      if (res.success) {
+      if (res && res.success) {
         setSessionActive(false);
         setSessionRole('none');
         setIsFocusMode(false);
         setFocusedFilePath(null);
         setRaisedHands([]);
         socketRef.current?.emit('session:announce_end', { workspaceId: workspace.id });
+        setProjectToast('Classroom session ended');
+        setTimeout(() => setProjectToast(null), 3000);
       }
+    } catch (err) {
+      console.error('[Session Error]', err);
     } finally {
       setSessionLoading(false);
     }
@@ -1104,27 +1142,29 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         className="flex items-center justify-between px-5 shrink-0"
         style={{ height: 52, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex items-center gap-4">
+        {/* Left Section: Back, Workspace Title, Type & Role */}
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-sm px-3 h-8 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg transition-colors"
             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            title="Back to Workspaces"
           >
             <ChevronLeft size={14} />Workspaces
           </button>
 
           <div className="w-px h-5" style={{ background: 'var(--border)' }} />
 
-          <div className="flex items-center gap-2">
-            <Code2 size={15} style={{ color: 'var(--accent)' }} />
-            <span className="font-semibold truncate max-w-56" style={{ color: 'var(--text)', fontSize: 15 }}>
+          <div className="flex items-center gap-2 min-w-0">
+            <Code2 size={15} style={{ color: 'var(--accent)' }} className="shrink-0" />
+            <span className="font-semibold truncate max-w-48" style={{ color: 'var(--text)', fontSize: 14 }}>
               {workspace.name}
             </span>
           </div>
 
           {/* Workspace Type Badge */}
           <span
-            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5"
+            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5 shrink-0"
             style={{
               background: workspaceType === 'educational' ? 'rgba(168, 85, 247, 0.15)' : workspaceType === 'professional' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)',
               color: workspaceType === 'educational' ? '#c084fc' : workspaceType === 'professional' ? '#60a5fa' : '#fbbf24',
@@ -1137,7 +1177,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
           {/* Role / Access Level Badge */}
           <span
-            className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1"
+            className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1 shrink-0"
             style={{
               background: isTeacher
                 ? 'rgba(168, 85, 247, 0.18)'
@@ -1175,15 +1215,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <>{currentRole}</>
             )}
           </span>
+        </div>
 
+        {/* Center Section: View Mode Switcher & Run / Stop */}
+        <div className="flex items-center gap-2">
           {/* View Mode Toggle: Code Editor vs Whiteboard */}
           <div
-            className="flex items-center p-0.5 rounded-lg border ml-2"
+            className="flex items-center p-0.5 rounded-lg border"
             style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
           >
             <button
               onClick={() => setActiveView('editor')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all"
               style={{
                 background: activeView === 'editor' ? 'var(--surface-2)' : 'transparent',
                 color: activeView === 'editor' ? 'var(--accent)' : 'var(--muted)',
@@ -1196,7 +1239,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
             <button
               onClick={() => setActiveView('whiteboard')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all"
               style={{
                 background: activeView === 'whiteboard' ? 'var(--surface-2)' : 'transparent',
                 color: activeView === 'whiteboard' ? 'var(--accent)' : 'var(--muted)',
@@ -1208,65 +1251,79 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           </div>
 
-          {/* Connection status badge */}
-          <span
-            className="text-xs px-2.5 py-1 rounded-full font-semibold"
-            style={{
-              background: socketConnected ? 'var(--success-bg)' : 'var(--error-bg)',
-              color: socketConnected ? 'var(--success)' : 'var(--error)',
-              border: `1px solid ${socketConnected ? 'var(--success)' : 'var(--error)'}`,
-            }}
-          >
-            {socketConnected ? 'ONLINE' : 'OFFLINE'}
-          </span>
+          {/* Run / Stop button */}
+          {!isEffectiveReadOnly && (
+            running ? (
+              <button
+                onClick={stopExecution}
+                className="flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold transition-all"
+                style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}
+              >
+                <Square size={12} /> Stop
+              </button>
+            ) : (
+              <button
+                onClick={runFile}
+                disabled={!activeTab || !socketConnected}
+                className="flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shadow-sm"
+                style={{
+                  background: globalExecutionMode && canAdmin ? '#8b5cf6' : 'var(--accent)',
+                  color: 'white',
+                  border: 'none',
+                  cursor: activeTab && socketConnected ? 'pointer' : 'not-allowed',
+                }}
+                title={globalExecutionMode && canAdmin ? 'Run in Global Environment (Broadcasts to all members)' : 'Run in Isolated Private Member Environment'}
+              >
+                <Play size={12} />
+                {globalExecutionMode && canAdmin ? 'Global Run' : 'Run'}
+              </button>
+            )
+          )}
         </div>
 
+        {/* Right Section: Context Actions (Classroom, Sprint Hub, Voice, Theme, Sign Out) */}
         <div className="flex items-center gap-2">
-          {/* Active users */}
-          {activeUsers.length > 0 && (
-            <div className="flex items-center -space-x-1.5 mr-2">
-              {activeUsers.slice(0, 3).map((u, i) => (
-                <div key={u.socketId} className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2"
-                  style={{ background: `hsl(${i * 60 + 120}, 70%, 50%)`, color: '#fff', borderColor: 'var(--surface)' }}
-                  title={u.username}>
-                  {u.username.charAt(0).toUpperCase()}
-                </div>
-              ))}
-              {activeUsers.length > 3 && (
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2"
-                  style={{ background: 'var(--surface-2)', color: 'var(--text)', borderColor: 'var(--surface)' }}>
-                  +{activeUsers.length - 3}
-                </div>
-              )}
-            </div>
+          {/* Start Class button (Education mode) */}
+          {workspaceType === 'educational' && !sessionActive && isTeacher && (
+            <button
+              onClick={handleStartSession}
+              disabled={sessionLoading}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--accent)', color: 'var(--accent)', cursor: 'pointer' }}
+              title="Start a live classroom session"
+            >
+              <GraduationCap size={13} />
+              {sessionLoading ? 'Starting…' : 'Start Class'}
+            </button>
           )}
 
-          {/* Members Panel toggle */}
-          <button
-            onClick={() => setShowMembersPanel(v => !v)}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{ background: showMembersPanel ? 'var(--surface-2)' : 'transparent', border: '1px solid var(--border)', color: showMembersPanel ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer' }}
-            title="Members &amp; Invites"
-          >
-            <Users size={13} />
-          </button>
-
-          {/* Save indicator */}
-          {activeTab?.dirty && !isEffectiveReadOnly && (
-            <button
-              onClick={saveActive}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-sm transition-colors"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--warning)', cursor: 'pointer' }}
-            >
-              <Save size={13} />{saving ? 'Saving…' : 'Save'}
-            </button>
+          {/* Active Class Live Indicator in Header */}
+          {workspaceType === 'educational' && sessionActive && (
+            <div className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.35)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                Class Live
+              </span>
+              {isTeacher && (
+                <button
+                  onClick={handleEndSession}
+                  disabled={sessionLoading}
+                  className="flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors"
+                  style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}
+                  title="End classroom session"
+                >
+                  End Class
+                </button>
+              )}
+            </div>
           )}
 
           {/* Professional Sprint & Review Hub button */}
           {workspaceType === 'professional' && (
             <button
               onClick={() => setShowProfessionalPanel(v => !v)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative mr-1"
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
               style={{
                 background: showProfessionalPanel ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
                 color: showProfessionalPanel ? '#60a5fa' : 'var(--text)',
@@ -1285,200 +1342,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           )}
 
-          {/* Start Class button (Education mode) */}
-          {workspaceType === 'educational' && !sessionActive && canEdit && (
-            <button
-              onClick={handleStartSession}
-              disabled={sessionLoading}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors mr-1"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--accent)', color: 'var(--accent)', cursor: 'pointer' }}
-              title="Start a live classroom session"
-            >
-              <GraduationCap size={14} />
-              {sessionLoading ? 'Starting…' : 'Start Class'}
-            </button>
-          )}
-
-          {/* ── Voice call controls ── */}
-          {isBroadcaster ? (
-            voice.joined ? (
-              <div className="flex items-center gap-1.5 mr-1">
-                <span className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
-                  style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success)' }}>
-                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
-                  LIVE
-                </span>
-                <button onClick={voice.toggleMute} title={voice.muted ? 'Unmute' : 'Mute'}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: voice.muted ? 'var(--error)' : 'var(--text)', cursor: 'pointer' }}>
-                  {voice.muted ? <MicOff size={14} /> : <Mic size={14} />}
-                </button>
-                <button onClick={voice.endCall}
-                  className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold"
-                  style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}>
-                  <PhoneOff size={13} />End Call
-                </button>
-              </div>
-            ) : (
-              <button onClick={voice.startCall}
-                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1"
-                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}>
-                <Phone size={13} />Start Call
-              </button>
-            )
-          ) : voice.callActive ? (
-            voice.joined ? (
-              <button onClick={voice.leaveCall}
-                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1"
-                style={{ background: 'var(--surface-2)', color: 'var(--error)', border: '1px solid var(--error)', cursor: 'pointer' }}>
-                <PhoneOff size={13} />Leave
-              </button>
-            ) : (
-              <button onClick={voice.joinCall}
-                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold mr-1 animate-pulse"
-                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
-                title={`${voice.teacherName || 'Broadcaster'} is speaking`}>
-                <Headphones size={13} />Join &amp; Listen
-              </button>
-            )
-          ) : null}
-          {voice.error && (
-            <span className="text-xs mr-1" style={{ color: 'var(--error)' }}>{voice.error}</span>
-          )}
-
-          {/* Terminal toggle */}
-          <button
-            type="button"
-            onClick={toggleTerminal}
-            title={isTerminalOpen && !isTerminalCollapsed ? "Hide Terminal (Ctrl + `)" : "Open Terminal (Ctrl + `)"}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{
-              background: isTerminalOpen && !isTerminalCollapsed ? 'var(--surface-2)' : 'transparent',
-              border: '1px solid var(--border)',
-              color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)',
-              cursor: 'pointer',
-            }}
-          >
-            <Terminal size={13} />
-          </button>
-
-          {/* Chat & Voice toggle */}
-          <button
-            type="button"
-            onClick={() => setShowChat(prev => !prev)}
-            title={showChat ? 'Close Chat & Voice' : 'Open Chat & Voice'}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{ background: showChat ? 'var(--surface-2)' : 'transparent', border: '1px solid var(--border)', color: showChat ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer' }}
-          >
-            <MessageSquare size={13} />
-          </button>
-          {/* Theme toggle */}
-          <button
-            onClick={toggleTheme}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
-          >
-            {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
-          </button>
-
-          {/* Environment button */}
-          <button
-            onClick={() => setShowEnvironmentModal(true)}
-            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: showEnvironmentModal ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
-              color: showEnvironmentModal ? '#60a5fa' : 'var(--text)',
-              border: `1px solid ${showEnvironmentModal ? '#3b82f6' : 'var(--border)'}`,
-              cursor: 'pointer',
-            }}
-            title="Execution Environment Settings & Sandbox Status"
-          >
-            <Cpu size={13} className="text-blue-400" />
-            <span className="hidden sm:inline">Env</span>
-            {globalExecutionMode && canAdmin && (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" title="Global Execution Mode ON" />
-            )}
-          </button>
-
-          {/* Locks button */}
-          <button
-            onClick={() => setShowLockManager(true)}
-            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all relative"
-            style={{
-              background: showLockManager ? 'rgba(210, 153, 34, 0.2)' : 'var(--surface-2)',
-              color: showLockManager ? '#d29922' : 'var(--text)',
-              border: `1px solid ${showLockManager ? '#d29922' : 'var(--border)'}`,
-              cursor: 'pointer',
-            }}
-            title="Manage Resource Locks"
-          >
-            <Lock size={13} className={workspaceLocks.length > 0 ? 'text-amber-400' : 'text-gray-400'} />
-            <span className="hidden sm:inline">Locks</span>
-            {workspaceLocks.length > 0 && (
-              <span className="px-1 py-0.2 text-[9px] rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                {workspaceLocks.length}
-              </span>
-            )}
-          </button>
-
-          {/* Lock / Unlock Active File button */}
-          {canLock && activeTab && (
-            <button
-              onClick={() => {
-                if (activeFileLock) {
-                  socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id });
-                } else {
-                  socketRef.current?.emit('lock:create', { workspaceId: workspace.id, lockType: 'file', targetPath: activeTab.path });
-                }
-              }}
-              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors border"
-              style={{
-                background: activeFileLock ? 'rgba(210, 153, 34, 0.15)' : 'transparent',
-                borderColor: activeFileLock ? 'rgba(210, 153, 34, 0.4)' : 'var(--border)',
-                color: activeFileLock ? '#d29922' : 'var(--muted)',
-                cursor: 'pointer',
-              }}
-              title={activeFileLock ? 'Unlock active file' : 'Lock active file from edits'}
-            >
-              {activeFileLock ? <Unlock size={12} /> : <Lock size={12} />}
-              <span className="hidden md:inline">{activeFileLock ? 'Unlock' : 'Lock File'}</span>
-            </button>
-          )}
-
-          {/* Run / Stop button */}
-          {!isEffectiveReadOnly && (
-            running ? (
-              <button
-                onClick={stopExecution}
-                className="flex items-center gap-2 px-4 h-8 rounded-lg text-sm font-semibold transition-all"
-                style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}
-              >
-                <Square size={12} />Stop
-              </button>
-            ) : (
-              <button
-                onClick={runFile}
-                disabled={!activeTab || !socketConnected}
-                className="flex items-center gap-2 px-3.5 h-8 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all shadow-sm"
-                style={{
-                  background: globalExecutionMode && canAdmin ? '#8b5cf6' : 'var(--accent)',
-                  color: 'white',
-                  border: 'none',
-                  cursor: activeTab && socketConnected ? 'pointer' : 'not-allowed',
-                }}
-                title={globalExecutionMode && canAdmin ? 'Run in Global Environment (Broadcasts to all members)' : 'Run in Isolated Private Member Environment'}
-              >
-                <Play size={12} />
-                {globalExecutionMode && canAdmin ? 'Global Run' : 'Run'}
-              </button>
-            )
-          )}
-
           {/* Professional: Request Review button for active file */}
           {workspaceType === 'professional' && activeTab && !isEffectiveReadOnly && (
             <button
               onClick={() => setShowProfessionalPanel(true)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors"
               style={{
                 background: 'rgba(168, 85, 247, 0.15)',
                 color: '#c084fc',
@@ -1488,15 +1356,69 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               title="Request code review for current file"
             >
               <GitPullRequest size={12} />
-              <span>Request Review</span>
+              <span className="hidden lg:inline">Review File</span>
             </button>
           )}
+
+          {/* Voice call controls */}
+          {isBroadcaster ? (
+            voice.joined ? (
+              <div className="flex items-center gap-1.5">
+                <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
+                  LIVE
+                </span>
+                <button onClick={voice.toggleMute} title={voice.muted ? 'Unmute' : 'Mute'}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: voice.muted ? 'var(--error)' : 'var(--text)', cursor: 'pointer' }}>
+                  {voice.muted ? <MicOff size={13} /> : <Mic size={13} />}
+                </button>
+                <button onClick={voice.endCall}
+                  className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs font-semibold"
+                  style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}>
+                  <PhoneOff size={12} /> End
+                </button>
+              </div>
+            ) : (
+              <button onClick={voice.startCall}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold"
+                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}>
+                <Phone size={12} /> Call
+              </button>
+            )
+          ) : voice.callActive ? (
+            voice.joined ? (
+              <button onClick={voice.leaveCall}
+                className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold"
+                style={{ background: 'var(--surface-2)', color: 'var(--error)', border: '1px solid var(--error)', cursor: 'pointer' }}>
+                <PhoneOff size={12} /> Leave
+              </button>
+            ) : (
+              <button onClick={voice.joinCall}
+                className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold animate-pulse"
+                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
+                title={`${voice.teacherName || 'Broadcaster'} is speaking`}>
+                <Headphones size={12} /> Join Call
+              </button>
+            )
+          ) : null}
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            title="Toggle Theme"
+          >
+            {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+          </button>
 
           {/* Logout */}
           <button
             onClick={logout}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
             title="Sign out"
           >
             <LogOut size={13} />
@@ -1757,7 +1679,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         {/* ── Sidebar ── */}
         <aside
           className="flex flex-col shrink-0"
-          style={{ width: 248, background: 'var(--surface)', borderRight: '1px solid var(--border)', overflow: 'hidden' }}
+          style={{ width: sidebarWidth, background: 'var(--surface)', overflow: 'hidden' }}
         >
           {/* Sidebar header */}
           <div
@@ -1815,7 +1737,89 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               </p>
             ) : renderTree(tree)}
           </div>
+
+          {/* Sidebar Footer: Management Hub (Bottom Left Corner) */}
+          <div
+            className="p-2 shrink-0 flex flex-col gap-1 border-t select-none"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
+          >
+            {/* Team Members Button */}
+            <button
+              onClick={() => setShowMembersPanel(v => !v)}
+              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+              style={{
+                color: showMembersPanel ? 'var(--accent)' : 'var(--text)',
+                border: 'none',
+                background: showMembersPanel ? 'var(--surface)' : 'transparent',
+                cursor: 'pointer',
+              }}
+              title="Workspace Members & Permissions"
+            >
+              <div className="flex items-center gap-2">
+                <Users size={13} className="text-purple-400" />
+                <span>Members</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {activeUsers.length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                )}
+                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
+                  {activeUsers.length}
+                </span>
+              </div>
+            </button>
+
+            {/* Environment Manager Button */}
+            <button
+              onClick={() => setShowEnvironmentModal(true)}
+              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+              style={{
+                color: showEnvironmentModal ? 'var(--accent)' : 'var(--text)',
+                border: 'none',
+                background: showEnvironmentModal ? 'var(--surface)' : 'transparent',
+                cursor: 'pointer',
+              }}
+              title="Execution Environment Status & Runtimes"
+            >
+              <div className="flex items-center gap-2">
+                <Cpu size={13} className="text-blue-400" />
+                <span>Environment</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
+                {globalExecutionMode && canAdmin ? 'Global' : 'Private'}
+              </span>
+            </button>
+
+            {/* Lock Manager Button */}
+            <button
+              onClick={() => setShowLockManager(true)}
+              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+              style={{
+                color: showLockManager ? '#d29922' : 'var(--text)',
+                border: 'none',
+                background: showLockManager ? 'var(--surface)' : 'transparent',
+                cursor: 'pointer',
+              }}
+              title="Manage File & Folder Locks"
+            >
+              <div className="flex items-center gap-2">
+                <Lock size={13} className={workspaceLocks.length > 0 ? 'text-amber-400' : 'text-gray-400'} />
+                <span>Locks</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: workspaceLocks.length > 0 ? '#d29922' : 'var(--muted)' }}>
+                {workspaceLocks.length}
+              </span>
+            </button>
+          </div>
         </aside>
+
+        {/* ── Resizable Splitter between Sidebar and Main Content ── */}
+        <div
+          onMouseDown={handleSidebarMouseDown}
+          className="w-1 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors shrink-0 z-10"
+          style={{ background: 'var(--border)' }}
+          title="Drag to resize file explorer"
+        />
 
         {/* ── Main Pane ── */}
         <main className="flex-1 flex flex-col overflow-hidden" style={{ background: '#0d1117' }}>
@@ -2186,6 +2190,118 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
         </main>
       </div>
+
+      {/* ── Bottom Status Bar (VS Code style) ── */}
+      <footer
+        className="flex items-center justify-between px-3 h-6 shrink-0 text-[11px] select-none z-20"
+        style={{
+          background: 'var(--surface-2)',
+          borderTop: '1px solid var(--border)',
+          color: 'var(--muted)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          {/* Workspace type & branch */}
+          <span className="flex items-center gap-1 font-mono">
+            <GitBranch size={11} className="text-blue-400" />
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>main</span>
+          </span>
+
+          {/* Cursor line & column */}
+          {activeTab && (
+            <span className="font-mono">
+              Ln {localCursor ? localCursor.line + 1 : 1}, Col {localCursor ? localCursor.col + 1 : 1}
+            </span>
+          )}
+
+          {/* Active file lock status / quick toggle */}
+          {activeTab && (
+            <div className="flex items-center gap-1">
+              {activeFileLock ? (
+                <span className="flex items-center gap-1 text-amber-400 font-mono">
+                  <Lock size={10} /> Locked by {activeFileLock.lockedByName}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 font-mono text-[10px] opacity-75">
+                  <Unlock size={10} /> Unlocked
+                </span>
+              )}
+              {canLock && (
+                <button
+                  onClick={() => {
+                    if (activeFileLock) {
+                      socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id });
+                    } else {
+                      socketRef.current?.emit('lock:create', { workspaceId: workspace.id, lockType: 'file', targetPath: activeTab.path });
+                    }
+                  }}
+                  className="ml-1 text-[10px] px-1.5 py-0.2 rounded hover:bg-black/20 cursor-pointer border-none text-[var(--accent)]"
+                  title={activeFileLock ? 'Release lock on this file' : 'Lock this file'}
+                >
+                  {activeFileLock ? 'Unlock' : 'Lock'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Dirty indicator */}
+          {activeTab?.dirty && (
+            <button
+              onClick={saveActive}
+              className="flex items-center gap-1 text-amber-400 font-medium cursor-pointer hover:underline border-none bg-transparent text-[11px] p-0"
+              title="Click to save (Ctrl + S)"
+            >
+              <Save size={10} />
+              <span>{saving ? 'Saving…' : 'Unsaved'}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Terminal Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleTerminal}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
+            style={{ color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)' }}
+            title="Toggle Console (Ctrl + `)"
+          >
+            <Terminal size={11} />
+            <span>Console</span>
+          </button>
+
+          {/* Chat Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setShowChat(prev => !prev)}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
+            style={{ color: showChat ? 'var(--accent)' : 'var(--muted)' }}
+            title="Toggle Collaboration Chat & Voice"
+          >
+            <MessageSquare size={11} />
+            <span>Chat</span>
+          </button>
+
+          {/* Environment Status pill */}
+          <button
+            onClick={() => setShowEnvironmentModal(true)}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
+            title="Execution Environment Settings"
+          >
+            <Cpu size={11} className="text-blue-400" />
+            <span>Env: {globalExecutionMode && canAdmin ? 'Global' : 'Isolated'}</span>
+          </button>
+
+          {/* Online connection status dot */}
+          <span className="flex items-center gap-1">
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: socketConnected ? '#10b981' : '#ef4444' }}
+            />
+            <span className="font-mono text-[10px]">{socketConnected ? 'Online' : 'Offline'}</span>
+          </span>
+        </div>
+      </footer>
 
       {/* Members Panel Overlay */}
       {showMembersPanel && (

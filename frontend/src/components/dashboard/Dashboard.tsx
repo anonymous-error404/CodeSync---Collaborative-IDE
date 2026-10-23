@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2,
-  GraduationCap, Briefcase, Trophy, Check, Sparkles, Crown
+  GraduationCap, Briefcase, Trophy, Check, Crown
 } from 'lucide-react';
 import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -389,13 +389,6 @@ export function Dashboard({ onOpen }: Props) {
                         {item.desc}
                       </p>
                     </div>
-
-                    {typeKey === 'educational' && (
-                      <div className="mt-3 pt-2 text-[10px] font-semibold flex items-center gap-1.5"
-                        style={{ borderTop: `1px solid ${item.borderColor}`, color: item.color }}>
-                        <Sparkles size={11} /> Supports Granular Student Permissions (No-View, Viewer, Editor)
-                      </div>
-                    )}
                   </div>
                 );
               })}

@@ -13,14 +13,23 @@ export const startSession = asyncWrapper(async (req, res) => {
   const workspaceId = req.params.id;
   const teacherUserId = req.user.id;
 
-  // Prevent duplicate active sessions
-  const existing = await TeachingSession.findOne({ where: { workspaceId, active: true } });
-  if (existing) {
-    return res.status(409).json({ success: false, error: 'A session is already active in this workspace' });
+  // Find or reactivate existing session record for this workspace (due to workspaceId UNIQUE constraint)
+  let session = await TeachingSession.findOne({ where: { workspaceId } });
+  if (session) {
+    session.active = true;
+    session.teacherUserId = teacherUserId;
+    session.focusMode = false;
+    session.focusedFilePath = null;
+    await session.save();
+  } else {
+    session = await TeachingSession.create({
+      workspaceId,
+      teacherUserId,
+      active: true,
+      focusMode: false,
+      focusedFilePath: null,
+    });
   }
-
-  // Create the session
-  const session = await TeachingSession.create({ workspaceId, teacherUserId });
 
   // Assign teacher role to caller, student role to all other members, reset locks
   await WorkspaceMember.update(
@@ -45,7 +54,7 @@ export const endSession = asyncWrapper(async (req, res) => {
 
   const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
   if (!session) {
-    return res.status(404).json({ success: false, error: 'No active session found' });
+    return res.status(200).json({ success: true, message: 'No active session to end' });
   }
 
   session.active = false;

@@ -79,6 +79,7 @@ function initWorkspaceSockets(io) {
       if (activeSession) {
         socket.emit('session:active', {
           sessionId: activeSession.id,
+          teacherId: activeSession.teacherUserId,
           teacherUserId: activeSession.teacherUserId,
           focusMode: activeSession.focusMode,
           focusedFilePath: activeSession.focusedFilePath,
@@ -261,10 +262,15 @@ function initWorkspaceSockets(io) {
      */
     socket.on('session:announce_start', async ({ workspaceId }) => {
       if (!inRoom(workspaceId)) return;
-      if (socket.sessionRole !== 'teacher') {
-        socket.emit('workspace-error', { message: 'Only the teacher can announce a session start' });
+      const isTeacherOrAdmin =
+        socket.role === 'teacher' ||
+        socket.role === 'owner' ||
+        socket.role === 'admin' ||
+        socket.sessionRole === 'teacher';
+      if (!isTeacherOrAdmin) {
         return;
       }
+      socket.sessionRole = 'teacher';
 
       // Sync in-memory sockets with database session roles
       const roomSockets = await workspaceNamespace.in(`workspace:${workspaceId}`).fetchSockets();
@@ -282,8 +288,10 @@ function initWorkspaceSockets(io) {
       const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
       workspaceNamespace.to(`workspace:${workspaceId}`).emit('session:started', {
         sessionId: session?.id,
+        teacherId: socket.userId,
         teacherUserId: socket.userId,
         teacherName: socket.username,
+        teacherUsername: socket.username,
         focusMode: session?.focusMode ?? false,
       });
     });
@@ -293,10 +301,15 @@ function initWorkspaceSockets(io) {
      */
     socket.on('session:announce_end', async ({ workspaceId }) => {
       if (!inRoom(workspaceId)) return;
-      if (socket.sessionRole !== 'teacher') {
-        socket.emit('workspace-error', { message: 'Only the teacher can end a session' });
+      const isTeacherOrAdmin =
+        socket.role === 'teacher' ||
+        socket.role === 'owner' ||
+        socket.role === 'admin' ||
+        socket.sessionRole === 'teacher';
+      if (!isTeacherOrAdmin) {
         return;
       }
+      socket.sessionRole = 'none';
 
       // Reset in-memory session states
       const roomSockets = await workspaceNamespace.in(`workspace:${workspaceId}`).fetchSockets();

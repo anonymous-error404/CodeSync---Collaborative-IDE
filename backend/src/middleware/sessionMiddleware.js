@@ -37,7 +37,8 @@ export function requireSessionRole(requiredRole) {
         return res.status(403).json({ success: false, error: 'Not a member of this workspace' });
       }
 
-      if (membership.sessionRole !== requiredRole) {
+      const isLeader = ['owner', 'admin', 'teacher'].includes(membership.role);
+      if (membership.sessionRole !== requiredRole && !(requiredRole === 'teacher' && isLeader)) {
         return res.status(403).json({
           success: false,
           error: `Access denied: requires session role '${requiredRole}'. Your current session role is '${membership.sessionRole}'.`,
