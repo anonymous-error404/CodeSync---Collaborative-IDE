@@ -103,12 +103,41 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const isViewer = myRole === 'viewer';
 
   // ── Terminal / Console sizing & state (VS Code style expandable) ───────────
+  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(true);
   const [terminalHeight, setTerminalHeight] = useState<number>(220);
   const [isTerminalMaximized, setIsTerminalMaximized] = useState<boolean>(false);
   const [isTerminalCollapsed, setIsTerminalCollapsed] = useState<boolean>(false);
   const isDraggingTerminalRef = useRef<boolean>(false);
   const dragStartYRef = useRef<number>(0);
   const dragStartHeightRef = useRef<number>(220);
+
+  const toggleTerminal = useCallback(() => {
+    setActiveView('editor');
+    setIsTerminalOpen(prevOpen => {
+      if (!prevOpen) {
+        setIsTerminalCollapsed(false);
+        return true;
+      }
+      if (isTerminalCollapsed) {
+        setIsTerminalCollapsed(false);
+        return true;
+      }
+      return false;
+    });
+  }, [isTerminalCollapsed]);
+
+  // Global shortcut: Ctrl/Cmd + ` opens or toggles the terminal (VS Code style)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isBackquote = e.key === '`' || e.code === 'Backquote' || e.keyCode === 192 || e.which === 192;
+      if ((e.ctrlKey || e.metaKey) && isBackquote) {
+        e.preventDefault();
+        toggleTerminal();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [toggleTerminal]);
 
   const handleTerminalMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -482,6 +511,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setOutput('[Error] Not connected to backend. Is the server running?\n');
       return;
     }
+    setIsTerminalOpen(true);
+    setIsTerminalCollapsed(false);
     await saveActive();
     socket.emit('execute-code', { workspaceId: workspace.id, filePath: activeTab.path });
   };
@@ -496,6 +527,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     updateCode,
     activeTab?.name ?? '',
     saveActive,
+    toggleTerminal,
   );
 
   // ── Remote cursor broadcast ───────────────────────────────────────────────
@@ -788,6 +820,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             <span className="text-xs mr-1" style={{ color: 'var(--error)' }}>{voice.error}</span>
           )}
 
+          {/* Terminal toggle */}
+          <button
+            type="button"
+            onClick={toggleTerminal}
+            title={isTerminalOpen && !isTerminalCollapsed ? "Hide Terminal (Ctrl + `)" : "Open Terminal (Ctrl + `)"}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            style={{
+              background: isTerminalOpen && !isTerminalCollapsed ? 'var(--surface-2)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <Terminal size={13} />
+          </button>
+
           {/* Chat & Voice toggle */}
           <button
             type="button"
@@ -963,11 +1011,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             ))}
           </div>
 
-          {/* Editor + Console */}
-          {activeTab ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-
-              {/* Code editor */}
+          {/* Main workspace area: Editor (or placeholder) + Console */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {activeTab ? (
+              /* Code editor */
               <div
                 className="flex-1 overflow-hidden relative flex flex-col"
                 style={{ display: isTerminalMaximized ? 'none' : 'flex' }}
@@ -1050,8 +1097,19 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   )}
                 </div>
               </div>
+            ) : (
+              <div
+                className="flex-1 flex flex-col items-center justify-center"
+                style={{ display: isTerminalMaximized ? 'none' : 'flex', color: 'var(--muted)' }}
+              >
+                <FileCode size={40} className="mb-4 opacity-20" />
+                <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
+                {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
+              </div>
+            )}
 
-              {/* Console / Terminal output (VS Code style expandable & draggable) */}
+            {/* Console / Terminal output (VS Code style expandable & draggable) */}
+            {isTerminalOpen && (
               <div
                 className="shrink-0 flex flex-col relative select-none"
                 style={{
@@ -1081,6 +1139,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     <Terminal size={13} style={{ color: 'var(--muted)' }} />
                     <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
                       Console
+                    </span>
+                    <span
+                      className="text-[10px] px-1.5 py-0.2 rounded select-none opacity-60"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                      title="Press Ctrl + ` to toggle console"
+                    >
+                      Ctrl + `
                     </span>
                     {running && (
                       <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--warning)' }}>
@@ -1117,6 +1182,14 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     >
                       {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
                     </button>
+                    <button
+                      onClick={() => setIsTerminalOpen(false)}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title="Close console (Ctrl + `)"
+                    >
+                      <X size={13} />
+                    </button>
                   </div>
                 </div>
 
@@ -1137,14 +1210,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   </pre>
                 )}
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center" style={{ color: 'var(--muted)' }}>
-              <FileCode size={40} className="mb-4 opacity-20" />
-              <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
-              {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
-            </div>
-          )}
+            )}
+          </div>
         </>
       )}
         </main>
