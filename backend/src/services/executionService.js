@@ -129,12 +129,11 @@ class ExecutionService {
 
     // Java — needs RW volume so javac can write .class files next to the source
     if (ext === '.java') {
-      const className = path.basename(fileName, '.java');
       return [
         ...baseArgs,
         '--volume', `${workspaceDir}:/workspace`,
         DOCKER_IMAGES.java,
-        'sh', '-c', `javac ${fileName} && java ${className}`,
+        'sh', '-c', `javac *.java 2>/dev/null; java "${fileName}"`,
       ];
     }
 

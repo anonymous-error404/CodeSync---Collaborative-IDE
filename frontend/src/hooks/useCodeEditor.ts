@@ -43,6 +43,7 @@ export function useCodeEditor(
   onChange: (v: string, cursorOffset?: number) => void,
   filename: string,
   onSave?: () => void,
+  onToggleTerminal?: () => void,
 ) {
   const textareaRef  = useRef<HTMLTextAreaElement>(null);
   // Stores the cursor position we want to apply AFTER React re-renders.
@@ -74,10 +75,23 @@ export function useCodeEditor(
       const se = textarea.selectionEnd;
       const key = e.key;
 
+      // ── Ctrl/Cmd + ` → toggle terminal ─────────────────────────────────────
+      const isBackquote = key === '`' || e.code === 'Backquote' || e.keyCode === 192 || e.which === 192;
+      if ((e.ctrlKey || e.metaKey) && isBackquote) {
+        e.preventDefault();
+        onToggleTerminal?.();
+        return;
+      }
+
       // ── Ctrl/Cmd + S → save ───────────────────────────────────────────────
       if ((e.ctrlKey || e.metaKey) && key === 's') {
         e.preventDefault();
         onSave?.();
+        return;
+      }
+
+      // ── Ignore all other modifier combinations (don't treat as character typing) ──
+      if (e.ctrlKey || e.metaKey || e.altKey) {
         return;
       }
 
@@ -187,7 +201,7 @@ export function useCodeEditor(
         return;
       }
     },
-    [value, onChange, filename, onSave],
+    [value, onChange, filename, onSave, onToggleTerminal],
   );
 
   return { textareaRef, handleKeyDown };

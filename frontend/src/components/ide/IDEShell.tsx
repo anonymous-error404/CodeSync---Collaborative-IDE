@@ -6,7 +6,8 @@ import {
   Users, Layers, MessageSquare,
   Phone, PhoneOff, Mic, MicOff, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
-  Eye, Send, EyeOff, Briefcase, Trophy, Edit3
+  Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
+  Maximize2, Minimize2, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
@@ -129,6 +130,68 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const isRemoteUpdatingRef = useRef<boolean>(false);
   const prevTabPathRef = useRef<string | null>(null);
   const localOffsetRef = useRef<number>(0);
+
+  // ── Terminal / Console sizing & state (VS Code style expandable) ───────────
+  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(true);
+  const [terminalHeight, setTerminalHeight] = useState<number>(220);
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState<boolean>(false);
+  const [isTerminalCollapsed, setIsTerminalCollapsed] = useState<boolean>(false);
+  const isDraggingTerminalRef = useRef<boolean>(false);
+  const dragStartYRef = useRef<number>(0);
+  const dragStartHeightRef = useRef<number>(220);
+
+  const toggleTerminal = useCallback(() => {
+    setActiveView('editor');
+    setIsTerminalOpen(prevOpen => {
+      if (!prevOpen) {
+        setIsTerminalCollapsed(false);
+        return true;
+      }
+      if (isTerminalCollapsed) {
+        setIsTerminalCollapsed(false);
+        return true;
+      }
+      return false;
+    });
+  }, [isTerminalCollapsed]);
+
+  // Global shortcut: Ctrl/Cmd + ` opens or toggles the terminal (VS Code style)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isBackquote = e.key === '`' || e.code === 'Backquote' || e.keyCode === 192 || e.which === 192;
+      if ((e.ctrlKey || e.metaKey) && isBackquote) {
+        e.preventDefault();
+        toggleTerminal();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [toggleTerminal]);
+
+  const handleTerminalMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingTerminalRef.current = true;
+    dragStartYRef.current = e.clientY;
+    dragStartHeightRef.current = terminalHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingTerminalRef.current) return;
+      const deltaY = dragStartYRef.current - moveEvent.clientY;
+      const newHeight = Math.max(90, Math.min(window.innerHeight - 150, dragStartHeightRef.current + deltaY));
+      setTerminalHeight(newHeight);
+      setIsTerminalMaximized(false);
+      setIsTerminalCollapsed(false);
+    };
+
+    const onMouseUp = () => {
+      isDraggingTerminalRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [terminalHeight]);
 
   // ── Voice call (broadcast from teacher or owner/admin) ──
   const isBroadcaster = sessionActive ? isTeacher : canAdmin;
@@ -626,6 +689,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setOutput('[Error] Not connected to backend. Is the server running?\n');
       return;
     }
+    setIsTerminalOpen(true);
+    setIsTerminalCollapsed(false);
     await saveActive();
     socket.emit('execute-code', { workspaceId: workspace.id, filePath: activeTab.path });
   };
@@ -730,6 +795,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     updateCode,
     activeTab?.name ?? '',
     saveActive,
+    toggleTerminal,
   );
 
   // ── Remote cursor broadcast ───────────────────────────────────────────────
@@ -1089,6 +1155,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {voice.error && (
             <span className="text-xs mr-1" style={{ color: 'var(--error)' }}>{voice.error}</span>
           )}
+
+          {/* Terminal toggle */}
+          <button
+            type="button"
+            onClick={toggleTerminal}
+            title={isTerminalOpen && !isTerminalCollapsed ? "Hide Terminal (Ctrl + `)" : "Open Terminal (Ctrl + `)"}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            style={{
+              background: isTerminalOpen && !isTerminalCollapsed ? 'var(--surface-2)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <Terminal size={13} />
+          </button>
 
           {/* Chat & Voice toggle */}
           <button
@@ -1516,56 +1598,58 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 <GraduationCap size={15} /> Educational Classroom Active
               </div>
             </div>
-          ) : activeTab ? (
+          ) : (
             <div className="flex-1 flex flex-col overflow-hidden">
-
-              {/* Code editor */}
-              <div className="flex-1 overflow-hidden relative flex flex-col">
-                {/* Viewer Access Banner */}
-                {isViewer && !isEditorLocked && (
-                  <div
-                    className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
-                    style={{ background: 'rgba(56, 189, 248, 0.12)', borderBottom: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Eye size={13} />
-                      {isStudent
-                        ? 'Viewer Access: You are observing live classroom code in read-only mode.'
-                        : 'Viewer Mode: Read-only access to this workspace.'}
-                    </span>
-                    <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
-                      {isStudent ? 'Assigned by Teacher' : 'Read Only'}
-                    </span>
-                  </div>
-                )}
-                {/* Locked banner */}
-                {isEditorLocked && (
-                  <div
-                    className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
-                    style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Lock size={13} />
-                      Your editor is currently locked by the teacher. Editing and code execution are paused.
-                    </span>
-                    {isStudent && (
-                      <button
-                        onClick={handleToggleHand}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-colors"
-                        style={{
-                          background: myHandRaised ? 'var(--warning)' : 'var(--surface-2)',
-                          color: myHandRaised ? '#0d1117' : 'var(--text)',
-                          border: '1px solid var(--border)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Hand size={12} />
-                        {myHandRaised ? 'Lower Hand' : 'Raise Hand'}
-                      </button>
-                    )}
-                  </div>
-                )}
-
+              {activeTab ? (
+                /* Code editor */
+                <div
+                  className="flex-1 overflow-hidden relative flex flex-col"
+                  style={{ display: isTerminalMaximized ? 'none' : 'flex' }}
+                >
+                  {/* Viewer Access Banner */}
+                  {isViewer && !isEditorLocked && (
+                    <div
+                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
+                      style={{ background: 'rgba(56, 189, 248, 0.12)', borderBottom: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Eye size={13} />
+                        {isStudent
+                          ? 'Viewer Access: You are observing live classroom code in read-only mode.'
+                          : 'Viewer Mode: Read-only access to this workspace.'}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
+                        {isStudent ? 'Assigned by Teacher' : 'Read Only'}
+                      </span>
+                    </div>
+                  )}
+                  {/* Locked banner */}
+                  {isEditorLocked && (
+                    <div
+                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
+                      style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Lock size={13} />
+                        Your editor is currently locked by the teacher. Editing and code execution are paused.
+                      </span>
+                      {isStudent && (
+                        <button
+                          onClick={handleToggleHand}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-colors"
+                          style={{
+                            background: myHandRaised ? 'var(--warning)' : 'var(--surface-2)',
+                            color: myHandRaised ? '#0d1117' : 'var(--text)',
+                            border: '1px solid var(--border)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Hand size={12} />
+                          {myHandRaised ? 'Lower Hand' : 'Raise Hand'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 {/* Active file collaborators bar */}
                 {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-1 text-xs shrink-0" style={{ background: '#161b22', borderBottom: '1px solid var(--border)' }}>
@@ -1649,17 +1733,55 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   )}
                 </div>
               </div>
+            ) : (
+              <div
+                className="flex-1 flex flex-col items-center justify-center"
+                style={{ display: isTerminalMaximized ? 'none' : 'flex', color: 'var(--muted)' }}
+              >
+                <FileCode size={40} className="mb-4 opacity-20" />
+                <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
+                {!isViewer && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
+              </div>
+            )}
 
-              {/* Console / Terminal output */}
-              <div className="shrink-0" style={{ height: 220, borderTop: '1px solid var(--border)' }}>
+            {/* Console / Terminal output (VS Code style expandable & draggable) */}
+            {isTerminalOpen && (
+              <div
+                className="shrink-0 flex flex-col relative select-none"
+                style={{
+                  height: isTerminalMaximized ? '100%' : isTerminalCollapsed ? 36 : terminalHeight,
+                  flex: isTerminalMaximized ? '1 1 0%' : undefined,
+                  borderTop: '1px solid var(--border)',
+                  background: 'var(--surface)',
+                  transition: isDraggingTerminalRef.current ? 'none' : 'height 0.15s ease',
+                }}
+              >
+                {/* Resizer bar (drag to resize terminal height, double click to maximize) */}
+                {!isTerminalMaximized && (
+                  <div
+                    onMouseDown={handleTerminalMouseDown}
+                    onDoubleClick={() => setIsTerminalMaximized(prev => !prev)}
+                    className="w-full h-2 cursor-row-resize absolute -top-1 left-0 right-0 z-20 hover:bg-[var(--accent)] transition-colors opacity-0 hover:opacity-100"
+                    title="Drag to resize console height, double-click to maximize"
+                  />
+                )}
+
                 <div
-                  className="flex items-center justify-between px-4 py-2"
-                  style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
+                  className="flex items-center justify-between px-4 py-2 shrink-0 cursor-default"
+                  style={{ borderBottom: isTerminalCollapsed ? 'none' : '1px solid var(--border)', background: 'var(--surface)' }}
+                  onDoubleClick={() => setIsTerminalMaximized(prev => !prev)}
                 >
                   <div className="flex items-center gap-2">
                     <Terminal size={13} style={{ color: 'var(--muted)' }} />
                     <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
                       Console
+                    </span>
+                    <span
+                      className="text-[10px] px-1.5 py-0.2 rounded select-none opacity-60"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                      title="Press Ctrl + ` to toggle console"
+                    >
+                      Ctrl + `
                     </span>
                     {running && (
                       <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--warning)' }}>
@@ -1668,38 +1790,65 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setOutput('')}
-                    className="text-xs px-2 py-0.5 rounded transition-colors"
-                    style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    Clear
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setOutput('')}
+                      className="text-xs px-2 py-0.5 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title="Clear console"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => setIsTerminalCollapsed(prev => !prev)}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title={isTerminalCollapsed ? "Expand console" : "Collapse console"}
+                    >
+                      {isTerminalCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsTerminalMaximized(prev => !prev);
+                        if (isTerminalCollapsed) setIsTerminalCollapsed(false);
+                      }}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title={isTerminalMaximized ? "Restore panel size" : "Maximize console panel"}
+                    >
+                      {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                    </button>
+                    <button
+                      onClick={() => setIsTerminalOpen(false)}
+                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      title="Close console (Ctrl + `)"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
                 </div>
-                <pre
-                  ref={outputRef}
-                  className="p-4 text-sm leading-relaxed overflow-auto"
-                  style={{
-                    margin: 0,
-                    height: 'calc(100% - 40px)',
-                    background: '#0a0c10',
-                    color: '#e6edf3',
-                    fontFamily: 'var(--font-mono)',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
-                  }}
-                >
-                  {output || <span style={{ color: 'var(--muted)' }}>Console output will appear here after clicking Run…</span>}
-                </pre>
+
+                {!isTerminalCollapsed && (
+                  <pre
+                    ref={outputRef}
+                    className="p-4 text-sm leading-relaxed overflow-auto flex-1 select-text"
+                    style={{
+                      margin: 0,
+                      background: '#0a0c10',
+                      color: '#e6edf3',
+                      fontFamily: 'var(--font-mono)',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {output || <span style={{ color: 'var(--muted)' }}>Console output will appear here after clicking Run…</span>}
+                  </pre>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center" style={{ color: 'var(--muted)' }}>
-              <FileCode size={40} className="mb-4 opacity-20" />
-              <p style={{ fontSize: 15, color: 'var(--text)' }}>Select a file to open it</p>
-              {!isEffectiveReadOnly && <p className="mt-1 text-sm">Or click + in the sidebar to create a new file</p>}
-            </div>
-          )}
+            )}
+          </div>
+        )}
           </div>
         </main>
       </div>

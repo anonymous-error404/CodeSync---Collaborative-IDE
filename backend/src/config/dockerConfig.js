@@ -8,8 +8,8 @@ export const DOCKER_IMAGES = {
 };
 
 /** Resource limits (overridable via .env) */
-export const DOCKER_MEMORY_LIMIT = process.env.DOCKER_MEMORY_LIMIT || '128m';
-export const DOCKER_CPU_LIMIT    = process.env.DOCKER_CPU_LIMIT    || '0.5';
+export const DOCKER_MEMORY_LIMIT = process.env.DOCKER_MEMORY_LIMIT || '512m';
+export const DOCKER_CPU_LIMIT    = process.env.DOCKER_CPU_LIMIT    || '1.0';
 
 /** Prefix for container names — used to kill by name */
 export const CONTAINER_NAME_PREFIX = 'codesync-exec';
