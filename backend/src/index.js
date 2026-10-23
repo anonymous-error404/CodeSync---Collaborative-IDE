@@ -3,6 +3,7 @@ import authRoutes from './routes/authRoutes.js';
 import memberRoutes from './routes/memberRoutes.js';
 import inviteRoutes from './routes/inviteRoutes.js';
 import whiteboardRoutes from './routes/whiteboardRoutes.js';
+import sessionRoutes from './routes/sessionRoutes.js';
 import initWorkspaceSockets from './sockets/workspaceSocket.js';
 import workspaceService from './services/workspaceService.js';
 import storageService from './services/storageService.js';
@@ -16,6 +17,7 @@ export {
   memberRoutes,
   inviteRoutes,
   whiteboardRoutes,
+  sessionRoutes,
   initWorkspaceSockets,
   workspaceService,
   storageService,
@@ -24,3 +26,4 @@ export {
   googleRedirect,
   googleCallback
 };
+

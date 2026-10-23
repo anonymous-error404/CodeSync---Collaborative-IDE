@@ -3,11 +3,13 @@ import User from './User.js';
 import WorkspaceMember from './WorkspaceMember.js';
 import WorkspaceInvite from './WorkspaceInvite.js';
 import Whiteboard from './Whiteboard.js';
+import TeachingSession from './TeachingSession.js';
 
 WorkspaceMember.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(WorkspaceMember, { foreignKey: 'userId' });
 
 WorkspaceInvite.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+TeachingSession.belongsTo(User, { as: 'teacher', foreignKey: 'teacherUserId' });
 
 const db = {
   sequelize,
@@ -15,6 +17,7 @@ const db = {
   WorkspaceMember,
   WorkspaceInvite,
   Whiteboard,
+  TeachingSession,
 };
 
 /**
@@ -36,4 +39,4 @@ const syncDatabase = async (options = {}) => {
 
 export { syncDatabase };
 export default db;
-export { User, WorkspaceMember, WorkspaceInvite, Whiteboard };
+export { User, WorkspaceMember, WorkspaceInvite, Whiteboard, TeachingSession };

@@ -24,6 +24,12 @@ WorkspaceMember.init(
       allowNull: false,
       defaultValue: 'viewer',
     },
+    // Education session role — orthogonal to workspace RBAC role
+    sessionRole: {
+      type: DataTypes.ENUM('teacher', 'student', 'none'),
+      allowNull: false,
+      defaultValue: 'none',
+    },
     joinedAt: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,

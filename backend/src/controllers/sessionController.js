@@ -1,0 +1,179 @@
+import { TeachingSession, WorkspaceMember, User } from '../models/index.js';
+import asyncWrapper from '../utils/asyncWrapper.js';
+
+// ─── Session lifecycle ────────────────────────────────────────────────────────
+
+/**
+ * POST /workspaces/:id/session/start
+ * Teacher starts a new teaching session for this workspace.
+ * Assigns the caller's sessionRole to 'teacher', all other members become 'student'.
+ * Requires: workspace member with role >= editor (enforced in route).
+ */
+export const startSession = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+  const teacherUserId = req.user.id;
+
+  // Prevent duplicate active sessions
+  const existing = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+  if (existing) {
+    return res.status(409).json({ success: false, error: 'A session is already active in this workspace' });
+  }
+
+  // Create the session
+  const session = await TeachingSession.create({ workspaceId, teacherUserId });
+
+  // Assign teacher role to caller, student role to all other members
+  await WorkspaceMember.update(
+    { sessionRole: 'student' },
+    { where: { workspaceId } }
+  );
+  await WorkspaceMember.update(
+    { sessionRole: 'teacher' },
+    { where: { workspaceId, userId: teacherUserId } }
+  );
+
+  res.status(201).json({ success: true, session });
+});
+
+/**
+ * POST /workspaces/:id/session/end
+ * Teacher ends the active session. Resets all sessionRoles to 'none'.
+ * Requires: sessionRole === 'teacher'.
+ */
+export const endSession = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+
+  const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'No active session found' });
+  }
+
+  session.active = false;
+  await session.save();
+
+  // Reset all sessionRoles
+  await WorkspaceMember.update({ sessionRole: 'none' }, { where: { workspaceId } });
+
+  res.status(200).json({ success: true, message: 'Session ended successfully' });
+});
+
+/**
+ * GET /workspaces/:id/session
+ * Get the current session state for a workspace.
+ */
+export const getSession = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+
+  const session = await TeachingSession.findOne({
+    where: { workspaceId, active: true },
+    include: [{ model: User, as: 'teacher', attributes: ['id', 'username', 'email'] }],
+  });
+
+  if (!session) {
+    return res.status(200).json({ success: true, session: null, active: false });
+  }
+
+  // Fetch all members with their session roles
+  const members = await WorkspaceMember.findAll({
+    where: { workspaceId },
+    include: [{ model: User, attributes: ['id', 'username', 'email'] }],
+  });
+
+  res.status(200).json({
+    success: true,
+    active: true,
+    session: {
+      id: session.id,
+      teacherUserId: session.teacherUserId,
+      teacher: session.teacher,
+      focusMode: session.focusMode,
+      focusedFilePath: session.focusedFilePath,
+      createdAt: session.createdAt,
+    },
+    members: members.map(m => ({
+      userId: m.userId,
+      username: m.User?.username,
+      sessionRole: m.sessionRole,
+      role: m.role,
+    })),
+  });
+});
+
+// ─── Student management ───────────────────────────────────────────────────────
+
+/**
+ * PATCH /workspaces/:id/session/members/:userId/role
+ * Teacher reassigns a member's sessionRole (promote/demote between teacher/student/none).
+ * Requires: sessionRole === 'teacher'.
+ */
+export const assignSessionRole = asyncWrapper(async (req, res) => {
+  const { id: workspaceId, userId } = req.params;
+  const { sessionRole } = req.body;
+
+  if (!['teacher', 'student', 'none'].includes(sessionRole)) {
+    return res.status(400).json({ success: false, error: "sessionRole must be 'teacher', 'student', or 'none'" });
+  }
+
+  // Prevent teacher from stripping their own role without appointing another teacher
+  if (req.user.id.toString() === userId && sessionRole !== 'teacher') {
+    const otherTeachers = await WorkspaceMember.count({
+      where: { workspaceId, sessionRole: 'teacher', userId: { $ne: req.user.id } },
+    });
+    if (otherTeachers === 0) {
+      return res.status(400).json({ success: false, error: 'Appoint another teacher before removing your own teacher role' });
+    }
+  }
+
+  const member = await WorkspaceMember.findOne({ where: { workspaceId, userId } });
+  if (!member) {
+    return res.status(404).json({ success: false, error: 'Member not found' });
+  }
+
+  member.sessionRole = sessionRole;
+  await member.save();
+
+  res.status(200).json({ success: true, member: { userId: member.userId, sessionRole: member.sessionRole } });
+});
+
+/**
+ * PATCH /workspaces/:id/session/focus
+ * Teacher toggles focus mode and optionally pins a file path to broadcast.
+ * Requires: sessionRole === 'teacher'.
+ */
+export const setFocusMode = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+  const { focusMode, focusedFilePath } = req.body;
+
+  const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'No active session found' });
+  }
+
+  session.focusMode = focusMode ?? session.focusMode;
+  session.focusedFilePath = focusedFilePath ?? session.focusedFilePath;
+  await session.save();
+
+  res.status(200).json({ success: true, focusMode: session.focusMode, focusedFilePath: session.focusedFilePath });
+});
+
+/**
+ * GET /workspaces/:id/session/my-role
+ * Returns the requesting user's current session role.
+ */
+export const getMySessionRole = asyncWrapper(async (req, res) => {
+  const workspaceId = req.params.id;
+  const userId = req.user.id;
+
+  const member = await WorkspaceMember.findOne({ where: { workspaceId, userId } });
+  if (!member) {
+    return res.status(404).json({ success: false, error: 'Not a member of this workspace' });
+  }
+
+  const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+
+  res.status(200).json({
+    success: true,
+    sessionRole: member.sessionRole,
+    sessionActive: !!session,
+  });
+});

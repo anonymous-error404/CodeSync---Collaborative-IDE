@@ -167,11 +167,33 @@ function ConnectorSVG({ conn, elements, isSelected, onSelect }: ConnectorProps) 
 
 // ─── Stroke freehand renderer ─────────────────────────────────────────────────
 
-function FreehandSVG({ el, isSelected }: { el: CanvasElement; isSelected: boolean }) {
+function FreehandSVG({ el, isSelected, activeTool, onSelect, onErase }: {
+  el: CanvasElement;
+  isSelected: boolean;
+  activeTool: string;
+  onSelect: (id: string) => void;
+  onErase: (id: string) => void;
+}) {
   if (!el.points || el.points.length < 2) return null;
   const d = el.points.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
+  const hitWidth = Math.max((el.strokeWidth ?? 3) + 10, 14);
   return (
-    <svg className="absolute inset-0 overflow-visible pointer-events-none" style={{ zIndex: 5 }}>
+    <svg className="absolute inset-0 overflow-visible" style={{ zIndex: 5, pointerEvents: 'none' }}>
+      {/* Wide invisible hit-target so eraser/select can interact */}
+      <path
+        d={d}
+        stroke="transparent"
+        strokeWidth={hitWidth}
+        fill="none"
+        strokeLinecap="round"
+        style={{ pointerEvents: 'auto', cursor: activeTool === 'eraser' ? 'cell' : 'pointer' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (activeTool === 'eraser') { onErase(el.id); return; }
+          onSelect(el.id);
+        }}
+      />
+      {/* Visible stroke */}
       <path
         d={d}
         stroke={isSelected ? 'var(--accent)' : (el.strokeColor ?? '#2f81f7')}
@@ -180,6 +202,7 @@ function FreehandSVG({ el, isSelected }: { el: CanvasElement; isSelected: boolea
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeOpacity={el.opacity ?? 1}
+        style={{ pointerEvents: 'none' }}
       />
     </svg>
   );
@@ -485,8 +508,25 @@ export function WhiteboardCanvas({
 
   // ─── Hit test ─────────────────────────────────────────────────────────────
 
+  /** Point-to-segment distance squared. */
+  function ptSegDistSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return (px - ax) ** 2 + (py - ay) ** 2;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return (px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2;
+  }
+
   function hitTest(el: CanvasElement, pos: { x: number; y: number }): boolean {
-    if (el.type === 'stroke') return false; // handled by click on path
+    if (el.type === 'stroke') {
+      if (!el.points || el.points.length < 2) return false;
+      const threshold = Math.max((el.strokeWidth ?? 3) / 2 + 6, 10);
+      for (let i = 0; i < el.points.length - 1; i++) {
+        const a = el.points[i], b = el.points[i + 1];
+        if (ptSegDistSq(pos.x, pos.y, a.x, a.y, b.x, b.y) <= threshold * threshold) return true;
+      }
+      return false;
+    }
     if (el.type === 'connector' || el.type === 'arrow') return false; // SVG handles it
     if (!el.width || !el.height) return false;
     return pos.x >= el.x && pos.x <= el.x + el.width && pos.y >= el.y && pos.y <= el.y + el.height;
@@ -538,7 +578,14 @@ export function WhiteboardCanvas({
       >
         {/* ── Strokes (bottom layer) ───────────────────────────────────── */}
         {strokeEls.map(el => (
-          <FreehandSVG key={el.id} el={el} isSelected={selectedIds.includes(el.id)} />
+          <FreehandSVG
+            key={el.id}
+            el={el}
+            isSelected={selectedIds.includes(el.id)}
+            activeTool={activeTool}
+            onSelect={(id) => onSelect(selectedIds.includes(id) ? selectedIds.filter(s => s !== id) : [...selectedIds, id])}
+            onErase={(id) => { onDeleteElement?.(id); onSelect(selectedIds.filter(s => s !== id)); }}
+          />
         ))}
 
         {/* ── Connectors (above strokes, below nodes) ──────────────────── */}
