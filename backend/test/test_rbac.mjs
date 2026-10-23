@@ -159,6 +159,40 @@ testAsync('requireWorkspaceMember blocks missing workspace ID', async () => {
   assert.strictEqual(nextCalled, false);
 });
 
+console.log('\n─── Education RBAC: Roles & Student Access Permissions ─────────────');
+
+test('Teacher has administrative leadership rank (rank 4)', () => {
+  assert.strictEqual(roleRanks.teacher, 4);
+  assert(roleRanks.teacher >= roleRanks.admin);
+  assert(roleRanks.teacher >= roleRanks.editor);
+});
+
+test('Teacher can assign student role and manage members', () => {
+  assert(canManageMemberRole('teacher', 'student', 'viewer') === true);
+  assert(canManageMemberRole('teacher', 'viewer', 'student') === true);
+  assert(canRemoveMember('teacher', 'student') === true);
+});
+
+test('Students cannot manage roles or remove members', () => {
+  assert(canManageMemberRole('student', 'student', 'teacher') === false);
+  assert(canRemoveMember('student', 'student') === false);
+});
+
+test('Teacher can create student, editor, or viewer invites', () => {
+  assert(canCreateInviteRole('teacher', 'student') === true);
+  assert(canCreateInviteRole('teacher', 'editor') === true);
+  assert(canCreateInviteRole('teacher', 'viewer') === true);
+  assert(canCreateInviteRole('teacher', 'teacher') === false); // Teacher cannot be claimed via invite link
+});
+
+test('Professional Team Leader and Developer role ranks', () => {
+  assert.strictEqual(roleRanks.team_leader, 4);
+  assert.strictEqual(roleRanks.developer, 2);
+  assert(canManageMemberRole('team_leader', 'developer', 'viewer') === true);
+  assert(canRemoveMember('team_leader', 'developer') === true);
+  assert(canCreateInviteRole('team_leader', 'developer') === true);
+});
+
 console.log('\n─── Education RBAC: Session Role Middleware ────────────────────────');
 
 test('requireTeacher and requireStudent middleware are defined', () => {

@@ -13,14 +13,14 @@ export const getMembers = asyncWrapper(async (req, res) => {
 
 export const updateMemberRole = asyncWrapper(async (req, res) => {
   const { id, userId } = req.params;
-  const { role } = req.body;
+  const { role, studentAccess } = req.body;
 
   if (req.user.id.toString() === userId) {
     return res.status(400).json({ success: false, error: 'Cannot change your own role' });
   }
 
-  const validRoles = ['owner', 'admin', 'editor', 'viewer'];
-  if (!validRoles.includes(role)) {
+  const validRoles = ['owner', 'admin', 'editor', 'viewer', 'teacher', 'student', 'team_leader', 'developer'];
+  if (role && !validRoles.includes(role)) {
     return res.status(400).json({ success: false, error: 'Invalid role' });
   }
 
@@ -33,14 +33,52 @@ export const updateMemberRole = asyncWrapper(async (req, res) => {
   }
 
   const actorRole = req.membership?.role || 'viewer';
-  if (!canManageMemberRole(actorRole, member.role, role)) {
-    return res.status(403).json({
-      success: false,
-      error: `Access denied: role '${actorRole}' cannot change a '${member.role}' to '${role}'`,
-    });
+
+  if (role) {
+    if (!canManageMemberRole(actorRole, member.role, role)) {
+      return res.status(403).json({
+        success: false,
+        error: `Access denied: role '${actorRole}' cannot change a '${member.role}' to '${role}'`,
+      });
+    }
+    member.role = role;
   }
 
-  member.role = role;
+  if (studentAccess && ['no-view', 'viewer', 'editor'].includes(studentAccess)) {
+    if (!['teacher', 'owner', 'admin'].includes(actorRole)) {
+      return res.status(403).json({ success: false, error: 'Only teachers or workspace admins can assign student access' });
+    }
+    member.studentAccess = studentAccess;
+  }
+
+  await member.save();
+
+  res.status(200).json({ success: true, member });
+});
+
+export const updateStudentAccess = asyncWrapper(async (req, res) => {
+  const { id, userId } = req.params;
+  const { access } = req.body; // 'no-view' | 'viewer' | 'editor'
+
+  const validAccess = ['no-view', 'viewer', 'editor'];
+  if (!validAccess.includes(access)) {
+    return res.status(400).json({ success: false, error: 'Invalid access level. Must be no-view, viewer, or editor' });
+  }
+
+  const actorRole = req.membership?.role;
+  if (!['teacher', 'owner', 'admin'].includes(actorRole)) {
+    return res.status(403).json({ success: false, error: 'Only teachers or workspace admins can assign student access' });
+  }
+
+  const member = await WorkspaceMember.findOne({
+    where: { workspaceId: id, userId },
+  });
+
+  if (!member) {
+    return res.status(404).json({ success: false, error: 'Member not found' });
+  }
+
+  member.studentAccess = access;
   await member.save();
 
   res.status(200).json({ success: true, member });
@@ -80,22 +118,20 @@ export const leaveWorkspace = asyncWrapper(async (req, res) => {
 
   const membership = req.membership;
 
-  if (membership.role === 'owner') {
-    const ownerCount = await WorkspaceMember.count({
-      where: { workspaceId: id, role: 'owner' },
+  if (['owner', 'teacher'].includes(membership.role)) {
+    const leaderCount = await WorkspaceMember.count({
+      where: { workspaceId: id, role: membership.role },
     });
 
-    if (ownerCount <= 1) {
+    if (leaderCount <= 1) {
       return res.status(400).json({
         success: false,
-        error: 'Cannot leave as the only owner. Transfer ownership or delete the workspace instead.',
+        error: `Cannot leave: you are the sole ${membership.role}. Transfer ownership or delete the workspace.`,
       });
     }
   }
 
-  await WorkspaceMember.destroy({
-    where: { workspaceId: id, userId },
-  });
+  await membership.destroy();
 
-  res.status(200).json({ success: true, message: 'Successfully left the workspace' });
+  res.status(200).json({ success: true, message: 'You have left the workspace' });
 });

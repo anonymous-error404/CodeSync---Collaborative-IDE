@@ -1,30 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Copy, Check, Trash2, Crown, Shield, Eye, Edit3, X, GraduationCap, Lock } from 'lucide-react';
-import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole } from '../../types';
+import {
+  Users, UserPlus, Copy, Check, Trash2, Crown, Shield, Eye, EyeOff, Edit3, X,
+  GraduationCap, Lock
+} from 'lucide-react';
+import type { WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceType, StudentAccessLevel } from '../../types';
 import { collabService } from '../../services/workspaceCollabService';
 import { Spinner } from '../ui/Spinner';
 
 interface Props {
   workspaceId: string;
+  workspaceType?: WorkspaceType;
   myRole: WorkspaceRole;
   currentUserId: number;
   token: string | null;
   onClose: () => void;
+  onStudentAccessUpdated?: (userId: number, access: StudentAccessLevel) => void;
 }
 
-export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClose }: Props) {
+export function MembersPanel({
+  workspaceId,
+  workspaceType = 'educational',
+  myRole,
+  currentUserId,
+  token,
+  onClose,
+  onStudentAccessUpdated,
+}: Props) {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
   const [generatingInvite, setGeneratingInvite] = useState(false);
-  const [selectedInviteRole, setSelectedInviteRole] = useState<WorkspaceRole>('editor');
+  const [selectedInviteRole, setSelectedInviteRole] = useState<WorkspaceRole>(
+    workspaceType === 'educational' ? 'student' : workspaceType === 'professional' ? 'developer' : 'editor'
+  );
+  const [updatingAccessUserId, setUpdatingAccessUserId] = useState<number | null>(null);
 
+  const isTeacher = myRole === 'teacher' || myRole === 'owner' || myRole === 'admin';
   const isOwner = myRole === 'owner';
   const isAdmin = myRole === 'admin';
-  const canManageRoles = isOwner || isAdmin;
-  const canManageInvites = isOwner || isAdmin || myRole === 'editor';
+  const isTeamLeader = myRole === 'team_leader';
+  const canManageRoles = isOwner || isAdmin || isTeacher || isTeamLeader;
+  const canManageInvites = canManageRoles || myRole === 'editor' || myRole === 'developer';
 
   const fetchData = async () => {
     setLoading(true);
@@ -32,9 +50,9 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
     try {
       const [memRes, invRes] = await Promise.all([
         collabService.getMembers(workspaceId, token),
-        canManageInvites ? collabService.getInvites(workspaceId, token) : Promise.resolve({ success: true, invites: [] })
+        canManageInvites ? collabService.getInvites(workspaceId, token) : Promise.resolve({ success: true, invites: [] }),
       ]);
-      
+
       if (memRes.success) setMembers(memRes.members);
       if (canManageInvites && invRes.success) setInvites(invRes.invites);
     } catch {
@@ -51,8 +69,10 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
   const canChangeMember = (targetMember: WorkspaceMember) => {
     if (targetMember.userId === currentUserId) return false;
     if (isOwner) return true;
+    if (isTeacher) return targetMember.role === 'student' || targetMember.role === 'viewer';
+    if (isTeamLeader) return targetMember.role === 'developer' || targetMember.role === 'viewer';
     if (isAdmin) {
-      return targetMember.role === 'editor' || targetMember.role === 'viewer';
+      return targetMember.role === 'editor' || targetMember.role === 'viewer' || targetMember.role === 'student' || targetMember.role === 'developer';
     }
     return false;
   };
@@ -60,8 +80,10 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
   const canRemove = (targetMember: WorkspaceMember) => {
     if (targetMember.userId === currentUserId) return false;
     if (isOwner) return true;
+    if (isTeacher) return targetMember.role === 'student' || targetMember.role === 'viewer';
+    if (isTeamLeader) return targetMember.role === 'developer' || targetMember.role === 'viewer';
     if (isAdmin) {
-      return targetMember.role === 'editor' || targetMember.role === 'viewer';
+      return targetMember.role === 'editor' || targetMember.role === 'viewer' || targetMember.role === 'student' || targetMember.role === 'developer';
     }
     return false;
   };
@@ -77,6 +99,24 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
       }
     } catch {
       setError('Failed to update role');
+    }
+  };
+
+  const handleAccessChange = async (userId: number, access: StudentAccessLevel) => {
+    if (!isTeacher) return;
+    setUpdatingAccessUserId(userId);
+    try {
+      const res = await collabService.updateStudentAccess(workspaceId, userId, access, token);
+      if (res && res.success) {
+        setMembers(prev => prev.map(m => m.userId === userId ? { ...m, studentAccess: access } : m));
+        onStudentAccessUpdated?.(userId, access);
+      } else {
+        setError((res as any)?.error || 'Failed to update student access');
+      }
+    } catch {
+      setError('Failed to update student access');
+    } finally {
+      setUpdatingAccessUserId(null);
     }
   };
 
@@ -154,17 +194,27 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
   const roleColor = (role: string) => {
     switch (role) {
       case 'owner': return '#e3b341';
+      case 'teacher': return '#a855f7';
+      case 'team_leader': return '#f59e0b';
       case 'admin': return '#58a6ff';
       case 'editor': return '#3fb950';
+      case 'developer': return '#10b981';
+      case 'student': return '#38bdf8';
+      case 'no-view': return '#ef4444';
       default: return 'var(--muted)';
     }
   };
-  
+
   const roleIcon = (role: string) => {
     switch (role) {
       case 'owner': return <Crown size={12} />;
+      case 'teacher': return <GraduationCap size={12} />;
+      case 'team_leader': return <Crown size={12} />;
       case 'admin': return <Shield size={12} />;
       case 'editor': return <Edit3 size={12} />;
+      case 'developer': return <Edit3 size={12} />;
+      case 'student': return <GraduationCap size={12} />;
+      case 'no-view': return <EyeOff size={12} />;
       default: return <Eye size={12} />;
     }
   };
@@ -172,12 +222,20 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
   return (
     <div className="fixed top-0 bottom-0 right-0 z-50 flex flex-col shadow-2xl animate-fade-in"
       style={{ width: 340, background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}>
-      
+
       {/* Header */}
       <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center gap-2">
           <Users size={18} style={{ color: 'var(--text)' }} />
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Members & RBAC</h2>
+          <div>
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+              {workspaceType === 'educational' ? 'Classroom Roster & Access' : 'Members & RBAC'}
+            </h2>
+            <span className="text-[10px] uppercase tracking-wider font-semibold"
+              style={{ color: workspaceType === 'educational' ? '#a855f7' : workspaceType === 'professional' ? '#3b82f6' : '#f59e0b' }}>
+              {workspaceType} Mode
+            </span>
+          </div>
         </div>
         <button onClick={onClose} className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
           style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
@@ -191,7 +249,7 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
             {error}
           </div>
         )}
-        
+
         {loading ? (
           <div className="flex justify-center py-8"><Spinner size={24} /></div>
         ) : (
@@ -210,7 +268,7 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
 
               <div className="flex flex-col gap-2.5">
                 {members.map(m => (
-                  <div key={m.id} className="flex flex-col p-2.5 rounded-lg gap-1.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                  <div key={m.id} className="flex flex-col p-2.5 rounded-lg gap-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 overflow-hidden">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0"
@@ -224,19 +282,35 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
                           <span className="text-[11px] truncate block opacity-70" style={{ color: 'var(--muted)' }}>{m.User?.email}</span>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-1.5 shrink-0">
                         {canChangeMember(m) ? (
-                          <select 
+                          <select
                             value={m.role}
                             onChange={(e) => handleRoleChange(m.userId, e.target.value as WorkspaceRole)}
                             className="text-xs p-1 rounded outline-none cursor-pointer font-medium"
                             style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
                           >
-                            {isOwner && <option value="owner">Owner</option>}
-                            {isOwner && <option value="admin">Admin</option>}
-                            <option value="editor">Editor</option>
-                            <option value="viewer">Viewer</option>
+                            {workspaceType === 'educational' ? (
+                              <>
+                                <option value="student">Student</option>
+                                {isOwner && <option value="teacher">Teacher</option>}
+                                <option value="viewer">Viewer</option>
+                              </>
+                            ) : workspaceType === 'professional' ? (
+                              <>
+                                <option value="developer">Developer</option>
+                                {isOwner && <option value="team_leader">Team Leader</option>}
+                                <option value="viewer">Viewer</option>
+                              </>
+                            ) : (
+                              <>
+                                {isOwner && <option value="owner">Owner</option>}
+                                {isOwner && <option value="admin">Admin</option>}
+                                <option value="editor">Editor</option>
+                                <option value="viewer">Viewer</option>
+                              </>
+                            )}
                           </select>
                         ) : (
                           <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-semibold"
@@ -244,7 +318,7 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
                             {roleIcon(m.role)} {m.role}
                           </span>
                         )}
-                        
+
                         {canRemove(m) && (
                           <button onClick={() => handleRemoveMember(m.userId)} className="p-1 rounded hover:opacity-100 opacity-60"
                             style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer' }}
@@ -254,6 +328,87 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
                         )}
                       </div>
                     </div>
+
+                    {/* Educational Workspace: Student Access Permissions (no-view, viewer, editor) */}
+                    {(m.role === 'student' || workspaceType === 'educational') && m.role !== 'teacher' && (
+                      <div className="pt-2 flex flex-col gap-1.5" style={{ borderTop: '1px solid var(--border)' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                            <GraduationCap size={11} className="text-purple-400" /> Student Access:
+                          </span>
+                          <span className="text-[10px] font-mono font-bold capitalize"
+                            style={{
+                              color: (m.studentAccess || 'editor') === 'no-view' ? 'var(--error)' : (m.studentAccess || 'editor') === 'viewer' ? '#38bdf8' : '#3fb950'
+                            }}>
+                            {m.studentAccess || 'editor'}
+                          </span>
+                        </div>
+
+                        {isTeacher ? (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {(['no-view', 'viewer', 'editor'] as StudentAccessLevel[]).map(lvl => {
+                              const currentLvl = m.studentAccess || 'editor';
+                              const isActive = currentLvl === lvl;
+                              const isPending = updatingAccessUserId === m.userId;
+                              return (
+                                <button
+                                  key={lvl}
+                                  disabled={isPending}
+                                  onClick={() => handleAccessChange(m.userId, lvl)}
+                                  className="flex-1 py-1 px-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-all"
+                                  style={{
+                                    background: isActive
+                                      ? lvl === 'no-view'
+                                        ? 'rgba(239, 68, 68, 0.2)'
+                                        : lvl === 'viewer'
+                                        ? 'rgba(56, 189, 248, 0.2)'
+                                        : 'rgba(63, 185, 80, 0.2)'
+                                      : 'var(--bg)',
+                                    color: isActive
+                                      ? lvl === 'no-view'
+                                        ? '#ef4444'
+                                        : lvl === 'viewer'
+                                        ? '#38bdf8'
+                                        : '#3fb950'
+                                      : 'var(--muted)',
+                                    border: `1px solid ${
+                                      isActive
+                                        ? lvl === 'no-view'
+                                          ? '#ef4444'
+                                          : lvl === 'viewer'
+                                          ? '#38bdf8'
+                                          : '#3fb950'
+                                        : 'var(--border)'
+                                    }`,
+                                    cursor: isPending ? 'not-allowed' : 'pointer',
+                                    opacity: isPending ? 0.6 : 1,
+                                  }}
+                                  title={`Set access to ${lvl}`}
+                                >
+                                  {lvl === 'no-view' ? (
+                                    <>
+                                      <EyeOff size={10} /> No-View
+                                    </>
+                                  ) : lvl === 'viewer' ? (
+                                    <>
+                                      <Eye size={10} /> Viewer
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Edit3 size={10} /> Editor
+                                    </>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-[var(--muted)] flex items-center gap-1">
+                            Current Access: <strong className="capitalize" style={{ color: 'var(--text)' }}>{m.studentAccess || 'editor'}</strong>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Session / Education badges */}
                     {(m.sessionRole && m.sessionRole !== 'none') && (
@@ -287,9 +442,25 @@ export function MembersPanel({ workspaceId, myRole, currentUserId, token, onClos
                       className="text-xs p-1 rounded outline-none cursor-pointer"
                       style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
                     >
-                      {(isOwner || isAdmin) && <option value="admin">Admin</option>}
-                      <option value="editor">Editor</option>
-                      <option value="viewer">Viewer</option>
+                      {workspaceType === 'educational' ? (
+                        <>
+                          <option value="student">Student</option>
+                          {isOwner && <option value="teacher">Teacher</option>}
+                          <option value="viewer">Viewer</option>
+                        </>
+                      ) : workspaceType === 'professional' ? (
+                        <>
+                          <option value="developer">Developer</option>
+                          {isOwner && <option value="team_leader">Team Leader</option>}
+                          <option value="viewer">Viewer</option>
+                        </>
+                      ) : (
+                        <>
+                          {(isOwner || isAdmin) && <option value="admin">Admin</option>}
+                          <option value="editor">Editor</option>
+                          <option value="viewer">Viewer</option>
+                        </>
+                      )}
                     </select>
                     <button onClick={handleGenerateInvite} disabled={generatingInvite}
                       className="flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"

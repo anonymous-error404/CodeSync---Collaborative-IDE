@@ -5,11 +5,11 @@ import {
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
   Phone, PhoneOff, Mic, MicOff, Headphones,
-  Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap, School,
-  AlertTriangle, Eye, ShieldAlert, Send, EyeOff
+  Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
+  Eye, Send, EyeOff, Briefcase, Trophy, Edit3
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
-import type { Workspace, FileItem, WorkspaceRole, SessionRole } from '../../types';
+import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
@@ -110,12 +110,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [pingAlert, setPingAlert] = useState<{ message: string; from?: string } | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
 
-  const isViewer = myRole === 'viewer';
-  const canAdmin = myRole === 'owner' || myRole === 'admin';
-  const canEdit = myRole === 'owner' || myRole === 'admin' || myRole === 'editor';
-  const isTeacher = sessionRole === 'teacher';
-  const isStudent = sessionRole === 'student';
-  const isEffectiveReadOnly = isViewer || (isStudent && isEditorLocked);
+  const [currentRole, setCurrentRole] = useState<WorkspaceRole>(workspace.myRole || myRole || 'owner');
+  const [studentAccess, setStudentAccess] = useState<StudentAccessLevel>(workspace.studentAccess || 'editor');
+
+  const workspaceType = (workspace.type || 'educational') as WorkspaceType;
+
+  const isTeacher = currentRole === 'teacher' || sessionRole === 'teacher' || currentRole === 'owner' || currentRole === 'admin';
+  const isStudent = currentRole === 'student' || (!isTeacher && sessionRole === 'student');
+  const isNoView = (isStudent && studentAccess === 'no-view') || currentRole === 'no-view';
+  const isViewer = currentRole === 'viewer' || (isStudent && studentAccess === 'viewer');
+  const canAdmin = currentRole === 'owner' || currentRole === 'admin' || currentRole === 'teacher' || currentRole === 'team_leader';
+  const canEdit = !isNoView && !isViewer && (!isStudent || studentAccess === 'editor') && !(isStudent && isEditorLocked);
+  const isEffectiveReadOnly = isNoView || isViewer || (isStudent && isEditorLocked);
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
   const socketRef = useRef<Socket | null>(null);
@@ -133,7 +139,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   );
   // ── Tab & File operations ──────────────────────────────────────────────────
   const openFileByPath = useCallback(async (filePath: string) => {
-    if (!filePath) return;
+    if (!filePath || isNoView) return;
     const existing = tabs.find(t => t.path === filePath);
     if (existing) { setActiveTabId(existing.id); return; }
     const filename = filePath.split('/').pop() || filePath;
@@ -152,7 +158,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setTabs(prev => [...prev, tab]);
       setActiveTabId(tab.id);
     }
-  }, [tabs, workspace.id, authHeaders]);
+  }, [tabs, workspace.id, authHeaders, isNoView]);
 
   const openFile = useCallback(async (node: FileItem) => {
     if (node.type === 'directory') return;
@@ -160,6 +166,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   }, [openFileByPath]);
 
   const loadTree = useCallback(async () => {
+    if (studentAccess === 'no-view' && isStudent) {
+      setTree([]);
+      return;
+    }
     try {
       const res = await fetch(
         `${BASE_URL}/api/workspaces/${workspace.id}/files/tree`,
@@ -168,7 +178,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       const d = await res.json();
       if (d.success && d.fileTree) setTree(d.fileTree);
     } catch { /* ignore */ }
-  }, [workspace.id, authHeaders]);
+  }, [workspace.id, authHeaders, studentAccess, isStudent]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
 
@@ -310,6 +320,38 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     socket.on('execution-finished', ({ exitCode }: { exitCode: number }) => {
       setRunning(false);
       setOutput(prev => prev + `\n> Process finished with exit code ${exitCode}`);
+    });
+
+    socket.on('workspace-ready', (data: {
+      workspaceId: string;
+      fileTree?: FileItem[];
+      myRole?: WorkspaceRole;
+      mySessionRole?: SessionRole;
+      editorLocked?: boolean;
+      studentAccess?: StudentAccessLevel;
+    }) => {
+      if (data.myRole) setCurrentRole(data.myRole);
+      if (data.mySessionRole) setSessionRole(data.mySessionRole);
+      if (data.editorLocked !== undefined) setIsEditorLocked(data.editorLocked);
+      if (data.studentAccess) setStudentAccess(data.studentAccess);
+      if (data.fileTree) setTree(data.fileTree);
+    });
+
+    socket.on('member:access_updated', (data: { workspaceId: string; studentAccess: StudentAccessLevel; updatedBy: string }) => {
+      setStudentAccess(data.studentAccess);
+      if (data.studentAccess === 'no-view') {
+        setTabs([]);
+        setActiveTabId(null);
+        setTree([]);
+        setOutput(prev => prev + `\n[Notice] Teacher (${data.updatedBy}) updated your access to No-View.`);
+      } else {
+        loadTree();
+        setOutput(prev => prev + `\n[Notice] Teacher (${data.updatedBy}) updated your access to ${data.studentAccess}.`);
+      }
+    });
+
+    socket.on('member:access_changed', () => {
+      // Trigger update if needed
     });
 
     socket.on('workspace-error', ({ message }: { message: string }) => {
@@ -847,6 +889,60 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </span>
           </div>
 
+          {/* Workspace Type Badge */}
+          <span
+            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5"
+            style={{
+              background: workspaceType === 'educational' ? 'rgba(168, 85, 247, 0.15)' : workspaceType === 'professional' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+              color: workspaceType === 'educational' ? '#c084fc' : workspaceType === 'professional' ? '#60a5fa' : '#fbbf24',
+              border: `1px solid ${workspaceType === 'educational' ? 'rgba(168, 85, 247, 0.35)' : workspaceType === 'professional' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
+            }}
+          >
+            {workspaceType === 'educational' ? <GraduationCap size={12} /> : workspaceType === 'professional' ? <Briefcase size={12} /> : <Trophy size={12} />}
+            <span className="capitalize">{workspaceType}</span>
+          </span>
+
+          {/* Role / Access Level Badge */}
+          <span
+            className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1"
+            style={{
+              background: isTeacher
+                ? 'rgba(168, 85, 247, 0.18)'
+                : isStudent
+                ? studentAccess === 'no-view'
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : studentAccess === 'viewer'
+                  ? 'rgba(56, 189, 248, 0.15)'
+                  : 'rgba(63, 185, 80, 0.15)'
+                : 'var(--surface-2)',
+              color: isTeacher
+                ? '#c084fc'
+                : isStudent
+                ? studentAccess === 'no-view'
+                  ? '#ef4444'
+                  : studentAccess === 'viewer'
+                  ? '#38bdf8'
+                  : '#3fb950'
+                : 'var(--text)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            {isTeacher ? (
+              <>🎓 Teacher</>
+            ) : isStudent ? (
+              <>
+                {studentAccess === 'no-view' ? <EyeOff size={11} /> : studentAccess === 'viewer' ? <Eye size={11} /> : <Edit3 size={11} />}
+                Student: {studentAccess}
+              </>
+            ) : currentRole === 'team_leader' ? (
+              <>👑 Team Leader</>
+            ) : currentRole === 'developer' ? (
+              <>💻 Developer</>
+            ) : (
+              <>{currentRole}</>
+            )}
+          </span>
+
           {/* View Mode Toggle: Code Editor vs Whiteboard */}
           <div
             className="flex items-center p-0.5 rounded-lg border ml-2"
@@ -1327,7 +1423,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
           {/* File tree */}
           <div className="flex-1 overflow-y-auto py-2">
-            {tree.length === 0 ? (
+            {isNoView ? (
+              <div className="p-4 text-center text-xs flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
+                <EyeOff size={24} className="text-red-400 opacity-60" />
+                <span className="font-semibold text-red-400">File Tree Restricted</span>
+                <span>Teacher has set your access to No-View.</span>
+              </div>
+            ) : tree.length === 0 ? (
               <p className="px-4 py-3 text-sm" style={{ color: 'var(--muted)' }}>
                 No files yet — click + to create one
               </p>
@@ -1398,11 +1500,44 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
 
           {/* Editor + Console */}
-          {activeTab ? (
+          {isNoView ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center"
+              style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+                <EyeOff size={32} className="text-red-500" />
+              </div>
+              <h2 className="text-xl font-bold mb-2">Access Restricted by Teacher</h2>
+              <p className="max-w-md text-sm mb-6" style={{ color: 'var(--muted)' }}>
+                Your student access level is currently set to <strong>No-View</strong>. Please wait for your instructor to grant view or edit permissions during this session.
+              </p>
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: '#c084fc' }}>
+                <GraduationCap size={15} /> Educational Classroom Active
+              </div>
+            </div>
+          ) : activeTab ? (
             <div className="flex-1 flex flex-col overflow-hidden">
 
               {/* Code editor */}
               <div className="flex-1 overflow-hidden relative flex flex-col">
+                {/* Viewer Access Banner */}
+                {isViewer && !isEditorLocked && (
+                  <div
+                    className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
+                    style={{ background: 'rgba(56, 189, 248, 0.12)', borderBottom: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Eye size={13} />
+                      {isStudent
+                        ? 'Viewer Access: You are observing live classroom code in read-only mode.'
+                        : 'Viewer Mode: Read-only access to this workspace.'}
+                    </span>
+                    <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
+                      {isStudent ? 'Assigned by Teacher' : 'Read Only'}
+                    </span>
+                  </div>
+                )}
                 {/* Locked banner */}
                 {isEditorLocked && (
                   <div
@@ -1573,10 +1708,20 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {showMembersPanel && (
         <MembersPanel
           workspaceId={workspace.id}
-          myRole={myRole}
+          workspaceType={workspaceType}
+          myRole={currentRole}
           currentUserId={user?.id ?? 0}
           token={token}
           onClose={() => setShowMembersPanel(false)}
+          onStudentAccessUpdated={(userId, access) => {
+            if (socketRef.current) {
+              socketRef.current.emit('member:set_access', {
+                workspaceId: workspace.id,
+                userId,
+                access,
+              });
+            }
+          }}
         />
       )}
       {/* Right Chat & Voice Panel */}

@@ -177,6 +177,7 @@ export interface CanvasElement {
   diagramType?: DiagramNodeType;
   fields?: ObjectField[];     // ER/UML fields
   methods?: ObjectMethod[];   // UML class methods
+  label?: string;
 
   // Component status and project links
   status?: ComponentStatus;

@@ -25,6 +25,12 @@ export const collabService = {
       body: JSON.stringify({ role }),
     }),
 
+  updateStudentAccess: (wsId: string, userId: number, access: 'no-view' | 'viewer' | 'editor', token: string | null) =>
+    req<{ success: boolean; member: WorkspaceMember }>(`/api/workspaces/${wsId}/members/${userId}/access`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ access }),
+    }),
+
   removeMember: (wsId: string, userId: number, token: string | null) =>
     req(`/api/workspaces/${wsId}/members/${userId}`, token, { method: 'DELETE' }),
 

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2 } from 'lucide-react';
-import type { Workspace, WorkspaceRole } from '../../types';
+import {
+  Plus, Code2, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2,
+  GraduationCap, Briefcase, Trophy, Check, Sparkles
+} from 'lucide-react';
+import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Button } from '../ui/Button';
@@ -20,6 +23,44 @@ function timeAgo(dateStr?: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+const typeDetails: Record<WorkspaceType, {
+  label: string;
+  icon: typeof GraduationCap;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  roles: string;
+  desc: string;
+}> = {
+  educational: {
+    label: 'Educational',
+    icon: GraduationCap,
+    color: '#a855f7',
+    bgColor: 'rgba(168, 85, 247, 0.12)',
+    borderColor: 'rgba(168, 85, 247, 0.35)',
+    roles: 'Teacher (Host) & Students',
+    desc: 'Live classroom instruction with individual student access levels (no-view, viewer, editor), lock controls, and focus mode.',
+  },
+  professional: {
+    label: 'Professional',
+    icon: Briefcase,
+    color: '#3b82f6',
+    bgColor: 'rgba(59, 130, 246, 0.12)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    roles: 'Team Leader & Developers',
+    desc: 'Production team environment with peer code collaboration, code review workflows, and standard RBAC permission ranks.',
+  },
+  competitive: {
+    label: 'Competitive',
+    icon: Trophy,
+    color: '#f59e0b',
+    bgColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    roles: 'Hackathons & Sprints',
+    desc: 'Fast-paced timed sprints, synchronized team hacking, quick submissions, and rapid execution benchmarking.',
+  },
+};
+
 interface Props { onOpen: (ws: Workspace, role: WorkspaceRole) => void; }
 
 export function Dashboard({ onOpen }: Props) {
@@ -30,6 +71,8 @@ export function Dashboard({ onOpen }: Props) {
   const [creating, setCreating] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
+  const [selectedType, setSelectedType] = useState<WorkspaceType>('educational');
+  const [createError, setCreateError] = useState('');
   const newNameRef = useRef<HTMLInputElement>(null);
 
   const [showJoin, setShowJoin] = useState(false);
@@ -57,18 +100,23 @@ export function Dashboard({ onOpen }: Props) {
   const createWorkspace = async () => {
     if (!newName.trim()) return;
     setCreating(true);
+    setCreateError('');
     try {
       const res = await fetch(`${BASE_URL}/api/workspaces`, {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), type: selectedType }),
       });
       const d = await res.json();
       if (d.success && d.workspace) {
         setWorkspaces(prev => [d.workspace, ...prev]);
         setShowNew(false);
         setNewName('');
+      } else {
+        setCreateError(d.error || 'Failed to create workspace');
       }
+    } catch (err: any) {
+      setCreateError(err.message || 'Failed to create workspace');
     } finally {
       setCreating(false);
     }
@@ -287,23 +335,98 @@ export function Dashboard({ onOpen }: Props) {
         {showNew && (
           <div className="rounded-xl p-6 mb-8 animate-fade-in"
             style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
-            <p className="font-semibold mb-4" style={{ color: 'var(--text)', fontSize: 15 }}>Create New Workspace</p>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="font-bold text-base" style={{ color: 'var(--text)' }}>Create Workspace</p>
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                  Select the workspace workflow type that fits your goals:
+                </p>
+              </div>
+            </div>
+
+            {createError && (
+              <div className="p-2.5 rounded-lg text-xs mb-4 flex items-center gap-2"
+                style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
+                <span>{createError}</span>
+              </div>
+            )}
+
+            {/* 3 Workspace Type Selectable Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+              {(['educational', 'professional', 'competitive'] as WorkspaceType[]).map(typeKey => {
+                const item = typeDetails[typeKey];
+                const ItemIcon = item.icon;
+                const isSelected = selectedType === typeKey;
+                return (
+                  <div
+                    key={typeKey}
+                    onClick={() => setSelectedType(typeKey)}
+                    className="p-4 rounded-xl cursor-pointer transition-all flex flex-col justify-between relative"
+                    style={{
+                      background: isSelected ? item.bgColor : 'var(--surface-2)',
+                      border: `1.5px solid ${isSelected ? item.color : 'var(--border)'}`,
+                      boxShadow: isSelected ? `0 0 14px ${item.bgColor}` : 'none',
+                    }}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center text-white shadow-sm"
+                        style={{ background: item.color }}>
+                        <Check size={12} strokeWidth={3} />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: item.bgColor, color: item.color, border: `1px solid ${item.borderColor}` }}>
+                          <ItemIcon size={16} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>{item.label}</p>
+                          <span className="text-[10px] font-semibold" style={{ color: item.color }}>{item.roles}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
+                        {item.desc}
+                      </p>
+                    </div>
+
+                    {typeKey === 'educational' && (
+                      <div className="mt-3 pt-2 text-[10px] font-semibold flex items-center gap-1.5"
+                        style={{ borderTop: `1px solid ${item.borderColor}`, color: item.color }}>
+                        <Sparkles size={11} /> Supports Granular Student Permissions (No-View, Viewer, Editor)
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="flex gap-3 flex-wrap items-center">
               <input
                 ref={newNameRef}
                 value={newName}
-                onChange={e => setNewName(e.target.value)}
-                placeholder="e.g. My Python Project"
-                onKeyDown={e => { if (e.key === 'Enter') createWorkspace(); if (e.key === 'Escape') { setShowNew(false); setNewName(''); } }}
+                onChange={e => { setNewName(e.target.value); setCreateError(''); }}
+                placeholder={
+                  selectedType === 'educational'
+                    ? 'e.g. CS101: Web & Algorithms Classroom'
+                    : selectedType === 'professional'
+                    ? 'e.g. Microservices Production Suite'
+                    : 'e.g. Hackathon Team ByteSpeed'
+                }
+                onKeyDown={e => {
+                  if (e.key === 'Enter') createWorkspace();
+                  if (e.key === 'Escape') { setShowNew(false); setNewName(''); setCreateError(''); }
+                }}
                 className="flex-1 h-10 px-4 rounded-lg text-sm focus:outline-none min-w-0"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 240 }}
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 260 }}
               />
-              <Button onClick={createWorkspace} isLoading={creating} size="md">Create</Button>
-              <Button variant="ghost" onClick={() => { setShowNew(false); setNewName(''); }} size="md">Cancel</Button>
+              <Button onClick={createWorkspace} isLoading={creating} size="md">
+                <Plus size={14} /> Create {typeDetails[selectedType].label} Workspace
+              </Button>
+              <Button variant="ghost" onClick={() => { setShowNew(false); setNewName(''); setCreateError(''); }} size="md">
+                Cancel
+              </Button>
             </div>
-            <p className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>
-              You can create any file type (Python, JavaScript, Java…) inside the workspace.
-            </p>
           </div>
         )}
 
@@ -314,78 +437,105 @@ export function Dashboard({ onOpen }: Props) {
           <div className="flex flex-col items-center justify-center py-32" style={{ color: 'var(--muted)' }}>
             <FolderOpen size={48} className="mb-5 opacity-30" />
             <p className="text-lg font-semibold mb-2" style={{ color: 'var(--text)' }}>No workspaces yet</p>
-            <p style={{ fontSize: 15 }}>Create your first workspace to get started.</p>
+            <p style={{ fontSize: 15 }}>Create your first educational, professional, or competitive workspace to get started.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {workspaces.map(ws => (
-              <div
-                key={ws.id}
-                onClick={() => handleOpen(ws)}
-                className="group rounded-xl cursor-pointer transition-all duration-150 relative"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: 24, minHeight: 160 }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent)';
-                  (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.3)';
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
-                  (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-                }}
-              >
-                {/* Actions (hover) */}
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-all">
-                  <button
-                    onClick={e => generateQuickInvite(ws.id, e)}
-                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-                    style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; e.stopPropagation(); }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-                    title="Copy invite link"
-                  >
-                    <UserPlus size={13} />
-                  </button>
-                  <button
-                    onClick={e => deleteWorkspace(ws.id, e)}
-                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-                    style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; e.stopPropagation(); }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-                    title="Delete workspace"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+            {workspaces.map(ws => {
+              const wsType = (ws.type || 'educational') as WorkspaceType;
+              const meta = typeDetails[wsType] || typeDetails.educational;
+              const TypeIcon = meta.icon;
+
+              return (
+                <div
+                  key={ws.id}
+                  onClick={() => handleOpen(ws)}
+                  className="group rounded-xl cursor-pointer transition-all duration-150 relative flex flex-col justify-between"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: 22, minHeight: 185 }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLDivElement).style.borderColor = meta.color;
+                    (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
+                    (e.currentTarget as HTMLDivElement).style.boxShadow = `0 6px 20px rgba(0,0,0,0.3)`;
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
+                    (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+                    (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+                  }}
+                >
+                  {/* Actions (hover) */}
+                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-all z-10">
+                    <button
+                      onClick={e => generateQuickInvite(ws.id, e)}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+                      style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = meta.color; (e.currentTarget as HTMLButtonElement).style.borderColor = meta.color; e.stopPropagation(); }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
+                      title="Copy invite link"
+                    >
+                      <UserPlus size={13} />
+                    </button>
+                    <button
+                      onClick={e => deleteWorkspace(ws.id, e)}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+                      style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; e.stopPropagation(); }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
+                      title="Delete workspace"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  <div>
+                    {/* Top Row: Type Badge + Icon */}
+                    <div className="flex items-center justify-between mb-3.5 pr-14">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg"
+                        style={{ background: meta.bgColor, border: `1px solid ${meta.borderColor}`, color: meta.color }}>
+                        <TypeIcon size={18} />
+                      </div>
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5"
+                        style={{ background: meta.bgColor, border: `1px solid ${meta.borderColor}`, color: meta.color }}>
+                        <TypeIcon size={12} />
+                        {meta.label}
+                      </span>
+                    </div>
+
+                    {/* Name */}
+                    <p className="font-bold mb-1.5 truncate" style={{ color: 'var(--text)', fontSize: 16 }}>
+                      {ws.name}
+                    </p>
+
+                    {/* Description / Roles hint */}
+                    <p className="text-xs truncate mb-3" style={{ color: 'var(--muted)' }}>
+                      {ws.description || `${meta.roles}`}
+                    </p>
+                  </div>
+
+                  {/* ID + timestamp */}
+                  <div className="flex items-center justify-between mt-auto pt-3.5" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[11px] font-mono truncate" style={{ color: 'var(--muted)', maxWidth: 110 }}>{ws.id}</span>
+                      {ws.myRole && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium truncate"
+                          style={{
+                            background: ws.myRole === 'teacher' ? 'rgba(168, 85, 247, 0.15)' : ws.myRole === 'student' ? 'rgba(56, 189, 248, 0.15)' : 'var(--surface-2)',
+                            color: ws.myRole === 'teacher' ? '#c084fc' : ws.myRole === 'student' ? '#38bdf8' : 'var(--text)',
+                            border: '1px solid var(--border)'
+                          }}>
+                          {ws.myRole === 'teacher' ? 'Teacher 🎓' : ws.myRole === 'student' ? 'Student 🎒' : ws.myRole}
+                        </span>
+                      )}
+                    </div>
+                    {(ws.updatedAt ?? ws.createdAt) && (
+                      <span className="flex items-center gap-1 text-xs shrink-0" style={{ color: 'var(--muted)' }}>
+                        <Clock size={11} />{timeAgo(ws.updatedAt ?? ws.createdAt)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-
-                {/* Workspace icon */}
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg mb-4"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                  <Code2 size={18} style={{ color: 'var(--accent)' }} />
-                </div>
-
-                {/* Name */}
-                <p className="font-semibold mb-1 truncate pr-8" style={{ color: 'var(--text)', fontSize: 15 }}>
-                  {ws.name}
-                </p>
-
-                {/* Description */}
-                {ws.description && (
-                  <p className="text-sm truncate mb-3" style={{ color: 'var(--muted)' }}>{ws.description}</p>
-                )}
-
-                {/* ID + timestamp */}
-                <div className="flex items-center justify-between mt-auto pt-4" style={{ borderTop: '1px solid var(--border)', marginTop: 'auto' }}>
-                  <span className="text-xs font-mono truncate" style={{ color: 'var(--muted)', maxWidth: '60%' }}>{ws.id}</span>
-                  {(ws.updatedAt ?? ws.createdAt) && (
-                    <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--muted)' }}>
-                      <Clock size={11} />{timeAgo(ws.updatedAt ?? ws.createdAt)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

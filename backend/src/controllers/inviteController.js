@@ -91,9 +91,10 @@ export const joinViaInvite = asyncWrapper(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Invite use limit reached' });
   }
 
-  // Ensure workspace exists on disk or memory
+  let wsType = 'educational';
   try {
-    await workspaceService.getWorkspaceDetails(invite.workspaceId);
+    const wsDetails = await workspaceService.getWorkspaceDetails(invite.workspaceId);
+    wsType = wsDetails.workspace?.type || 'educational';
   } catch (err) {
     return res.status(404).json({ success: false, error: 'Workspace not found' });
   }
@@ -102,16 +103,30 @@ export const joinViaInvite = asyncWrapper(async (req, res) => {
     where: { workspaceId: invite.workspaceId, userId },
   });
 
+  let effectiveRole = existingMember ? existingMember.role : invite.role;
+  let effectiveStudentAccess = existingMember ? existingMember.studentAccess : null;
+
   if (!existingMember) {
+    let assignedRole = invite.role;
+    let studentAccess = null;
+
+    if (wsType === 'educational') {
+      assignedRole = 'student';
+      studentAccess = ['no-view', 'viewer', 'editor'].includes(invite.role) ? invite.role : 'viewer';
+    }
+
     await WorkspaceMember.create({
       workspaceId: invite.workspaceId,
       userId,
-      role: invite.role,
+      role: assignedRole,
+      studentAccess,
       sessionRole: 'none',
       editorLocked: false,
       handRaised: false,
     });
 
+    effectiveRole = assignedRole;
+    effectiveStudentAccess = studentAccess;
     invite.usedCount += 1;
     await invite.save();
   }
@@ -119,6 +134,7 @@ export const joinViaInvite = asyncWrapper(async (req, res) => {
   res.status(200).json({
     success: true,
     workspaceId: invite.workspaceId,
-    role: existingMember ? existingMember.role : invite.role,
+    role: effectiveRole,
+    studentAccess: effectiveStudentAccess,
   });
 });

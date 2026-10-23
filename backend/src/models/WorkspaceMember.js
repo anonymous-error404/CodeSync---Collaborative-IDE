@@ -20,8 +20,14 @@ WorkspaceMember.init(
       allowNull: false,
     },
     role: {
-      type: DataTypes.ENUM('owner', 'admin', 'editor', 'viewer'),
+      type: DataTypes.ENUM('owner', 'admin', 'editor', 'viewer', 'teacher', 'student', 'team_leader', 'developer', 'no-view'),
       allowNull: false,
+      defaultValue: 'viewer',
+    },
+    // Educational workspace student access level: teacher can assign no-view, viewer, or editor
+    studentAccess: {
+      type: DataTypes.ENUM('no-view', 'viewer', 'editor'),
+      allowNull: true,
       defaultValue: 'viewer',
     },
     // Education session role — orthogonal to workspace RBAC role

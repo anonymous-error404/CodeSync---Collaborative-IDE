@@ -28,7 +28,12 @@ const syncDatabase = async (options = {}) => {
   try {
     await sequelize.authenticate();
     console.log('[Database]: SQLite connection established successfully.');
-    
+
+    // Cleanup any lingering backup tables from previous interrupted alters
+    await sequelize.query('DROP TABLE IF EXISTS `users_backup`;');
+    await sequelize.query('DROP TABLE IF EXISTS `workspace_members_backup`;');
+    await sequelize.query('DROP TABLE IF EXISTS `teaching_sessions_backup`;');
+
     await sequelize.sync(options);
     console.log('[Database]: Models synchronized with SQLite database.');
   } catch (error) {

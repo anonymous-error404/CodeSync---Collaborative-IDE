@@ -34,7 +34,7 @@ class WorkspaceService {
   /**
    * Creates a new workspace session and initializes its folder.
    */
-  async createWorkspace({ name, description = '' }) {
+  async createWorkspace({ name, description = '', type = 'educational' }) {
     const workspaceId = `ws-${uuidv4().substring(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -42,6 +42,7 @@ class WorkspaceService {
       id: workspaceId,
       name: name || `Workspace ${workspaceId}`,
       description,
+      type: type || 'educational', // 'educational' | 'professional' | 'competitive'
       createdAt: now,
       updatedAt: now,
       activeUsers: 0,
@@ -75,11 +76,11 @@ class WorkspaceService {
         // Try to recover from persisted meta file
         const meta = await this._readMeta(wsId);
         if (meta && meta.id) {
-          this.workspaces.set(wsId, { activeUsers: 0, ...meta });
+          this.workspaces.set(wsId, { activeUsers: 0, type: meta.type || 'educational', ...meta });
         } else {
           // Meta file missing — create a recovery entry
           const now = new Date().toISOString();
-          const recovered = { id: wsId, name: wsId, description: '', createdAt: now, updatedAt: now, activeUsers: 0 };
+          const recovered = { id: wsId, name: wsId, description: '', type: 'educational', createdAt: now, updatedAt: now, activeUsers: 0 };
           this.workspaces.set(wsId, recovered);
           await this._writeMeta(recovered);
         }
@@ -97,10 +98,10 @@ class WorkspaceService {
       // Try disk recovery for this specific workspace
       const meta = await this._readMeta(workspaceId);
       if (meta) {
-        this.workspaces.set(workspaceId, { activeUsers: 0, ...meta });
+        this.workspaces.set(workspaceId, { activeUsers: 0, type: meta.type || 'educational', ...meta });
       } else {
         const now = new Date().toISOString();
-        const recovered = { id: workspaceId, name: `Workspace ${workspaceId}`, description: 'Recovered workspace', createdAt: now, updatedAt: now, activeUsers: 0 };
+        const recovered = { id: workspaceId, name: `Workspace ${workspaceId}`, description: 'Recovered workspace', type: 'educational', createdAt: now, updatedAt: now, activeUsers: 0 };
         this.workspaces.set(workspaceId, recovered);
         await this._writeMeta(recovered);
       }

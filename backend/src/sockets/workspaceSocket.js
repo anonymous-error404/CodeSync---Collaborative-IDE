@@ -55,10 +55,11 @@ function initWorkspaceSockets(io) {
 
       socket.userId = decoded.id;
       socket.username = decoded.username;
-      socket.role = membership.role;                 // 'owner' | 'admin' | 'editor' | 'viewer'
+      socket.role = membership.role;                 // 'owner' | 'admin' | 'editor' | 'viewer' | 'teacher' | 'student' | 'team_leader' | 'developer' | 'no-view'
       socket.sessionRole = membership.sessionRole;   // 'teacher' | 'student' | 'none'
       socket.editorLocked = membership.editorLocked; // boolean
       socket.handRaised = membership.handRaised;     // boolean
+      socket.studentAccess = membership.studentAccess || 'editor'; // 'no-view' | 'viewer' | 'editor'
 
       currentWorkspaceId = workspaceId;
       const roomName = `workspace:${workspaceId}`;
@@ -91,21 +92,25 @@ function initWorkspaceSockets(io) {
       // Notify others in the workspace room
       socket.to(roomName).emit('user-joined', {
         socketId: socket.id,
+        userId: socket.userId,
         username: socket.username,
         role: socket.role,
         sessionRole: socket.sessionRole,
+        studentAccess: socket.studentAccess,
         activeUsers: workspaceService.getActiveUsers(workspaceId),
       });
 
       // Send initial file tree to joining client
       try {
-        const fileTree = await storageService.getFileTree(workspaceId);
+        const isNoView = socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view');
+        const fileTree = isNoView ? [] : await storageService.getFileTree(workspaceId);
         socket.emit('workspace-ready', {
           workspaceId,
           fileTree,
           myRole: socket.role,
           mySessionRole: socket.sessionRole,
           editorLocked: socket.editorLocked,
+          studentAccess: socket.studentAccess,
         });
       } catch (err) {
         socket.emit('workspace-error', { message: err.message });
@@ -116,8 +121,13 @@ function initWorkspaceSockets(io) {
     socket.on('file-change', async ({ workspaceId, filePath, content }) => {
       if (!workspaceId || !filePath) return;
 
-      // Professional RBAC: viewers cannot edit
-      if (socket.role === 'viewer') {
+      // Access checks for editing
+      if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
+        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+        return;
+      }
+
+      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
         socket.emit('workspace-error', { message: 'Viewers cannot edit files' });
         return;
       }
@@ -549,8 +559,12 @@ function initWorkspaceSockets(io) {
     socket.on('fs-action', async ({ workspaceId, action, payload }) => {
       if (!workspaceId) return;
 
-      // Professional RBAC
-      if (socket.role === 'viewer') {
+      if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
+        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+        return;
+      }
+
+      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
         socket.emit('workspace-error', { message: 'Viewers cannot modify files' });
         return;
       }
@@ -588,8 +602,12 @@ function initWorkspaceSockets(io) {
     socket.on('execute-code', ({ workspaceId, filePath }) => {
       if (!workspaceId || !filePath) return;
 
-      // Professional RBAC
-      if (socket.role === 'viewer') {
+      if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
+        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+        return;
+      }
+
+      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
         socket.emit('workspace-error', { message: 'Viewers cannot execute code' });
         return;
       }
@@ -626,7 +644,11 @@ function initWorkspaceSockets(io) {
     // Stop execution
     socket.on('stop-execution', ({ workspaceId }) => {
       if (!workspaceId) return;
-      if (socket.role === 'viewer') {
+      if (
+        socket.role === 'viewer' || 
+        socket.role === 'no-view' || 
+        (socket.role === 'student' && socket.studentAccess !== 'editor')
+      ) {
         socket.emit('workspace-error', { message: 'Viewers cannot modify execution' });
         return;
       }
@@ -635,6 +657,79 @@ function initWorkspaceSockets(io) {
       if (stopped) {
         workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n' });
         workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-finished', { exitCode: -1 });
+      }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── EDUCATIONAL STUDENT ACCESS CONTROL (TEACHER -> STUDENT) ───────────────
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * member:set_access — Teacher updates student access level (no-view, viewer, editor)
+     */
+    socket.on('member:set_access', async ({ workspaceId, userId, access }) => {
+      if (!inRoom(workspaceId)) return;
+
+      const isTeacher =
+        socket.role === 'teacher' ||
+        socket.sessionRole === 'teacher' ||
+        socket.role === 'owner' ||
+        socket.role === 'admin' ||
+        socket.role === 'team_leader';
+
+      if (!isTeacher) {
+        socket.emit('workspace-error', { message: 'Only a teacher or owner can modify student access' });
+        return;
+      }
+
+      if (!['no-view', 'viewer', 'editor'].includes(access)) {
+        socket.emit('workspace-error', { message: 'Invalid access level' });
+        return;
+      }
+
+      try {
+        await WorkspaceMember.update(
+          { studentAccess: access },
+          { where: { workspaceId, userId } }
+        );
+
+        // Update active connected sockets for target user
+        const roomSockets = await workspaceNamespace.in(`workspace:${workspaceId}`).fetchSockets();
+        for (const s of roomSockets) {
+          if (s.userId === userId) {
+            s.studentAccess = access;
+            s.emit('member:access_updated', {
+              workspaceId,
+              studentAccess: access,
+              updatedBy: socket.username,
+            });
+
+            // If access restored from no-view to viewer/editor, send fileTree
+            if (access !== 'no-view') {
+              try {
+                const fileTree = await storageService.getFileTree(workspaceId);
+                s.emit('workspace-ready', {
+                  workspaceId,
+                  fileTree,
+                  myRole: s.role,
+                  mySessionRole: s.sessionRole,
+                  editorLocked: s.editorLocked,
+                  studentAccess: s.studentAccess,
+                });
+              } catch (e) {}
+            }
+          }
+        }
+
+        // Broadcast to all members so their member list updates
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('member:access_changed', {
+          workspaceId,
+          userId,
+          studentAccess: access,
+          updatedBy: socket.username,
+        });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to update student access: ${err.message}` });
       }
     });
 

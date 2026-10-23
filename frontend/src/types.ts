@@ -9,7 +9,19 @@ export interface FileItem {
   updatedAt?: string;
 }
 
-export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer';
+export type WorkspaceType = 'educational' | 'professional' | 'competitive';
+export type StudentAccessLevel = 'no-view' | 'viewer' | 'editor';
+
+export type WorkspaceRole =
+  | 'owner'
+  | 'admin'
+  | 'editor'
+  | 'viewer'
+  | 'teacher'
+  | 'student'
+  | 'team_leader'
+  | 'developer'
+  | 'no-view';
 export type SessionRole = 'teacher' | 'student' | 'none';
 
 export interface WorkspaceMember {
@@ -20,6 +32,7 @@ export interface WorkspaceMember {
   sessionRole?: SessionRole;
   editorLocked?: boolean;
   handRaised?: boolean;
+  studentAccess?: StudentAccessLevel;
   joinedAt: string;
   User?: { id: number; username: string; email: string };
 }
@@ -39,11 +52,13 @@ export interface Workspace {
   id: string;
   name: string;
   description?: string;
+  type?: WorkspaceType;
   createdAt?: string;
   updatedAt?: string;
   activeUsers?: number;
   myRole?: WorkspaceRole;
   mySessionRole?: SessionRole;
+  studentAccess?: StudentAccessLevel;
 }
 
 export interface TeachingSessionState {
@@ -56,6 +71,7 @@ export interface TeachingSessionState {
   mySessionRole: SessionRole;
   editorLocked?: boolean;
   handRaised?: boolean;
+  studentAccess?: StudentAccessLevel;
 }
 
 export interface ExecutionResult {
