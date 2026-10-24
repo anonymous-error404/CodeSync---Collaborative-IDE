@@ -4,7 +4,7 @@ import executionService from '../services/executionService.js';
 import attachWhiteboardSocketHandlers from './whiteboardSocket.js';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/authConfig.js';
-import { WorkspaceMember, TeachingSession, WorkspaceLock } from '../models/index.js';
+import { WorkspaceMember, TeachingSession, WorkspaceLock, LineComment, User } from '../models/index.js';
 import { checkPathLocked } from '../controllers/lockController.js';
 
 /**
@@ -45,22 +45,69 @@ function initWorkspaceSockets(io) {
         return;
       }
 
-      const membership = await WorkspaceMember.findOne({
+      const ws = await workspaceService.getWorkspace(workspaceId);
+      const isCompetitive = ws?.type === 'competitive';
+      const isEducational = ws?.type === 'educational';
+
+      let membership = await WorkspaceMember.findOne({
         where: { workspaceId, userId: decoded.id }
       });
 
+      if (!membership && isCompetitive) {
+        const userEmail = (decoded.email || '').toLowerCase().trim();
+        const allowed = (ws?.allowedEmails || []).map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''));
+        const isCreator =
+          (decoded.id && ws?.createdBy === decoded.id) ||
+          (userEmail && (ws?.creatorEmail === userEmail || ws?.adminEmail === userEmail));
+
+        if (isCreator) {
+          membership = await WorkspaceMember.create({
+            workspaceId,
+            userId: decoded.id,
+            role: 'admin',
+            studentAccess: 'commenter',
+          });
+        } else if (userEmail && allowed.includes(userEmail)) {
+          membership = await WorkspaceMember.create({
+            workspaceId,
+            userId: decoded.id,
+            role: 'team_member',
+            studentAccess: 'editor',
+          });
+        } else {
+          // Check if admin
+          const isAdminSomewhere = await WorkspaceMember.findOne({
+            where: { userId: decoded.id, role: 'admin' },
+          });
+          if (isAdminSomewhere) {
+            membership = await WorkspaceMember.create({
+              workspaceId,
+              userId: decoded.id,
+              role: 'admin',
+              studentAccess: 'commenter',
+            });
+          }
+        }
+      }
+
       if (!membership) {
-        socket.emit('workspace-error', { message: 'Not a member of this workspace' });
+        const msg = isCompetitive
+          ? 'Access denied: Only registered team members on the email allowlist can access this workspace.'
+          : 'Not a member of this workspace';
+        socket.emit('workspace-error', { message: msg });
         return;
       }
 
       socket.userId = decoded.id;
       socket.username = decoded.username;
-      socket.role = membership.role;                 // 'owner' | 'admin' | 'editor' | 'viewer' | 'teacher' | 'student' | 'team_leader' | 'developer' | 'no-view'
+      socket.role = membership.role;                 // 'owner' | 'admin' | 'editor' | 'viewer' | 'teacher' | 'student' | 'team_leader' | 'developer' | 'team_member'
       socket.sessionRole = membership.sessionRole;   // 'teacher' | 'student' | 'none'
       socket.editorLocked = membership.editorLocked; // boolean
       socket.handRaised = membership.handRaised;     // boolean
-      socket.studentAccess = membership.studentAccess || 'editor'; // 'no-view' | 'viewer' | 'editor'
+      socket.studentAccess = isCompetitive && membership.role === 'admin'
+        ? 'commenter' // Admin can view and comment only!
+        : membership.studentAccess ||
+          (membership.role === 'tester' || membership.role === 'viewer' ? 'viewer' : 'editor');
 
       currentWorkspaceId = workspaceId;
       const roomName = `workspace:${workspaceId}`;
@@ -104,8 +151,8 @@ function initWorkspaceSockets(io) {
 
       // Send initial file tree to joining client
       try {
-        const isNoView = socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view');
-        const fileTree = isNoView ? [] : await storageService.getFileTree(workspaceId);
+        const isStudentWithoutSession = isEducational && socket.role === 'student' && !activeSession;
+        const fileTree = isStudentWithoutSession ? [] : await storageService.getFileTree(workspaceId);
         const locks = await WorkspaceLock.findAll({ where: { workspaceId } });
         socket.emit('workspace-ready', {
           workspaceId,
@@ -114,6 +161,7 @@ function initWorkspaceSockets(io) {
           mySessionRole: socket.sessionRole,
           editorLocked: socket.editorLocked,
           studentAccess: socket.studentAccess,
+          classInSession: !isStudentWithoutSession,
           locks,
         });
       } catch (err) {
@@ -125,15 +173,42 @@ function initWorkspaceSockets(io) {
     socket.on('file-change', async ({ workspaceId, filePath, content }) => {
       if (!workspaceId || !filePath) return;
 
-      // Access checks for editing
-      if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
-        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+      const ws = await workspaceService.getWorkspace(workspaceId);
+      const isCompetitive = ws?.type === 'competitive';
+      const isEducational = ws?.type === 'educational';
+
+      // Competitive workspace Admin can view and comment only
+      if (isCompetitive && socket.role === 'admin') {
+        socket.emit('workspace-error', { message: 'Admin has View & Comment only access in competitive workspaces.' });
         return;
       }
 
-      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
-        socket.emit('workspace-error', { message: 'Viewers cannot edit files' });
+      // Access checks for editing
+      const isCommenterOnly = socket.studentAccess === 'commenter' || socket.studentAccess === 'comment';
+      if (isCommenterOnly) {
+        socket.emit('workspace-error', { message: 'Comment only: you cannot edit files' });
         return;
+      }
+
+      const isViewOnly =
+        socket.role === 'viewer' ||
+        socket.studentAccess === 'viewer' ||
+        socket.studentAccess === 'view';
+
+      const hasFullAdmin = ['owner', 'admin', 'teacher', 'team_leader', 'team_member'].includes(socket.role);
+
+      if (!hasFullAdmin && isViewOnly) {
+        socket.emit('workspace-error', { message: 'View only: you cannot edit files' });
+        return;
+      }
+
+      // In Educational workspace, students can only edit when class is in session
+      if (isEducational && socket.role === 'student') {
+        const activeSession = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+        if (!activeSession) {
+          socket.emit('workspace-error', { message: 'Class is not in session. Please wait for your teacher to start the class.' });
+          return;
+        }
       }
 
       // Education RBAC: students whose editors are locked cannot modify files
@@ -585,12 +660,21 @@ function initWorkspaceSockets(io) {
       if (!workspaceId) return;
 
       if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
-        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+        socket.emit('workspace-error', { message: 'Access restricted: no-view' });
         return;
       }
 
-      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
-        socket.emit('workspace-error', { message: 'Viewers cannot modify files' });
+      const hasFullAdminFs = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role);
+      const isViewOnlyFs =
+        socket.role === 'viewer' ||
+        (socket.role === 'student' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'tester' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'developer' && (socket.studentAccess === 'viewer' || socket.studentAccess === 'view')) ||
+        socket.studentAccess === 'viewer' ||
+        socket.studentAccess === 'view';
+
+      if (!hasFullAdminFs && isViewOnlyFs) {
+        socket.emit('workspace-error', { message: 'View only: you cannot modify files' });
         return;
       }
 
@@ -624,16 +708,25 @@ function initWorkspaceSockets(io) {
     });
 
     // Trigger Code Execution (Per-member isolated container OR admin global run)
-    socket.on('execute-code', ({ workspaceId, filePath, isGlobal }) => {
+    socket.on('execute-code', async ({ workspaceId, filePath, isGlobal }) => {
       if (!workspaceId || !filePath) return;
 
       if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
-        socket.emit('workspace-error', { message: 'Access restricted by teacher (no-view)' });
+        socket.emit('workspace-error', { message: 'Access denied: no-view' });
         return;
       }
 
-      if (socket.role === 'viewer' || (socket.role === 'student' && socket.studentAccess === 'viewer')) {
-        socket.emit('workspace-error', { message: 'Viewers cannot execute code' });
+      const hasFullAdminExec = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const isViewOnlyExec =
+        socket.role === 'viewer' ||
+        (socket.role === 'student' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'tester' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'developer' && (socket.studentAccess === 'viewer' || socket.studentAccess === 'view')) ||
+        socket.studentAccess === 'viewer' ||
+        socket.studentAccess === 'view';
+
+      if (!hasFullAdminExec && isViewOnlyExec) {
+        socket.emit('workspace-error', { message: 'View only: you cannot execute code' });
         return;
       }
 
@@ -650,6 +743,22 @@ function initWorkspaceSockets(io) {
       const userId = socket.userId || 'guest';
       const username = socket.username || 'User';
 
+      // ── Docker Engine Pre-flight Check ────────────────────────────────────
+      // Verify Docker availability before announcing execution-started so the
+      // client never gets stuck in a "Running..." state when Docker is down.
+      const isDocker = await executionService.isDockerRunning();
+      if (!isDocker) {
+        const errorMsg = '[Error] Runtime environment not available. Docker engine is not running.\nPlease start Docker Desktop to execute code.\n';
+        if (runGlobally) {
+          workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: errorMsg, isGlobal: true });
+          workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: -1, isGlobal: true });
+        } else {
+          socket.emit('execution-stderr', { chunk: errorMsg, isGlobal: false });
+          socket.emit('execution-finished', { exitCode: -1, isGlobal: false });
+        }
+        return;
+      }
+
       if (runGlobally) {
         workspaceNamespace.to(roomName).emit('execution-started', { filePath, isGlobal: true, initiatedBy: username });
       } else {
@@ -657,7 +766,7 @@ function initWorkspaceSockets(io) {
       }
 
       try {
-        executionService.executeFile({
+        await executionService.executeFile({
           workspaceId,
           userId,
           username,
@@ -709,29 +818,39 @@ function initWorkspaceSockets(io) {
       }
 
       const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
-
-      if (isGlobal && isAdmin) {
-        const stopped = executionService.stopExecution(`${workspaceId}:global`);
-        if (stopped) {
-          workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-stderr', { chunk: '\n[Server] Global execution stopped by admin.\n', isGlobal: true });
-          workspaceNamespace.to(`workspace:${workspaceId}`).emit('execution-finished', { exitCode: -1, isGlobal: true });
-        }
-        return;
-      }
-
       const targetId = (targetUserId && isAdmin) ? targetUserId : (socket.userId || 'guest');
-      const stopped = executionService.stopUserExecution(workspaceId, targetId);
-      if (stopped) {
-        socket.emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n', isGlobal: false });
-        socket.emit('execution-finished', { exitCode: -1, isGlobal: false });
+      const stopGlobal = Boolean(isGlobal && isAdmin);
+
+      const stoppedResult = executionService.stopExecutionByContext({
+        workspaceId,
+        userId: targetId,
+        isGlobal: stopGlobal,
+      });
+
+      const roomName = `workspace:${workspaceId}`;
+      if (!stoppedResult) {
+        // No active running process was found; ensure finished is emitted so client UI never hangs
+        if (stopGlobal) {
+          workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: '\n[Server] No active execution running.\n', isGlobal: true });
+          workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: 0, isGlobal: true });
+        } else {
+          socket.emit('execution-stderr', { chunk: '\n[Server] No active execution running.\n', isGlobal: false });
+          socket.emit('execution-finished', { exitCode: 0, isGlobal: false });
+        }
+      } else {
+        if (stopGlobal || stoppedResult.isGlobal) {
+          workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: '\n[Server] Global execution stopped.\n', isGlobal: true });
+        } else {
+          socket.emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n', isGlobal: false });
+        }
       }
     });
 
     // Environment management socket queries
-    socket.on('env:get_status', ({ workspaceId }) => {
+    socket.on('env:get_status', async ({ workspaceId }) => {
       if (!workspaceId) return;
       const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
-      const supported = executionService.getSupportedEnvironments();
+      const supported = await executionService.getSupportedEnvironments();
       const allActive = executionService.listEnvironments(workspaceId);
       const myActive = allActive.filter(e => String(e.userId) === String(socket.userId));
 
@@ -743,17 +862,17 @@ function initWorkspaceSockets(io) {
       });
     });
 
-    socket.on('env:stop_member', ({ workspaceId, targetUserId }) => {
+    socket.on('env:stop_member', async ({ workspaceId, targetUserId }) => {
       if (!workspaceId || !targetUserId) return;
       const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
       if (!isAdmin) {
         socket.emit('workspace-error', { message: 'Only admins can terminate member environments' });
         return;
       }
-      executionService.stopUserExecution(workspaceId, targetUserId);
+      executionService.stopExecutionByContext({ workspaceId, userId: targetUserId });
       const allActive = executionService.listEnvironments(workspaceId);
       socket.emit('env:status', {
-        supported: executionService.getSupportedEnvironments(),
+        supported: await executionService.getSupportedEnvironments(),
         activeEnvironments: allActive,
         isAdmin: true,
       });
@@ -840,18 +959,46 @@ function initWorkspaceSockets(io) {
         socket.role === 'team_leader';
 
       if (!isTeacher) {
-        socket.emit('workspace-error', { message: 'Only a teacher or owner can modify student access' });
+        socket.emit('workspace-error', { message: 'Only a teacher or workspace admin can modify access levels' });
         return;
       }
 
-      if (!['no-view', 'viewer', 'editor'].includes(access)) {
-        socket.emit('workspace-error', { message: 'Invalid access level' });
+      const validAccess = ['no-view', 'viewer', 'editor', 'view', 'edit'];
+      if (!validAccess.includes(access)) {
+        socket.emit('workspace-error', { message: 'Invalid access level. Must be view or edit' });
+        return;
+      }
+
+      const normalizedAccess = (access === 'view' || access === 'viewer') ? 'viewer' : (access === 'edit' || access === 'editor') ? 'editor' : 'no-view';
+
+      // Admin/teacher cannot change their own access
+      if (Number(userId) === Number(socket.userId)) {
+        socket.emit('workspace-error', { message: 'Admins cannot change their own access levels' });
         return;
       }
 
       try {
+        const targetMember = await WorkspaceMember.findOne({ where: { workspaceId, userId } });
+        if (!targetMember) {
+          socket.emit('workspace-error', { message: 'Target member not found' });
+          return;
+        }
+
+        if (['owner', 'admin', 'team_leader'].includes(targetMember.role)) {
+          socket.emit('workspace-error', { message: 'Cannot modify access level of workspace admin/owner' });
+          return;
+        }
+
+        const isActorOwner = socket.role === 'owner' || socket.role === 'admin';
+        if (targetMember.role === 'teacher' && !isActorOwner) {
+          socket.emit('workspace-error', { message: 'Only workspace admin can modify teacher access control' });
+          return;
+        }
+
+        const updateData = { studentAccess: normalizedAccess };
+
         await WorkspaceMember.update(
-          { studentAccess: access },
+          updateData,
           { where: { workspaceId, userId } }
         );
 
@@ -892,6 +1039,94 @@ function initWorkspaceSockets(io) {
         });
       } catch (err) {
         socket.emit('workspace-error', { message: `Failed to update student access: ${err.message}` });
+      }
+    });
+
+    /**
+     * member:set_access_bulk — Teacher / Admin bulk updates access level for multiple members
+     */
+    socket.on('member:set_access_bulk', async ({ workspaceId, userIds, access }) => {
+      if (!inRoom(workspaceId)) return;
+      if (!Array.isArray(userIds) || userIds.length === 0) return;
+
+      const isTeacher =
+        socket.role === 'teacher' ||
+        socket.sessionRole === 'teacher' ||
+        socket.role === 'owner' ||
+        socket.role === 'admin' ||
+        socket.role === 'team_leader';
+
+      if (!isTeacher) {
+        socket.emit('workspace-error', { message: 'Only a teacher or workspace admin can modify access levels' });
+        return;
+      }
+
+      const validAccess = ['no-view', 'viewer', 'editor', 'view', 'edit'];
+      if (!validAccess.includes(access)) {
+        socket.emit('workspace-error', { message: 'Invalid access level' });
+        return;
+      }
+
+      const normalizedAccess = (access === 'view' || access === 'viewer') ? 'viewer' : (access === 'edit' || access === 'editor') ? 'editor' : 'no-view';
+
+      try {
+        const isActorOwner = socket.role === 'owner' || socket.role === 'admin';
+        const members = await WorkspaceMember.findAll({
+          where: { workspaceId, userId: userIds },
+        });
+
+        const eligible = members.filter(m => {
+          if (Number(m.userId) === Number(socket.userId)) return false;
+          if (['owner', 'admin', 'team_leader'].includes(m.role)) return false;
+          if (m.role === 'teacher' && !isActorOwner) return false;
+          return true;
+        });
+
+        if (eligible.length === 0) return;
+
+        const eligibleIds = eligible.map(m => m.userId);
+
+        await WorkspaceMember.update(
+          { studentAccess: normalizedAccess },
+          { where: { workspaceId, userId: eligibleIds } }
+        );
+
+        const roomSockets = await workspaceNamespace.in(`workspace:${workspaceId}`).fetchSockets();
+        for (const s of roomSockets) {
+          if (eligibleIds.includes(Number(s.userId))) {
+            s.studentAccess = normalizedAccess;
+            s.emit('member:access_updated', {
+              workspaceId,
+              studentAccess: access,
+              updatedBy: socket.username,
+            });
+
+            if (access !== 'no-view') {
+              try {
+                const fileTree = await storageService.getFileTree(workspaceId);
+                s.emit('workspace-ready', {
+                  workspaceId,
+                  fileTree,
+                  myRole: s.role,
+                  mySessionRole: s.sessionRole,
+                  editorLocked: s.editorLocked,
+                  studentAccess: s.studentAccess,
+                });
+              } catch (e) {}
+            }
+          }
+        }
+
+        for (const uid of eligibleIds) {
+          workspaceNamespace.to(`workspace:${workspaceId}`).emit('member:access_changed', {
+            workspaceId,
+            userId: uid,
+            studentAccess: access,
+            updatedBy: socket.username,
+          });
+        }
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Bulk access update failed: ${err.message}` });
       }
     });
 
@@ -964,6 +1199,113 @@ function initWorkspaceSockets(io) {
         review,
         updatedBy: socket.username,
       });
+    });
+
+    /**
+     * Line Comments Socket Events
+     */
+    socket.on('comment:create', async ({ workspaceId, filePath, lineNumber, content, parentId }) => {
+      if (!workspaceId || !filePath || lineNumber === undefined || !content) return;
+      try {
+        const comment = await LineComment.create({
+          workspaceId,
+          filePath,
+          lineNumber: Number(lineNumber),
+          userId: socket.userId,
+          content: content.trim(),
+          parentId: parentId ? Number(parentId) : null,
+        });
+        const fullComment = await LineComment.findOne({
+          where: { id: comment.id },
+          include: [{ model: User, as: 'author', attributes: ['id', 'username', 'email'] }],
+        });
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('comment:created', {
+          comment: fullComment,
+        });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to create comment: ${err.message}` });
+      }
+    });
+
+    socket.on('comment:resolve', async ({ workspaceId, commentId, resolved }) => {
+      if (!workspaceId || !commentId) return;
+      try {
+        const comment = await LineComment.findByPk(commentId);
+        if (comment) {
+          comment.resolved = Boolean(resolved);
+          await comment.save();
+          workspaceNamespace.to(`workspace:${workspaceId}`).emit('comment:updated', {
+            commentId,
+            resolved: comment.resolved,
+          });
+        }
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to resolve comment: ${err.message}` });
+      }
+    });
+
+    socket.on('comment:delete', async ({ workspaceId, commentId }) => {
+      if (!workspaceId || !commentId) return;
+      try {
+        const comment = await LineComment.findByPk(commentId);
+        if (comment) {
+          await LineComment.destroy({ where: { parentId: commentId } });
+          await comment.destroy();
+          workspaceNamespace.to(`workspace:${workspaceId}`).emit('comment:deleted', {
+            commentId,
+          });
+        }
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to delete comment: ${err.message}` });
+      }
+    });
+
+    /**
+     * Educational Class in Session Socket Events
+     */
+    socket.on('class:start', async ({ workspaceId }) => {
+      if (!workspaceId) return;
+      try {
+        let session = await TeachingSession.findOne({ where: { workspaceId } });
+        if (session) {
+          session.active = true;
+          session.teacherUserId = socket.userId;
+          await session.save();
+        } else {
+          session = await TeachingSession.create({
+            workspaceId,
+            teacherUserId: socket.userId,
+            active: true,
+          });
+        }
+
+        const fileTree = await storageService.getFileTree(workspaceId);
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('class:started', {
+          sessionId: session.id,
+          teacherId: socket.userId,
+          teacherName: socket.username,
+          fileTree,
+        });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to start class: ${err.message}` });
+      }
+    });
+
+    socket.on('class:end', async ({ workspaceId }) => {
+      if (!workspaceId) return;
+      try {
+        const session = await TeachingSession.findOne({ where: { workspaceId, active: true } });
+        if (session) {
+          session.active = false;
+          await session.save();
+        }
+        workspaceNamespace.to(`workspace:${workspaceId}`).emit('class:ended', {
+          workspaceId,
+          endedBy: socket.username,
+        });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to end class: ${err.message}` });
+      }
     });
 
     // Disconnect handler

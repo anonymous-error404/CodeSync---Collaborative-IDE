@@ -8,6 +8,7 @@ import {
   getMembers,
   updateMemberRole,
   updateStudentAccess,
+  updateBulkStudentAccess,
   removeMember,
   leaveWorkspace,
 } from '../controllers/memberController.js';
@@ -15,6 +16,7 @@ import {
 const router = express.Router();
 
 router.get('/workspaces/:id/members', authenticateToken, requireWorkspaceMember('viewer'), getMembers);
+router.patch('/workspaces/:id/members/access/bulk', authenticateToken, requireWorkspaceAdmin, updateBulkStudentAccess);
 router.patch('/workspaces/:id/members/:userId', authenticateToken, requireWorkspaceAdmin, updateMemberRole);
 router.patch('/workspaces/:id/members/:userId/access', authenticateToken, requireWorkspaceAdmin, updateStudentAccess);
 router.delete('/workspaces/:id/members/me', authenticateToken, requireWorkspaceMember('viewer'), leaveWorkspace);

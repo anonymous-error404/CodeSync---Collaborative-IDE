@@ -111,8 +111,26 @@ export const joinViaInvite = asyncWrapper(async (req, res) => {
     let studentAccess = null;
 
     if (wsType === 'educational') {
-      assignedRole = 'student';
-      studentAccess = ['no-view', 'viewer', 'editor'].includes(invite.role) ? invite.role : 'viewer';
+      if (invite.role === 'teacher') {
+        assignedRole = 'teacher';
+        studentAccess = 'editor'; // teachers have editor access initially and can change student access
+      } else {
+        assignedRole = 'student';
+        studentAccess = 'viewer'; // students initially join as viewer only
+      }
+    } else if (wsType === 'professional') {
+      if (invite.role === 'tester') {
+        assignedRole = 'tester';
+        studentAccess = 'viewer'; // tester has only view access initially
+      } else if (invite.role === 'admin') {
+        assignedRole = 'admin';
+        studentAccess = 'editor'; // admin has all access
+      } else {
+        assignedRole = 'developer';
+        studentAccess = 'editor'; // developer has edit access initially
+      }
+    } else {
+      studentAccess = invite.role === 'viewer' ? 'viewer' : 'editor';
     }
 
     await WorkspaceMember.create({

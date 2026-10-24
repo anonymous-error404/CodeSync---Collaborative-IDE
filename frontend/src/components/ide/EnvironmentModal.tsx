@@ -339,16 +339,36 @@ export function EnvironmentModal({
                     When enabled, running code executes globally and broadcasts terminal output to all connected members.
                   </p>
                 </div>
-                <button
-                  onClick={() => onToggleGlobalExecution(!globalExecutionMode)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors border ${
-                    globalExecutionMode
-                      ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-500/20'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {globalExecutionMode ? 'Global Run ON' : 'Private Run (Default)'}
-                </button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span
+                    className="text-xs font-semibold transition-colors select-none"
+                    style={{
+                      color: globalExecutionMode ? '#c084fc' : 'var(--muted)',
+                    }}
+                  >
+                    {globalExecutionMode ? 'Global Run ON' : 'Global Run OFF'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={globalExecutionMode}
+                    onClick={() => onToggleGlobalExecution(!globalExecutionMode)}
+                    className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out p-0.5 border outline-none"
+                    style={{
+                      backgroundColor: globalExecutionMode ? '#9333ea' : 'var(--surface-2)',
+                      borderColor: globalExecutionMode ? '#a855f7' : 'var(--border)',
+                      boxShadow: globalExecutionMode ? '0 0 10px rgba(168, 85, 247, 0.4)' : 'none',
+                    }}
+                    title={globalExecutionMode ? 'Click to turn off Global Run' : 'Click to turn on Global Run'}
+                  >
+                    <span
+                      className="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ease-in-out"
+                      style={{
+                        transform: globalExecutionMode ? 'translateX(20px)' : 'translateX(0px)',
+                      }}
+                    />
+                  </button>
+                </div>
               </div>
 
               {/* Active Containers List */}

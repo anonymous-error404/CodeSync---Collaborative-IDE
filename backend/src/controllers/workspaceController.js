@@ -1,7 +1,18 @@
 import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import asyncWrapper from '../utils/asyncWrapper.js';
-import { WorkspaceMember } from '../models/index.js';
+import { Op } from 'sequelize';
+import {
+  WorkspaceMember,
+  WorkspaceInvite,
+  LineComment,
+  Whiteboard,
+  TeachingSession,
+  ProjectTask,
+  CodeReview,
+  WorkspaceLock,
+  User,
+} from '../models/index.js';
 import { checkPathLocked } from './lockController.js';
 
 /**
@@ -10,14 +21,43 @@ import { checkPathLocked } from './lockController.js';
  * Supports types: 'educational', 'professional', 'competitive'
  */
 const createWorkspace = asyncWrapper(async (req, res) => {
-  const { name, description, type } = req.body;
+  const { name, description, type, allowedEmails } = req.body;
   const validTypes = ['educational', 'professional', 'competitive'];
   const workspaceType = validTypes.includes(type) ? type : 'educational';
+
+  const userEmail = (req.user?.email || '').toLowerCase().trim();
+  const rawEmails = Array.isArray(allowedEmails) ? allowedEmails : [];
+  let normalized = rawEmails
+    .map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''))
+    .filter(Boolean);
+
+  // In competitive workspaces, the creator/admin MUST always be in the allowed list of accounts
+  if (workspaceType === 'competitive' && userEmail && !normalized.includes(userEmail)) {
+    normalized.unshift(userEmail);
+  }
+
+  if (workspaceType === 'competitive' && normalized.length > 0) {
+    const existing = await User.findAll({
+      where: { email: { [Op.in]: normalized } },
+      attributes: ['email'],
+    });
+    const existingSet = new Set(existing.map(u => u.email.toLowerCase()));
+    const unregistered = normalized.filter(e => !existingSet.has(e));
+    if (unregistered.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `The following email(s) are not registered on CodeSync: ${unregistered.join(', ')}. Team members must have an existing CodeSync account.`
+      });
+    }
+  }
 
   const workspace = await workspaceService.createWorkspace({
     name,
     description,
     type: workspaceType,
+    allowedEmails: normalized,
+    createdBy: req.user.id,
+    creatorEmail: userEmail,
   });
 
   const initialRole =
@@ -25,13 +65,20 @@ const createWorkspace = asyncWrapper(async (req, res) => {
       ? 'teacher'
       : workspaceType === 'professional'
         ? 'team_leader'
-        : 'owner';
+        : 'admin';
+
+  const initialAccess =
+    workspaceType === 'educational'
+      ? 'editor'
+      : workspaceType === 'competitive'
+        ? 'commenter' // Admin can view and comment only!
+        : 'editor';
 
   await WorkspaceMember.create({
     workspaceId: workspace.id,
     userId: req.user.id,
     role: initialRole,
-    studentAccess: workspaceType === 'educational' ? 'editor' : null,
+    studentAccess: initialAccess,
   });
 
   res.status(201).json({
@@ -39,7 +86,8 @@ const createWorkspace = asyncWrapper(async (req, res) => {
     workspace: {
       ...workspace,
       myRole: initialRole,
-      studentAccess: workspaceType === 'educational' ? 'editor' : null,
+      studentAccess: initialAccess,
+      allowedEmails: workspace.allowedEmails || [],
     },
   });
 });
@@ -53,18 +101,32 @@ const listWorkspaces = asyncWrapper(async (req, res) => {
     where: { userId: req.user.id },
   });
 
+  const userEmail = (req.user?.email || '').toLowerCase().trim();
+  const hasAdminRole = memberships.some(m => m.role === 'admin' || m.role === 'owner');
+
   const allWorkspaces = await workspaceService.listWorkspaces();
   const memberMap = new Map(memberships.map(m => [m.workspaceId, m]));
 
   const workspaces = allWorkspaces
-    .filter(w => memberMap.has(w.id))
+    .filter(w => {
+      if (memberMap.has(w.id)) return true;
+      if (w.type === 'competitive') {
+        if (hasAdminRole) return true; // Admin has access to all competitive workspaces
+        const allowed = (w.allowedEmails || []).map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''));
+        if (userEmail && allowed.includes(userEmail)) return true;
+      }
+      return false;
+    })
     .map(w => {
       const m = memberMap.get(w.id);
+      let role = m ? m.role : (w.type === 'competitive' && hasAdminRole ? 'admin' : 'team_member');
+      let access = m ? m.studentAccess : (role === 'admin' ? 'commenter' : 'editor');
       return {
         ...w,
         type: w.type || 'educational',
-        myRole: m.role,
-        studentAccess: m.studentAccess,
+        myRole: role,
+        studentAccess: access,
+        allowedEmails: w.allowedEmails || [],
       };
     });
 
@@ -78,34 +140,170 @@ const listWorkspaces = asyncWrapper(async (req, res) => {
 const getWorkspaceDetails = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const details = await workspaceService.getWorkspaceDetails(id);
-  const membership =
+  let membership =
     req.membership ||
     (await WorkspaceMember.findOne({
       where: { workspaceId: id, userId: req.user?.id },
     }));
+
+  const wsType = details.workspace?.type || 'educational';
+
+  // In competitive workspaces: check allowlist & admin access
+  if (wsType === 'competitive') {
+    const userEmail = (req.user?.email || '').toLowerCase().trim();
+    const allowed = (details.workspace?.allowedEmails || []).map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''));
+    const isDirectAdmin =
+      membership?.role === 'admin' ||
+      membership?.role === 'owner' ||
+      (userEmail && (details.workspace?.creatorEmail === userEmail || details.workspace?.adminEmail === userEmail)) ||
+      (req.user?.id && details.workspace?.createdBy === req.user.id);
+
+    if (isDirectAdmin) {
+      // If user is direct creator/admin, ensure they have role 'admin'
+      if (!membership) {
+        membership = await WorkspaceMember.create({
+          workspaceId: id,
+          userId: req.user.id,
+          role: 'admin',
+          studentAccess: 'commenter',
+        });
+      } else if (membership.role !== 'admin' && membership.role !== 'owner') {
+        membership.role = 'admin';
+        membership.studentAccess = 'commenter';
+        await membership.save();
+      }
+    } else {
+      if (!userEmail || !allowed.includes(userEmail)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: Only registered team members on the email allowlist can access this workspace.',
+        });
+      }
+      // Auto-create or ensure team_member
+      if (!membership) {
+        membership = await WorkspaceMember.create({
+          workspaceId: id,
+          userId: req.user.id,
+          role: 'team_member',
+          studentAccess: 'editor',
+        });
+      }
+    }
+  }
+
+  const role = membership?.role || (wsType === 'competitive' ? 'team_member' : 'viewer');
+  const access = membership?.studentAccess || (role === 'admin' ? 'commenter' : 'editor');
 
   res.status(200).json({
     success: true,
     ...details,
     workspace: {
       ...(details.workspace || {}),
-      type: details.workspace?.type || 'educational',
-      myRole: membership?.role || 'viewer',
-      studentAccess: membership?.studentAccess || null,
+      type: wsType,
+      myRole: role,
+      studentAccess: access,
+      allowedEmails: details.workspace?.allowedEmails || [],
     },
-    myRole: membership?.role || 'viewer',
-    studentAccess: membership?.studentAccess || null,
+    myRole: role,
+    studentAccess: access,
+    allowedEmails: details.workspace?.allowedEmails || [],
   });
 });
 
 /**
  * DELETE /api/workspaces/:id
- * Deletes a workspace and its files.
+ * Deletes a workspace, its associated database rows, and its files.
  */
 const deleteWorkspace = asyncWrapper(async (req, res) => {
   const { id } = req.params;
+
+  // Clean up all related database rows
+  await Promise.allSettled([
+    WorkspaceMember.destroy({ where: { workspaceId: id } }),
+    WorkspaceInvite.destroy({ where: { workspaceId: id } }),
+    LineComment.destroy({ where: { workspaceId: id } }),
+    Whiteboard.destroy({ where: { workspaceId: id } }),
+    TeachingSession.destroy({ where: { workspaceId: id } }),
+    ProjectTask.destroy({ where: { workspaceId: id } }),
+    CodeReview.destroy({ where: { workspaceId: id } }),
+    WorkspaceLock.destroy({ where: { workspaceId: id } }),
+  ]);
+
   await workspaceService.deleteWorkspace(id);
   res.status(200).json({ success: true, message: `Workspace ${id} deleted successfully` });
+});
+
+/**
+ * POST /api/workspaces/bulk-delete
+ * Bulk deletes multiple workspaces and all their resources.
+ */
+const bulkDeleteWorkspaces = asyncWrapper(async (req, res) => {
+  const { workspaceIds } = req.body;
+  const userId = req.user.id;
+
+  if (!Array.isArray(workspaceIds) || workspaceIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'workspaceIds array is required' });
+  }
+
+  const ownerRoles = ['owner', 'teacher', 'team_leader', 'admin'];
+  const deletedIds = [];
+  const failedIds = [];
+
+  for (const id of workspaceIds) {
+    try {
+      let membership = await WorkspaceMember.findOne({
+        where: { workspaceId: id, userId },
+      });
+
+      const ws = await workspaceService.getWorkspace(id);
+      const userEmail = (req.user?.email || '').toLowerCase().trim();
+      const isCreator =
+        (userId && ws?.createdBy === userId) ||
+        (userEmail && (ws?.creatorEmail === userEmail || ws?.adminEmail === userEmail));
+
+      if (!membership && isCreator) {
+        membership = { role: ws?.type === 'educational' ? 'teacher' : ws?.type === 'professional' ? 'team_leader' : 'admin' };
+      }
+
+      if (!membership && ws?.type === 'competitive') {
+        const isAdminSomewhere = await WorkspaceMember.findOne({
+          where: { userId, role: 'admin' },
+        });
+        if (isAdminSomewhere) {
+          membership = { role: 'admin' };
+        }
+      }
+
+      if (!isCreator && (!membership || !ownerRoles.includes(membership.role))) {
+        failedIds.push(id);
+        continue;
+      }
+
+      await Promise.allSettled([
+        WorkspaceMember.destroy({ where: { workspaceId: id } }),
+        WorkspaceInvite.destroy({ where: { workspaceId: id } }),
+        LineComment.destroy({ where: { workspaceId: id } }),
+        Whiteboard.destroy({ where: { workspaceId: id } }),
+        TeachingSession.destroy({ where: { workspaceId: id } }),
+        ProjectTask.destroy({ where: { workspaceId: id } }),
+        CodeReview.destroy({ where: { workspaceId: id } }),
+        WorkspaceLock.destroy({ where: { workspaceId: id } }),
+      ]);
+
+      await workspaceService.deleteWorkspace(id);
+      deletedIds.push(id);
+    } catch (err) {
+      console.error(`[bulkDeleteWorkspaces] Error deleting workspace ${id}:`, err);
+      failedIds.push(id);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    deletedIds,
+    failedIds,
+    message: `Successfully deleted ${deletedIds.length} workspace(s)${failedIds.length > 0 ? `, ${failedIds.length} failed` : ''}`,
+  });
 });
 
 /**
@@ -115,13 +313,16 @@ const deleteWorkspace = asyncWrapper(async (req, res) => {
 const getFileTree = asyncWrapper(async (req, res) => {
   const { id } = req.params;
 
-  // In educational workspaces, no-view students cannot see file tree
-  if (req.membership?.role === 'student' && req.membership?.studentAccess === 'no-view') {
-    return res.status(200).json({ success: true, fileTree: [], restricted: true });
+  // In educational workspaces, students can only see files when class is in session
+  if (req.membership?.role === 'student') {
+    const activeSession = await TeachingSession.findOne({ where: { workspaceId: id, active: true } });
+    if (!activeSession) {
+      return res.status(200).json({ success: true, fileTree: [], classInSession: false });
+    }
   }
 
   const fileTree = await storageService.getFileTree(id);
-  res.status(200).json({ success: true, fileTree });
+  res.status(200).json({ success: true, fileTree, classInSession: true });
 });
 
 /**
@@ -132,9 +333,12 @@ const readFileContent = asyncWrapper(async (req, res) => {
   const { id } = req.params;
   const { filePath } = req.query;
 
-  // In educational workspaces, no-view students cannot read file content
-  if (req.membership?.role === 'student' && req.membership?.studentAccess === 'no-view') {
-    return res.status(403).json({ success: false, error: 'Access restricted: Teacher has set your access to No-View' });
+  // In educational workspaces, students can only read files when class is in session
+  if (req.membership?.role === 'student') {
+    const activeSession = await TeachingSession.findOne({ where: { workspaceId: id, active: true } });
+    if (!activeSession) {
+      return res.status(403).json({ success: false, error: 'Class is not in session. Please wait for your teacher to start the class.' });
+    }
   }
 
   if (!filePath) {
@@ -256,6 +460,57 @@ const renameItem = asyncWrapper(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
+/**
+ * GET /api/workspaces/:id/allowlist
+ */
+const getAllowlist = asyncWrapper(async (req, res) => {
+  const { id } = req.params;
+  const allowedEmails = await workspaceService.getAllowedEmails(id);
+  res.status(200).json({ success: true, allowedEmails });
+});
+
+/**
+ * POST /api/workspaces/:id/allowlist
+ */
+const addAllowedEmails = asyncWrapper(async (req, res) => {
+  const { id } = req.params;
+  const { emails, email } = req.body;
+  const toAdd = emails || (email ? [email] : []);
+  const normalized = (Array.isArray(toAdd) ? toAdd : [toAdd])
+    .map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''))
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return res.status(400).json({ success: false, error: 'No valid email address provided.' });
+  }
+
+  // Ensure every email has a registered account on CodeSync
+  const existing = await User.findAll({
+    where: { email: { [Op.in]: normalized } },
+    attributes: ['email'],
+  });
+  const existingSet = new Set(existing.map(u => u.email.toLowerCase()));
+  const unregistered = normalized.filter(e => !existingSet.has(e));
+  if (unregistered.length > 0) {
+    return res.status(400).json({
+      success: false,
+      error: `The following email(s) do not have a CodeSync account: ${unregistered.join(', ')}. Team members must be registered users.`
+    });
+  }
+
+  const updated = await workspaceService.addAllowedEmails(id, normalized);
+  res.status(200).json({ success: true, allowedEmails: updated });
+});
+
+/**
+ * DELETE /api/workspaces/:id/allowlist/:email
+ */
+const removeAllowedEmail = asyncWrapper(async (req, res) => {
+  const { id, email } = req.params;
+  const updated = await workspaceService.removeAllowedEmail(id, email);
+  res.status(200).json({ success: true, allowedEmails: updated });
+});
+
 export {
   createWorkspace,
   listWorkspaces,
@@ -266,5 +521,9 @@ export {
   saveFileContent,
   createItem,
   deleteItem,
-  renameItem
+  renameItem,
+  getAllowlist,
+  addAllowedEmails,
+  removeAllowedEmail,
+  bulkDeleteWorkspaces,
 };

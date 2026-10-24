@@ -6,6 +6,8 @@ import type {
   CodeReview,
   TaskPriority,
   ReviewStatus,
+  StudentAccessLevel,
+  LineComment,
 } from '../types';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
@@ -33,11 +35,21 @@ export const collabService = {
       body: JSON.stringify({ role }),
     }),
 
-  updateStudentAccess: (wsId: string, userId: number, access: 'no-view' | 'viewer' | 'editor', token: string | null) =>
+  updateStudentAccess: (wsId: string, userId: number, access: StudentAccessLevel, token: string | null) =>
     req<{ success: boolean; member: WorkspaceMember }>(`/api/workspaces/${wsId}/members/${userId}/access`, token, {
       method: 'PATCH',
       body: JSON.stringify({ access }),
     }),
+
+  updateBulkStudentAccess: (wsId: string, userIds: number[], access: StudentAccessLevel, token: string | null) =>
+    req<{ success: boolean; updatedCount: number; updatedUserIds: number[]; studentAccess: StudentAccessLevel }>(
+      `/api/workspaces/${wsId}/members/access/bulk`,
+      token,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ userIds, access }),
+      }
+    ),
 
   removeMember: (wsId: string, userId: number, token: string | null) =>
     req(`/api/workspaces/${wsId}/members/${userId}`, token, { method: 'DELETE' }),
@@ -134,4 +146,75 @@ export const collabService = {
     req<{ success: boolean; message: string; reviewId: number }>(`/api/workspaces/${wsId}/reviews/${reviewId}`, token, {
       method: 'DELETE',
     }),
+
+  // Inline Line Comments
+  getComments: (wsId: string, filePath?: string, token?: string | null) =>
+    req<{ success: boolean; comments: LineComment[] }>(
+      `/api/workspaces/${wsId}/comments${filePath ? `?filePath=${encodeURIComponent(filePath)}` : ''}`,
+      token ?? null
+    ),
+
+  createComment: (
+    wsId: string,
+    data: { filePath: string; lineNumber: number; content: string; parentId?: number | null },
+    token: string | null
+  ) =>
+    req<{ success: boolean; comment: LineComment }>(`/api/workspaces/${wsId}/comments`, token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateComment: (
+    wsId: string,
+    commentId: number,
+    data: { content?: string; resolved?: boolean },
+    token: string | null
+  ) =>
+    req<{ success: boolean; comment: LineComment }>(`/api/workspaces/${wsId}/comments/${commentId}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteComment: (wsId: string, commentId: number, token: string | null) =>
+    req<{ success: boolean; message: string }>(`/api/workspaces/${wsId}/comments/${commentId}`, token, {
+      method: 'DELETE',
+    }),
+
+  // Competitive Workspace Allowlist
+  getAllowlist: (wsId: string, token: string | null) =>
+    req<{ success: boolean; allowedEmails: string[] }>(`/api/workspaces/${wsId}/allowlist`, token),
+
+  addAllowedEmails: (wsId: string, emails: string[], token: string | null) =>
+    req<{ success: boolean; allowedEmails: string[] }>(`/api/workspaces/${wsId}/allowlist`, token, {
+      method: 'POST',
+      body: JSON.stringify({ emails }),
+    }),
+
+  removeAllowedEmail: (wsId: string, email: string, token: string | null) =>
+    req<{ success: boolean; allowedEmails: string[] }>(`/api/workspaces/${wsId}/allowlist/${encodeURIComponent(email)}`, token, {
+      method: 'DELETE',
+    }),
+
+  // User Search Autocompletion
+  searchUsers: (query: string, token: string | null) =>
+    req<{ success: boolean; users: Array<{ id: number; username: string; email: string }> }>(
+      `/api/auth/users/search?q=${encodeURIComponent(query)}`,
+      token
+    ),
+
+  // Workspace Deletion
+  deleteWorkspace: (wsId: string, token: string | null) =>
+    req<{ success: boolean; message?: string; error?: string }>(`/api/workspaces/${wsId}`, token, {
+      method: 'DELETE',
+    }),
+
+  bulkDeleteWorkspaces: (workspaceIds: string[], token: string | null) =>
+    req<{ success: boolean; deletedIds: string[]; failedIds: string[]; message?: string; error?: string }>(
+      '/api/workspaces/bulk-delete',
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({ workspaceIds }),
+      }
+    ),
 };

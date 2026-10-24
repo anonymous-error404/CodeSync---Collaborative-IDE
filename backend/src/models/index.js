@@ -7,6 +7,7 @@ import TeachingSession from './TeachingSession.js';
 import ProjectTask from './ProjectTask.js';
 import CodeReview from './CodeReview.js';
 import WorkspaceLock from './WorkspaceLock.js';
+import LineComment from './LineComment.js';
 
 WorkspaceMember.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(WorkspaceMember, { foreignKey: 'userId' });
@@ -22,6 +23,12 @@ CodeReview.belongsTo(User, { as: 'reviewer', foreignKey: 'reviewerId' });
 
 WorkspaceLock.belongsTo(User, { as: 'locker', foreignKey: 'lockedBy' });
 
+// Line Comment associations
+LineComment.belongsTo(User, { as: 'author', foreignKey: 'userId' });
+User.hasMany(LineComment, { foreignKey: 'userId' });
+LineComment.hasMany(LineComment, { as: 'replies', foreignKey: 'parentId' });
+LineComment.belongsTo(LineComment, { as: 'parent', foreignKey: 'parentId' });
+
 const db = {
   sequelize,
   User,
@@ -32,6 +39,7 @@ const db = {
   ProjectTask,
   CodeReview,
   WorkspaceLock,
+  LineComment,
 };
 
 /**
@@ -52,6 +60,30 @@ const syncDatabase = async (options = {}) => {
     await sequelize.query('DROP TABLE IF EXISTS `workspace_locks_backup`;');
 
     await sequelize.sync(options);
+
+    // Auto-migrate: ensure new columns exist in workspace_members
+    try {
+      const [cols] = await sequelize.query("PRAGMA table_info('workspace_members');");
+      const colNames = (cols || []).map(c => c.name);
+
+      if (colNames.length > 0) {
+        if (!colNames.includes('studentAccess')) {
+          await sequelize.query("ALTER TABLE workspace_members ADD COLUMN studentAccess TEXT DEFAULT 'viewer';");
+        }
+        if (!colNames.includes('sessionRole')) {
+          await sequelize.query("ALTER TABLE workspace_members ADD COLUMN sessionRole TEXT DEFAULT 'none';");
+        }
+        if (!colNames.includes('editorLocked')) {
+          await sequelize.query("ALTER TABLE workspace_members ADD COLUMN editorLocked TINYINT(1) DEFAULT 0;");
+        }
+        if (!colNames.includes('handRaised')) {
+          await sequelize.query("ALTER TABLE workspace_members ADD COLUMN handRaised TINYINT(1) DEFAULT 0;");
+        }
+      }
+    } catch (colErr) {
+      console.warn('[Database Notice]: Column check on workspace_members:', colErr.message);
+    }
+
     console.log('[Database]: Models synchronized with SQLite database.');
   } catch (error) {
     console.error('[Database Error]: Failed to connect or sync database:', error);
@@ -61,4 +93,4 @@ const syncDatabase = async (options = {}) => {
 
 export { syncDatabase };
 export default db;
-export { User, WorkspaceMember, WorkspaceInvite, Whiteboard, TeachingSession, ProjectTask, CodeReview, WorkspaceLock };
+export { User, WorkspaceMember, WorkspaceInvite, Whiteboard, TeachingSession, ProjectTask, CodeReview, WorkspaceLock, LineComment };

@@ -11,6 +11,7 @@ import {
   whiteboardRoutes,
   sessionRoutes,
   professionalRoutes,
+  commentRoutes,
   initWorkspaceSockets
 } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
@@ -40,6 +41,7 @@ app.use('/api', inviteRoutes);
 app.use('/api', whiteboardRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', professionalRoutes);
+app.use('/api', commentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

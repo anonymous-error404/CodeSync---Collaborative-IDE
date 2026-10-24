@@ -3,6 +3,7 @@ import * as controller from '../controllers/workspaceController.js';
 import * as lockController from '../controllers/lockController.js';
 import executionService from '../services/executionService.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { searchUsers } from '../controllers/authController.js';
 import {
   requireWorkspaceMember,
   requireWorkspaceOwner,
@@ -15,6 +16,13 @@ router.post('/workspaces', authenticateToken, controller.createWorkspace);
 router.get('/workspaces', authenticateToken, controller.listWorkspaces);
 router.get('/workspaces/:id', authenticateToken, requireWorkspaceMember('viewer'), controller.getWorkspaceDetails);
 router.delete('/workspaces/:id', authenticateToken, requireWorkspaceOwner, controller.deleteWorkspace);
+router.post('/workspaces/bulk-delete', authenticateToken, controller.bulkDeleteWorkspaces);
+router.get('/users/search', authenticateToken, searchUsers);
+
+// Competitive Workspace Allowlist routes
+router.get('/workspaces/:id/allowlist', authenticateToken, requireWorkspaceMember('viewer'), controller.getAllowlist);
+router.post('/workspaces/:id/allowlist', authenticateToken, requireWorkspaceMember('admin'), controller.addAllowedEmails);
+router.delete('/workspaces/:id/allowlist/:email', authenticateToken, requireWorkspaceMember('admin'), controller.removeAllowedEmail);
 
 // File management routes - RBAC protected
 router.get('/workspaces/:id/files/tree', authenticateToken, requireWorkspaceMember('viewer'), controller.getFileTree);
@@ -30,8 +38,8 @@ router.post('/workspaces/:id/locks', authenticateToken, requireWorkspaceMember('
 router.delete('/workspaces/:id/locks/:lockId', authenticateToken, requireWorkspaceMember('viewer'), lockController.deleteLock);
 
 // Environment routes
-router.get('/workspaces/:id/environments', authenticateToken, requireWorkspaceMember('viewer'), (req, res) => {
-  const supported = executionService.getSupportedEnvironments();
+router.get('/workspaces/:id/environments', authenticateToken, requireWorkspaceMember('viewer'), async (req, res) => {
+  const supported = await executionService.getSupportedEnvironments();
   const active = executionService.listEnvironments(req.params.id);
   res.json({ success: true, supported, active });
 });

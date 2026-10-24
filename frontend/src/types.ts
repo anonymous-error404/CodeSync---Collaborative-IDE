@@ -10,7 +10,7 @@ export interface FileItem {
 }
 
 export type WorkspaceType = 'educational' | 'professional' | 'competitive';
-export type StudentAccessLevel = 'no-view' | 'viewer' | 'editor';
+export type StudentAccessLevel = 'viewer' | 'commenter' | 'editor' | 'view' | 'comment' | 'edit' | 'no-view';
 
 export type WorkspaceRole =
   | 'owner'
@@ -21,6 +21,8 @@ export type WorkspaceRole =
   | 'student'
   | 'team_leader'
   | 'developer'
+  | 'tester'
+  | 'team_member'
   | 'no-view';
 export type SessionRole = 'teacher' | 'student' | 'none';
 
@@ -60,6 +62,26 @@ export interface Workspace {
   myRole?: WorkspaceRole;
   mySessionRole?: SessionRole;
   studentAccess?: StudentAccessLevel;
+  allowedEmails?: string[];
+}
+
+export interface LineComment {
+  id: number;
+  workspaceId: string;
+  filePath: string;
+  lineNumber: number;
+  userId: number;
+  content: string;
+  parentId?: number | null;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  author?: {
+    id: number;
+    username: string;
+    email: string;
+  };
+  replies?: LineComment[];
 }
 
 export interface TeachingSessionState {

@@ -216,4 +216,44 @@ const getMe = async (req, res) => {
   }
 };
 
-export { register, login, getMe };
+/**
+ * Search registered users by email or username
+ * GET /api/auth/users/search?q=query
+ */
+const searchUsers = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) {
+      return res.status(200).json({ success: true, users: [] });
+    }
+
+    const users = await User.findAll({
+      where: {
+        [Op.or]: [
+          { email: { [Op.like]: `%${q}%` } },
+          { username: { [Op.like]: `%${q}%` } },
+        ],
+      },
+      attributes: ['id', 'username', 'email'],
+      limit: 10,
+      order: [['email', 'ASC']],
+    });
+
+    return res.status(200).json({
+      success: true,
+      users: users.map(u => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+      })),
+    });
+  } catch (error) {
+    console.error('[SearchUsers Error]:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'An error occurred while searching users.',
+    });
+  }
+};
+
+export { register, login, getMe, searchUsers };

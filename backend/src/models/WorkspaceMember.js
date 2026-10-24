@@ -20,13 +20,13 @@ WorkspaceMember.init(
       allowNull: false,
     },
     role: {
-      type: DataTypes.ENUM('owner', 'admin', 'editor', 'viewer', 'teacher', 'student', 'team_leader', 'developer', 'no-view'),
+      type: DataTypes.ENUM('owner', 'admin', 'editor', 'viewer', 'teacher', 'student', 'team_leader', 'developer', 'tester', 'team_member', 'no-view'),
       allowNull: false,
       defaultValue: 'viewer',
     },
-    // Educational workspace student access level: teacher can assign no-view, viewer, or editor
+    // Workspace member access level: viewer, commenter, or editor
     studentAccess: {
-      type: DataTypes.ENUM('no-view', 'viewer', 'editor'),
+      type: DataTypes.ENUM('no-view', 'viewer', 'commenter', 'editor', 'view', 'comment', 'edit'),
       allowNull: true,
       defaultValue: 'viewer',
     },

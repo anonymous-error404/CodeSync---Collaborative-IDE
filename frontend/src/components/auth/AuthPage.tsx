@@ -1,9 +1,10 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import {
   Mail, Lock, User, Eye, EyeOff,
-  Sun, Moon, Code2, Terminal, AlertCircle,
+  Sun, Moon, Terminal, AlertCircle,
   CheckCircle2, ChevronRight, Zap,
 } from 'lucide-react';
+import logoImg from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authService } from '../../services/authService';
@@ -78,11 +79,9 @@ function LeftPanel() {
         style={{ background: 'rgba(47,129,247,0.08)' }} />
       <div className="relative z-10">
         <div className="flex items-center gap-3 mb-10">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg" style={{ background: 'var(--accent)' }}>
-            <Code2 size={18} color="#fff" />
-          </div>
+          <img src={logoImg} alt="CodeSync" className="w-10 h-10 rounded-xl object-contain shrink-0 shadow-md" />
           <div>
-            <div className="font-bold text-base" style={{ color: 'var(--text)' }}>CodeSync</div>
+            <div className="font-bold text-lg" style={{ color: 'var(--text)' }}>CodeSync</div>
             <div className="text-xs" style={{ color: 'var(--muted)' }}>Collaborative IDE</div>
           </div>
         </div>
@@ -213,10 +212,8 @@ export function AuthPage() {
 
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="lg:hidden flex items-center gap-2.5 mb-10">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: 'var(--accent)' }}>
-            <Code2 size={16} color="#fff" />
-          </div>
-          <span className="font-bold text-base" style={{ color: 'var(--text)' }}>CodeSync</span>
+          <img src={logoImg} alt="CodeSync" className="w-9 h-9 rounded-xl object-contain shrink-0 shadow-md" />
+          <span className="font-bold text-lg" style={{ color: 'var(--text)' }}>CodeSync</span>
         </div>
 
         <div className="w-full animate-fade-in" style={{ maxWidth: 360 }}>

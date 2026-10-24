@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import { getWorkspacePath, resolveSafePath } from '../utils/pathSandbox.js';
 import { EXECUTION_TIMEOUT_MS } from '../config/workspaceConfig.js';
 import {
@@ -11,48 +12,136 @@ import {
 
 class ExecutionService {
   constructor() {
-    // Map<envKey, { process: ChildProcess, containerName: string, workspaceId: string, userId: string|number, username: string, isGlobal: boolean, filePath: string, startedAt: number }>
+    // Map<envKey, { process: ChildProcess, containerName: string|null, workspaceId: string, userId: string|number, username: string, isGlobal: boolean, filePath: string, isDocker: boolean, timeoutHandle: NodeJS.Timeout, safeExit: Function, startedAt: number }>
     this.runningContainers = new Map();
+    this._dockerCheckCache = null;
   }
 
   /**
-   * Executes a code file inside an isolated Docker container for a specific member or globally.
-   * Streams stdout/stderr in real-time via callbacks, then auto-removes the container.
+   * Fast check if Docker daemon is running, with a 5-second TTL cache.
+   * On Windows / Linux, checks the named pipe or socket file existence first (takes < 1ms),
+   * completely avoiding hanging or slow CLI calls when Docker Desktop is closed.
+   * @returns {Promise<boolean>}
+   */
+  async isDockerRunning() {
+    const now = Date.now();
+    if (this._dockerCheckCache && (now - this._dockerCheckCache.time < 5000)) {
+      return this._dockerCheckCache.available;
+    }
+
+    // 1. Instant check: Named Pipe (Windows) or Unix Socket (Linux/macOS)
+    if (process.platform === 'win32') {
+      const pipeExists = fs.existsSync('//./pipe/dockerDesktopLinuxEngine') || fs.existsSync('//./pipe/docker_engine');
+      if (!pipeExists) {
+        this._dockerCheckCache = { available: false, time: now };
+        return false;
+      }
+    } else {
+      const sockExists = fs.existsSync('/var/run/docker.sock') ||
+        (process.env.HOME && fs.existsSync(path.join(process.env.HOME, '.docker/run/docker.sock')));
+      if (!sockExists) {
+        this._dockerCheckCache = { available: false, time: now };
+        return false;
+      }
+    }
+
+    // 2. Pipe exists, verify Docker server response with a tight 1.5s timeout
+    return new Promise((resolve) => {
+      let resolved = false;
+      const child = spawn('docker', ['version', '--format', '{{.Server.Version}}'], { shell: false });
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try {
+            if (process.platform === 'win32' && child.pid) {
+              spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { shell: false });
+            } else {
+              child.kill('SIGKILL');
+            }
+          } catch { /* ignore */ }
+          this._dockerCheckCache = { available: false, time: Date.now() };
+          resolve(false);
+        }
+      }, 1500);
+
+      child.on('close', (code) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          const available = code === 0;
+          this._dockerCheckCache = { available, time: Date.now() };
+          resolve(available);
+        }
+      });
+
+      child.on('error', () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          this._dockerCheckCache = { available: false, time: Date.now() };
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  /**
+   * Executes a code file. Uses isolated Docker container when Docker daemon is available;
+   * automatically and gracefully falls back to the host runtime when Docker is offline.
    *
    * @param {Object}   params
    * @param {string}   params.workspaceId
    * @param {string|number} [params.userId='global']
    * @param {string}   [params.username='User']
    * @param {boolean}  [params.isGlobal=false]
-   * @param {string}   params.filePath   - Relative path within the workspace
-   * @param {Function} params.onStdout   - Called with each stdout chunk
-   * @param {Function} params.onStderr   - Called with each stderr chunk
-   * @param {Function} params.onExit     - Called with exit code when done
+   * @param {string}   params.filePath
+   * @param {Function} params.onStdout
+   * @param {Function} params.onStderr
+   * @param {Function} params.onExit
    */
-  executeFile({ workspaceId, userId = 'global', username = 'User', isGlobal = false, filePath, onStdout, onStderr, onExit }) {
+  async executeFile({ workspaceId, userId = 'global', username = 'User', isGlobal = false, filePath, onStdout, onStderr, onExit }) {
     // Validate path — throws on traversal attempts
     resolveSafePath(workspaceId, filePath);
     const workspaceDir = getWorkspacePath(workspaceId);
 
     const envKey = isGlobal ? `${workspaceId}:global` : `${workspaceId}:${userId}`;
 
-    // Kill any currently running container for this member's environment
+    // Kill any currently running container or process for this environment
     this.stopExecution(envKey);
 
-    const ext           = path.extname(filePath).toLowerCase();
-    const fileName      = path.basename(filePath);
-    const fileSubDir    = path.dirname(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const fileName = path.basename(filePath);
+    const fileSubDir = path.dirname(filePath);
+    const fullSubDir = fileSubDir === '.' || fileSubDir === ''
+      ? workspaceDir
+      : path.join(workspaceDir, fileSubDir);
+
+    let exited = false;
+    const safeExit = (code) => {
+      if (exited) return;
+      exited = true;
+      this.runningContainers.delete(envKey);
+      onExit(code);
+    };
+
+    const isDocker = await this.isDockerRunning();
+
+    if (!isDocker) {
+      onStderr('[Error] Runtime environment not available. Docker engine is not running.\nPlease start Docker Desktop to execute code.\n');
+      safeExit(-1);
+      return;
+    }
+
+    // ── Docker Containerized Execution ──────────────────────────────────────
     const containerName = isGlobal
       ? `${CONTAINER_NAME_PREFIX}-${workspaceId}-global`
       : `${CONTAINER_NAME_PREFIX}-${workspaceId}-u${userId}`;
 
-    // Working directory inside the container (where the file lives)
-    const containerWorkDir =
-      fileSubDir === '.' || fileSubDir === ''
-        ? '/workspace'
-        : `/workspace/${fileSubDir}`;
+    const containerWorkDir = fileSubDir === '.' || fileSubDir === ''
+      ? '/workspace'
+      : `/workspace/${fileSubDir}`;
 
-    // Build the full `docker run` argument list
     const dockerArgs = this._buildDockerArgs({
       containerName,
       workspaceDir,
@@ -62,9 +151,15 @@ class ExecutionService {
     });
 
     console.log(`[Docker Engine] Launching container for ${envKey}: ${containerName}`);
-    console.log(`[Docker Engine] docker ${dockerArgs.join(' ')}`);
-
     const child = spawn('docker', dockerArgs, { shell: false });
+
+    const timeoutHandle = setTimeout(() => {
+      if (this.runningContainers.has(envKey)) {
+        onStderr(`\n[Server] Execution timed out (${EXECUTION_TIMEOUT_MS / 1000}s limit reached).\n`);
+        this.stopExecution(envKey);
+      }
+    }, EXECUTION_TIMEOUT_MS);
+
     this.runningContainers.set(envKey, {
       process: child,
       containerName,
@@ -73,38 +168,24 @@ class ExecutionService {
       username,
       isGlobal,
       filePath,
+      isDocker: true,
+      timeoutHandle,
+      safeExit,
       startedAt: Date.now(),
     });
 
-    // Hard timeout — kill the container if it runs too long
-    const timeoutHandle = setTimeout(() => {
-      if (this.runningContainers.has(envKey)) {
-        onStderr(
-          `\n[Server] Execution timed out (${EXECUTION_TIMEOUT_MS / 1000}s limit reached).\n`
-        );
-        this.stopExecution(envKey);
-      }
-    }, EXECUTION_TIMEOUT_MS);
-
-    // Stream stdout/stderr in real-time to the caller
     child.stdout.on('data', (data) => onStdout(data.toString()));
     child.stderr.on('data', (data) => onStderr(data.toString()));
 
     child.on('error', (err) => {
       clearTimeout(timeoutHandle);
-      this.runningContainers.delete(envKey);
-      // Friendly hint when Docker daemon is not running
-      const hint = err.code === 'ENOENT'
-        ? ' — Is Docker installed and running?'
-        : '';
-      onStderr(`[Server] Execution error: ${err.message}${hint}\n`);
-      onExit(-1);
+      onStderr(`[Docker Engine] Error: ${err.message}\n`);
+      safeExit(-1);
     });
 
     child.on('close', (code) => {
       clearTimeout(timeoutHandle);
-      this.runningContainers.delete(envKey);
-      onExit(code ?? 0);
+      safeExit(code ?? 0);
     });
   }
 
@@ -113,7 +194,6 @@ class ExecutionService {
    * @private
    */
   _buildDockerArgs({ containerName, workspaceDir, containerWorkDir, fileName, ext }) {
-    // Common security + resource flags shared by all languages
     const baseArgs = [
       'run', '--rm',
       '--name',    containerName,
@@ -123,7 +203,6 @@ class ExecutionService {
       '--workdir', containerWorkDir,
     ];
 
-    // JavaScript / Node.js — read-only volume, run directly
     if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
       return [
         ...baseArgs,
@@ -133,7 +212,6 @@ class ExecutionService {
       ];
     }
 
-    // Python — read-only volume, unbuffered output (-u)
     if (ext === '.py') {
       return [
         ...baseArgs,
@@ -143,7 +221,6 @@ class ExecutionService {
       ];
     }
 
-    // Java — needs RW volume so javac can write .class files next to the source
     if (ext === '.java') {
       return [
         ...baseArgs,
@@ -157,48 +234,113 @@ class ExecutionService {
   }
 
   /**
-   * Stops a running Docker container by environment key.
-   * @param {string} envKey - either "workspaceId:userId", "workspaceId:global", or "workspaceId" (for backward compat)
-   * @returns {boolean} true if a container was killed, false if nothing was running
+   * Stops a running Docker container or local process by environment key.
+   * Forcefully kills process trees on Windows via taskkill to guarantee instant termination.
+   *
+   * @param {string} envKey
+   * @returns {boolean}
    */
   stopExecution(envKey) {
     let targetKey = envKey;
-    if (!this.runningContainers.has(targetKey)) {
-      // Check if it was passed just workspaceId
+    let entry = this.runningContainers.get(targetKey);
+
+    if (!entry) {
       for (const [k, v] of this.runningContainers.entries()) {
-        if (k === envKey || v.workspaceId === envKey) {
+        if (k === envKey || v.workspaceId === envKey || (envKey && envKey.includes(v.workspaceId))) {
           targetKey = k;
+          entry = v;
           break;
         }
       }
     }
 
-    const entry = this.runningContainers.get(targetKey);
     if (!entry) return false;
 
-    const { process: child, containerName } = entry;
-    console.log(`[Docker Engine] Killing container for ${targetKey}: ${containerName}`);
+    const { process: child, containerName, timeoutHandle, safeExit, isDocker } = entry;
+    console.log(`[Execution Engine] Stopping execution for ${targetKey}: ${containerName || 'Local Host Process'}`);
 
-    // Send SIGKILL to the container via Docker (immediate, no graceful shutdown)
-    spawn('docker', ['kill', containerName], { shell: false })
-      .on('error', () => { /* container may already be stopped — ignore */ });
+    if (timeoutHandle) clearTimeout(timeoutHandle);
 
-    // Also terminate the `docker run` child process on the host side
-    try { child.kill('SIGKILL'); } catch { /* already exited */ }
+    // 1. If it's a Docker container, stop it via docker kill
+    if (isDocker && containerName) {
+      spawn('docker', ['kill', containerName], { shell: false })
+        .on('error', () => { /* container may already be stopped */ });
+    }
+
+    // 2. Kill the host child process and all descendants
+    if (child && child.pid) {
+      if (process.platform === 'win32') {
+        try {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { shell: false })
+            .on('error', () => {
+              try { child.kill('SIGKILL'); } catch { /* ignore */ }
+            });
+        } catch {
+          try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        }
+      } else {
+        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+      }
+    }
 
     this.runningContainers.delete(targetKey);
+    if (safeExit) safeExit(-1);
     return true;
+  }
+
+  /**
+   * Context-aware stop execution: searches for running executions by workspaceId,
+   * userId, and/or isGlobal flag.
+   */
+  stopExecutionByContext({ workspaceId, userId = null, isGlobal = false }) {
+    // 1. Check global execution if requested
+    if (isGlobal) {
+      const globalKey = `${workspaceId}:global`;
+      if (this.runningContainers.has(globalKey)) {
+        const entry = this.runningContainers.get(globalKey);
+        this.stopExecution(globalKey);
+        return { isGlobal: true, entry };
+      }
+    }
+
+    // 2. Check user's specific execution
+    if (userId !== null && userId !== undefined) {
+      const userKey = `${workspaceId}:${userId}`;
+      if (this.runningContainers.has(userKey)) {
+        const entry = this.runningContainers.get(userKey);
+        this.stopExecution(userKey);
+        return { isGlobal: false, entry };
+      }
+
+      // Check string vs number match
+      for (const [k, v] of this.runningContainers.entries()) {
+        if (v.workspaceId === workspaceId && String(v.userId) === String(userId)) {
+          this.stopExecution(k);
+          return { isGlobal: v.isGlobal, entry: v };
+        }
+      }
+    }
+
+    // 3. Fallback: Stop ANY execution in this workspace
+    for (const [k, v] of this.runningContainers.entries()) {
+      if (v.workspaceId === workspaceId) {
+        this.stopExecution(k);
+        return { isGlobal: v.isGlobal, entry: v };
+      }
+    }
+
+    return null;
   }
 
   /**
    * Stops execution for a specific user within a workspace.
    */
   stopUserExecution(workspaceId, userId) {
-    return this.stopExecution(`${workspaceId}:${userId}`);
+    return Boolean(this.stopExecutionByContext({ workspaceId, userId }));
   }
 
   /**
-   * Stops all running containers associated with a workspace.
+   * Stops all running containers or processes associated with a workspace.
    */
   stopWorkspaceExecutions(workspaceId) {
     let stoppedAny = false;
@@ -223,7 +365,7 @@ class ExecutionService {
           userId: entry.userId,
           username: entry.username,
           isGlobal: entry.isGlobal,
-          containerName: entry.containerName,
+          containerName: entry.containerName || `local-host-${entry.userId}`,
           filePath: entry.filePath,
           startedAt: entry.startedAt,
           uptimeSec: Math.round((Date.now() - entry.startedAt) / 1000),
@@ -237,7 +379,10 @@ class ExecutionService {
   /**
    * Returns metadata about all supported and depended execution environments.
    */
-  getSupportedEnvironments() {
+  async getSupportedEnvironments() {
+    const isDocker = await this.isDockerRunning();
+    const statusText = isDocker ? 'Docker Sandbox Ready' : 'Runtime env not available';
+
     return [
       {
         id: 'node',
@@ -247,8 +392,10 @@ class ExecutionService {
         extensions: ['.js', '.mjs', '.cjs'],
         memoryLimit: DOCKER_MEMORY_LIMIT,
         cpuLimit: DOCKER_CPU_LIMIT,
-        status: 'ready',
-        description: 'V8 JavaScript runtime with sandboxed execution.',
+        status: statusText,
+        description: isDocker
+          ? 'V8 JavaScript runtime with sandboxed execution.'
+          : 'Runtime env not available (Docker engine is offline).',
       },
       {
         id: 'python',
@@ -258,8 +405,10 @@ class ExecutionService {
         extensions: ['.py'],
         memoryLimit: DOCKER_MEMORY_LIMIT,
         cpuLimit: DOCKER_CPU_LIMIT,
-        status: 'ready',
-        description: 'CPython 3.11 interpreter with unbuffered I/O.',
+        status: statusText,
+        description: isDocker
+          ? 'CPython 3.11 interpreter with unbuffered I/O.'
+          : 'Runtime env not available (Docker engine is offline).',
       },
       {
         id: 'java',
@@ -269,8 +418,10 @@ class ExecutionService {
         extensions: ['.java'],
         memoryLimit: DOCKER_MEMORY_LIMIT,
         cpuLimit: DOCKER_CPU_LIMIT,
-        status: 'ready',
-        description: 'Full JDK compilation and runtime environment.',
+        status: statusText,
+        description: isDocker
+          ? 'Full JDK containerized compilation and runtime.'
+          : 'Runtime env not available (Docker engine is offline).',
       },
     ];
   }

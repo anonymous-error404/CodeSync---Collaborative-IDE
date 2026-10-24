@@ -212,7 +212,18 @@ class StorageService {
   async deleteWorkspaceDirectory(workspaceId) {
     const workspaceDir = getWorkspacePath(workspaceId);
     if (fsSync.existsSync(workspaceDir)) {
-      await fs.rm(workspaceDir, { recursive: true, force: true });
+      try {
+        await fs.rm(workspaceDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (err) {
+        console.warn(`[StorageService] Retry deleteWorkspaceDirectory for ${workspaceId}:`, err.message);
+        if (fsSync.existsSync(workspaceDir)) {
+          try {
+            fsSync.rmSync(workspaceDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch (syncErr) {
+            console.error(`[StorageService] Failed to remove directory ${workspaceId}:`, syncErr.message);
+          }
+        }
+      }
     }
   }
 }

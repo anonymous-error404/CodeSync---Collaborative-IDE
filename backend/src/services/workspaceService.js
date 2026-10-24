@@ -34,15 +34,22 @@ class WorkspaceService {
   /**
    * Creates a new workspace session and initializes its folder.
    */
-  async createWorkspace({ name, description = '', type = 'educational' }) {
+  async createWorkspace({ name, description = '', type = 'educational', allowedEmails = [], createdBy = null, creatorEmail = null }) {
     const workspaceId = `ws-${uuidv4().substring(0, 8)}`;
     const now = new Date().toISOString();
+
+    const normalizedAllowed = Array.isArray(allowedEmails)
+      ? allowedEmails.map(e => (typeof e === 'string' ? e.toLowerCase().trim() : '')).filter(Boolean)
+      : [];
 
     const workspaceMeta = {
       id: workspaceId,
       name: name || `Workspace ${workspaceId}`,
       description,
       type: type || 'educational', // 'educational' | 'professional' | 'competitive'
+      allowedEmails: normalizedAllowed,
+      createdBy: createdBy || null,
+      creatorEmail: creatorEmail ? creatorEmail.toLowerCase().trim() : null,
       createdAt: now,
       updatedAt: now,
       activeUsers: 0,
@@ -139,10 +146,60 @@ class WorkspaceService {
     if (!this.workspaces.has(workspaceId)) {
       const meta = await this._readMeta(workspaceId);
       if (meta) {
-        this.workspaces.set(workspaceId, { activeUsers: 0, type: meta.type || 'educational', ...meta });
+        this.workspaces.set(workspaceId, {
+          activeUsers: 0,
+          type: meta.type || 'educational',
+          allowedEmails: meta.allowedEmails || [],
+          createdBy: meta.createdBy || null,
+          creatorEmail: meta.creatorEmail || null,
+          ...meta,
+        });
       }
     }
     return this.workspaces.get(workspaceId) || null;
+  }
+
+  async updateWorkspaceMeta(workspaceId, updates = {}) {
+    const ws = await this.getWorkspace(workspaceId);
+    if (!ws) return null;
+    Object.assign(ws, updates, { updatedAt: new Date().toISOString() });
+    await this._writeMeta(ws);
+    return ws;
+  }
+
+  async getAllowedEmails(workspaceId) {
+    const ws = await this.getWorkspace(workspaceId);
+    return ws?.allowedEmails || [];
+  }
+
+  async addAllowedEmails(workspaceId, emails = []) {
+    const ws = await this.getWorkspace(workspaceId);
+    if (!ws) return null;
+    const current = new Set((ws.allowedEmails || []).map(e => e.toLowerCase().trim()));
+    const toAdd = Array.isArray(emails) ? emails : [emails];
+    toAdd.forEach(e => {
+      if (typeof e === 'string' && e.trim()) {
+        current.add(e.toLowerCase().trim());
+      }
+    });
+    ws.allowedEmails = Array.from(current);
+    ws.updatedAt = new Date().toISOString();
+    await this._writeMeta(ws);
+    return ws.allowedEmails;
+  }
+
+  async removeAllowedEmail(workspaceId, email) {
+    const ws = await this.getWorkspace(workspaceId);
+    if (!ws) return null;
+    const target = (email || '').toLowerCase().trim();
+    // Protect creator / admin email from removal
+    if (ws.creatorEmail && ws.creatorEmail.toLowerCase() === target) {
+      return ws.allowedEmails;
+    }
+    ws.allowedEmails = (ws.allowedEmails || []).filter(e => e.toLowerCase().trim() !== target);
+    ws.updatedAt = new Date().toISOString();
+    await this._writeMeta(ws);
+    return ws.allowedEmails;
   }
 }
 

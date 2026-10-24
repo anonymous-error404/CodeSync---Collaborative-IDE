@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Code2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import logoImg from '../../assets/logo.png';
 import { collabService } from '../../services/workspaceCollabService';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/Button';
@@ -50,9 +51,7 @@ export function JoinWorkspacePage({ inviteCode, onJoined }: Props) {
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         
         <div className="flex justify-center mb-6">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl" style={{ background: 'var(--accent)' }}>
-            <Code2 size={24} color="#fff" />
-          </div>
+          <img src={logoImg} alt="CodeSync" className="w-16 h-16 rounded-2xl object-contain shadow-lg" />
         </div>
         
         <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text)' }}>Workspace Invitation</h1>

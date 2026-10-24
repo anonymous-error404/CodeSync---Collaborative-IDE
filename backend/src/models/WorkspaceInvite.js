@@ -20,9 +20,9 @@ WorkspaceInvite.init(
       allowNull: false,
     },
     role: {
-      type: DataTypes.ENUM('editor', 'viewer'),
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'editor',
+      defaultValue: 'developer',
     },
     expiresAt: {
       type: DataTypes.DATE,

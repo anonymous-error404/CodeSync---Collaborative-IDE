@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, getMe } from '../controllers/authController.js';
+import { register, login, getMe, searchUsers } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { googleRedirect, googleCallback } from '../controllers/oauthController.js';
 
@@ -15,5 +15,6 @@ router.get('/google/callback', googleCallback);
 
 // Protected session endpoint
 router.get('/me', authenticateToken, getMe);
+router.get('/users/search', authenticateToken, searchUsers);
 
 export default router;

@@ -11,18 +11,20 @@ import {
   Cpu, GitBranch
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
-import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel } from '../../types';
+import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel, LineComment } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { ProfessionalPanel } from './ProfessionalPanel';
+import { LineCommentThread } from './LineCommentThread';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 import { collabService } from '../../services/workspaceCollabService';
 import { EnvironmentModal } from './EnvironmentModal';
 import { LockManagerModal, type WorkspaceLockItem } from './LockManagerModal';
+import logoImg from '../../assets/logo.png';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -121,6 +123,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [openReviewsCount, setOpenReviewsCount] = useState<number>(0);
   const [projectToast, setProjectToast] = useState<string | null>(null);
 
+  // ── Line Comments State ──
+  const [comments, setComments] = useState<LineComment[]>([]);
+  const [activeCommentLine, setActiveCommentLine] = useState<number | null>(null);
+  const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+
   // Resource Locks & Execution Environment state
   const [workspaceLocks, setWorkspaceLocks] = useState<WorkspaceLockItem[]>([]);
   const [showLockManager, setShowLockManager] = useState(false);
@@ -134,10 +141,41 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const isTeacher = currentRole === 'teacher' || sessionRole === 'teacher' || currentRole === 'owner' || currentRole === 'admin';
   const isStudent = currentRole === 'student' || (!isTeacher && sessionRole === 'student');
-  const isNoView = (isStudent && studentAccess === 'no-view') || currentRole === 'no-view';
-  const isViewer = currentRole === 'viewer' || (isStudent && studentAccess === 'viewer');
+  const isTester = currentRole === 'tester';
+  const isDeveloper = currentRole === 'developer';
+  const isCompetitive = workspaceType === 'competitive';
+  const isCompetitiveAdmin = isCompetitive && (currentRole === 'admin' || currentRole === 'owner');
+  const isCompetitiveMember = isCompetitive && currentRole === 'team_member';
+
+  const isAccessComment = studentAccess === 'commenter' || studentAccess === 'comment';
+  const isAccessView = studentAccess === 'viewer' || studentAccess === 'view';
+  const isAccessEdit = studentAccess === 'editor' || studentAccess === 'edit';
+
+  // In Educational workspace, students must wait until teacher starts a class session
+  const isClassWaiting = workspaceType === 'educational' && isStudent && !sessionActive;
+
   const canAdmin = currentRole === 'owner' || currentRole === 'admin' || currentRole === 'teacher' || currentRole === 'team_leader';
-  const canLock = canAdmin || currentRole === 'editor' || studentAccess === 'editor' || (workspaceType === 'professional' && currentRole === 'developer');
+
+  const canComment =
+    isCompetitiveAdmin ||
+    isCompetitiveMember ||
+    canAdmin ||
+    (workspaceType === 'educational' && sessionActive && (isAccessComment || isAccessEdit)) ||
+    (workspaceType === 'professional' && (
+      (isDeveloper && !isAccessView) ||
+      (isTester && isAccessComment) ||
+      isAccessComment ||
+      isAccessEdit
+    ));
+
+  const isViewer =
+    currentRole === 'viewer' ||
+    isCompetitiveAdmin ||
+    (isStudent && (isAccessView || isAccessComment)) ||
+    (isTester && !isAccessEdit) ||
+    (isDeveloper && (isAccessView || isAccessComment));
+
+  const canLock = !isCompetitiveAdmin && (canAdmin || currentRole === 'editor' || isAccessEdit || (workspaceType === 'professional' && isDeveloper && !isAccessView));
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
@@ -148,12 +186,23 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   ) : null;
   const isFileLockedByOther = Boolean(activeFileLock && activeFileLock.lockedBy !== user?.id && !canAdmin);
 
-  const isEffectiveReadOnly = isNoView || isViewer || (isStudent && isEditorLocked) || isFileLockedByOther;
+  const isEffectiveReadOnly =
+    isClassWaiting ||
+    isCompetitiveAdmin ||
+    (workspaceType === 'educational' && (isAccessView || isAccessComment || isEditorLocked)) ||
+    (workspaceType === 'professional' && !canAdmin && (
+      isAccessView ||
+      isAccessComment ||
+      (isTester && !isAccessEdit) ||
+      (isDeveloper && (isAccessView || isAccessComment))
+    )) ||
+    isFileLockedByOther;
   const socketRef = useRef<Socket | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const isRemoteUpdatingRef = useRef<boolean>(false);
   const prevTabPathRef = useRef<string | null>(null);
   const localOffsetRef = useRef<number>(0);
+  const gutterRef = useRef<HTMLDivElement>(null);
 
   // ── Sidebar Resizing State (VS Code style resizable explorer) ─────────────
   const [sidebarWidth, setSidebarWidth] = useState<number>(248);
@@ -246,6 +295,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     window.addEventListener('mouseup', onMouseUp);
   }, [terminalHeight]);
 
+  // Auto-scroll terminal output to bottom when new chunks arrive
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
+
   // ── Voice call (broadcast from teacher or owner/admin) ──
   const isBroadcaster = sessionActive ? isTeacher : canAdmin;
   const voice = useVoiceCall(
@@ -254,9 +310,14 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     isBroadcaster
   );
   // ── Tab & File operations ──────────────────────────────────────────────────
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
   const openFileByPath = useCallback(async (filePath: string) => {
-    if (!filePath || isNoView) return;
-    const existing = tabs.find(t => t.path === filePath);
+    if (!filePath || isClassWaiting) return;
+    const existing = tabsRef.current.find(t => t.path === filePath);
     if (existing) { setActiveTabId(existing.id); return; }
     const filename = filePath.split('/').pop() || filePath;
     try {
@@ -267,14 +328,19 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       const d = await res.json();
       const content = d.success ? (d.content ?? '') : `// Error: ${d.error ?? 'unknown'}`;
       const tab: Tab = { id: `tab-${filePath}`, name: filename, path: filePath, content, dirty: false };
-      setTabs(prev => [...prev, tab]);
+      setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, tab]);
       setActiveTabId(tab.id);
     } catch {
       const tab: Tab = { id: `tab-${filePath}`, name: filename, path: filePath, content: '', dirty: false };
-      setTabs(prev => [...prev, tab]);
+      setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, tab]);
       setActiveTabId(tab.id);
     }
-  }, [tabs, workspace.id, authHeaders, isNoView]);
+  }, [workspace.id, authHeaders, isClassWaiting]);
+
+  const openFileByPathRef = useRef(openFileByPath);
+  useEffect(() => {
+    openFileByPathRef.current = openFileByPath;
+  }, [openFileByPath]);
 
   const openFile = useCallback(async (node: FileItem) => {
     if (node.type === 'directory') return;
@@ -282,7 +348,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   }, [openFileByPath]);
 
   const loadTree = useCallback(async () => {
-    if (studentAccess === 'no-view' && isStudent) {
+    if (isClassWaiting) {
       setTree([]);
       return;
     }
@@ -294,9 +360,25 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       const d = await res.json();
       if (d.success && d.fileTree) setTree(d.fileTree);
     } catch { /* ignore */ }
-  }, [workspace.id, authHeaders, studentAccess, isStudent]);
+  }, [workspace.id, authHeaders, isClassWaiting]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
+
+  // Fetch comments when active tab changes
+  useEffect(() => {
+    if (!activeTab?.path) {
+      setComments([]);
+      setActiveCommentLine(null);
+      return;
+    }
+    collabService.getComments(workspace.id, activeTab.path, token)
+      .then(res => {
+        if (res.success && res.comments) {
+          setComments(res.comments);
+        }
+      })
+      .catch(() => {});
+  }, [workspace.id, activeTab?.path, token]);
 
   // ── Socket.io connection ───────────────────────────────────────────────────
   useEffect(() => {
@@ -423,7 +505,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     socket.on('execution-started', ({ filePath, isGlobal, initiatedBy }: { filePath: string; isGlobal?: boolean; initiatedBy?: string }) => {
       setRunning(true);
       const prefix = isGlobal ? `> [Global Broadcast by ${initiatedBy || 'Admin'}] ` : '> ';
-      setOutput(`${prefix}Running ${filePath}...\n`);
+      setOutput(prev => {
+        const line = `${prefix}Running ${filePath}...\n`;
+        if (prev.endsWith(line)) return prev;
+        return line;
+      });
     });
 
     socket.on('execution-stdout', ({ chunk }: { chunk: string }) => {
@@ -436,7 +522,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
     socket.on('execution-finished', ({ exitCode, isGlobal }: { exitCode: number; isGlobal?: boolean }) => {
       setRunning(false);
-      setOutput(prev => prev + `\n> Process finished with exit code ${exitCode}${isGlobal ? ' [Global]' : ''}`);
+      setOutput(prev => {
+        const finishMsg = `\n> Process finished with exit code ${exitCode}${isGlobal ? ' [Global]' : ''}`;
+        if (prev.endsWith(finishMsg)) return prev;
+        return prev + finishMsg;
+      });
     });
 
     socket.on('workspace-ready', (data: {
@@ -446,12 +536,14 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       mySessionRole?: SessionRole;
       editorLocked?: boolean;
       studentAccess?: StudentAccessLevel;
+      classInSession?: boolean;
       locks?: WorkspaceLockItem[];
     }) => {
       if (data.myRole) setCurrentRole(data.myRole);
       if (data.mySessionRole) setSessionRole(data.mySessionRole);
       if (data.editorLocked !== undefined) setIsEditorLocked(data.editorLocked);
       if (data.studentAccess) setStudentAccess(data.studentAccess);
+      if (data.classInSession !== undefined) setSessionActive(data.classInSession);
       if (data.fileTree) setTree(data.fileTree);
       if (data.locks) setWorkspaceLocks(data.locks);
     });
@@ -470,14 +562,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
     socket.on('member:access_updated', (data: { workspaceId: string; studentAccess: StudentAccessLevel; updatedBy: string }) => {
       setStudentAccess(data.studentAccess);
-      if (data.studentAccess === 'no-view') {
-        setTabs([]);
-        setActiveTabId(null);
-        setTree([]);
-      } else {
-        loadTree();
-      }
-      setProjectToast(`Teacher (${data.updatedBy}) set your access to ${data.studentAccess}`);
+      loadTree();
+      setProjectToast(`Access set to ${data.studentAccess} by ${data.updatedBy}`);
       setTimeout(() => setProjectToast(null), 5000);
     });
 
@@ -486,6 +572,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     });
 
     socket.on('workspace-error', ({ message }: { message: string }) => {
+      setRunning(false);
+      setOutput(prev => prev + `\n[Server Error] ${message}\n`);
       setProjectToast(message);
       setTimeout(() => setProjectToast(null), 5000);
     });
@@ -539,7 +627,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setIsFocusMode(data.focusMode);
       setFocusedFilePath(data.filePath || null);
       if (data.focusMode && data.filePath) {
-        openFileByPath(data.filePath);
+        openFileByPathRef.current(data.filePath);
       }
     });
 
@@ -571,7 +659,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     });
 
     socket.on('session:open_file', (data: { filePath: string }) => {
-      if (data.filePath) openFileByPath(data.filePath);
+      if (data.filePath) openFileByPathRef.current(data.filePath);
     });
 
     socket.on('session:kicked', (data: { reason: string }) => {
@@ -616,8 +704,74 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setTimeout(() => setProjectToast(null), 6000);
     });
 
+    // ── Line Comment Socket Listeners ──
+    socket.on('comment:created', ({ comment }: { comment: LineComment }) => {
+      setComments(prev => {
+        if (comment.parentId) {
+          return prev.map(c => {
+            if (c.id === comment.parentId) {
+              const existingReplies = c.replies || [];
+              if (existingReplies.some(r => r.id === comment.id)) return c;
+              return { ...c, replies: [...existingReplies, comment] };
+            }
+            return c;
+          });
+        }
+        if (prev.some(c => c.id === comment.id)) return prev;
+        return [...prev, { ...comment, replies: [] }];
+      });
+    });
+
+    socket.on('comment:updated', ({ commentId, resolved }: { commentId: number; resolved: boolean }) => {
+      setComments(prev => prev.map(c => {
+        if (c.id === commentId) return { ...c, resolved };
+        if (c.replies) {
+          return {
+            ...c,
+            replies: c.replies.map(r => r.id === commentId ? { ...r, resolved } : r)
+          };
+        }
+        return c;
+      }));
+    });
+
+    socket.on('comment:deleted', ({ commentId }: { commentId: number }) => {
+      setComments(prev => prev
+        .filter(c => c.id !== commentId)
+        .map(c => ({
+          ...c,
+          replies: (c.replies || []).filter(r => r.id !== commentId)
+        }))
+      );
+    });
+
+    // ── Educational Class In Session Listeners ──
+    socket.on('class:started', (data: { sessionId?: string; teacherId?: number; teacherName?: string; fileTree?: FileItem[] }) => {
+      setSessionActive(true);
+      if (data.fileTree) setTree(data.fileTree);
+      setProjectToast(`Class has started by teacher ${data.teacherName || ''}!`);
+      setTimeout(() => setProjectToast(null), 4000);
+    });
+
+    socket.on('class:ended', (data: { workspaceId?: string; endedBy?: string }) => {
+      setSessionActive(false);
+      setSessionRole('none');
+      setIsEditorLocked(false);
+      setIsFocusMode(false);
+      setFocusedFilePath(null);
+      setRaisedHands([]);
+      setMyHandRaised(false);
+      if (currentRole === 'student') {
+        setTabs([]);
+        setActiveTabId(null);
+        setTree([]);
+      }
+      setProjectToast(`Class ended by ${data.endedBy || 'teacher'}.`);
+      setTimeout(() => setProjectToast(null), 4000);
+    });
+
     return () => { socket.disconnect(); };
-  }, [workspace.id, user?.id, user?.username, token, openFileByPath]);
+  }, [workspace.id, user?.id, user?.username, token]);
 
   // Initial session fetch
   useEffect(() => {
@@ -825,7 +979,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     }
     setIsTerminalOpen(true);
     setIsTerminalCollapsed(false);
+    setRunning(true);
+    const prefix = globalExecutionMode && canAdmin ? '> [Global Broadcast] ' : '> ';
+    setOutput(`${prefix}Running ${activeTab.path}...\n`);
+
     await saveActive();
+
+    if (!socket.connected) {
+      setRunning(false);
+      setOutput(prev => prev + '\n[Error] Socket disconnected from server.\n');
+      return;
+    }
+
     socket.emit('execute-code', {
       workspaceId: workspace.id,
       filePath: activeTab.path,
@@ -834,6 +999,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   };
 
   const stopExecution = () => {
+    setRunning(false);
+    setOutput(prev => prev + '\n[Client] Stop execution requested.\n');
     socketRef.current?.emit('stop-execution', {
       workspaceId: workspace.id,
       isGlobal: Boolean(globalExecutionMode && canAdmin),
@@ -849,6 +1016,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         setSessionActive(true);
         setSessionRole('teacher');
         socketRef.current?.emit('session:announce_start', { workspaceId: workspace.id });
+        socketRef.current?.emit('class:start', { workspaceId: workspace.id });
+        await loadTree();
         setProjectToast('Classroom session started!');
         setTimeout(() => setProjectToast(null), 3000);
       } else {
@@ -875,6 +1044,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         setFocusedFilePath(null);
         setRaisedHands([]);
         socketRef.current?.emit('session:announce_end', { workspaceId: workspace.id });
+        socketRef.current?.emit('class:end', { workspaceId: workspace.id });
         setProjectToast('Classroom session ended');
         setTimeout(() => setProjectToast(null), 3000);
       }
@@ -936,6 +1106,91 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     setHelpMessage('');
     setShowHelpModal(false);
     alert('Help request sent to teacher!');
+  };
+
+  // ── Line Comment Handlers ──
+  const handleAddComment = async (content: string, parentId?: number) => {
+    if (!activeTab || activeCommentLine === null || !content.trim()) return;
+    try {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('comment:create', {
+          workspaceId: workspace.id,
+          filePath: activeTab.path,
+          lineNumber: activeCommentLine,
+          content: content.trim(),
+          parentId,
+        });
+      } else {
+        const res = await collabService.createComment(
+          workspace.id,
+          {
+            filePath: activeTab.path,
+            lineNumber: activeCommentLine,
+            content: content.trim(),
+            parentId,
+          },
+          token
+        );
+        if (res.success && res.comment) {
+          const newComment = res.comment;
+          setComments(prev => {
+            if (newComment.parentId) {
+              return prev.map(c => c.id === newComment.parentId ? { ...c, replies: [...(c.replies || []), newComment] } : c);
+            }
+            return [...prev, { ...newComment, replies: [] }];
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[Add Comment Error]', err);
+    }
+  };
+
+  const handleResolveComment = async (commentId: number, currentResolved: boolean) => {
+    const next = !currentResolved;
+    try {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('comment:resolve', {
+          workspaceId: workspace.id,
+          commentId,
+          resolved: next,
+        });
+      }
+      await collabService.updateComment(workspace.id, commentId, { resolved: next }, token);
+      setComments(prev => prev.map(c => {
+        if (c.id === commentId) return { ...c, resolved: next };
+        if (c.replies) {
+          return {
+            ...c,
+            replies: c.replies.map(r => r.id === commentId ? { ...r, resolved: next } : r)
+          };
+        }
+        return c;
+      }));
+    } catch (err) {
+      console.error('[Resolve Comment Error]', err);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    try {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('comment:delete', {
+          workspaceId: workspace.id,
+          commentId,
+        });
+      }
+      await collabService.deleteComment(workspace.id, commentId, token);
+      setComments(prev => prev
+        .filter(c => c.id !== commentId)
+        .map(c => ({
+          ...c,
+          replies: (c.replies || []).filter(r => r.id !== commentId)
+        }))
+      );
+    } catch (err) {
+      console.error('[Delete Comment Error]', err);
+    }
   };
 
   // ── Smart editor hook ──────────────────────────────────────────────────────
@@ -1156,7 +1411,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           <div className="w-px h-5" style={{ background: 'var(--border)' }} />
 
           <div className="flex items-center gap-2 min-w-0">
-            <Code2 size={15} style={{ color: 'var(--accent)' }} className="shrink-0" />
+            <img src={logoImg} alt="CodeSync" className="w-5 h-5 rounded object-contain shrink-0" />
             <span className="font-semibold truncate max-w-48" style={{ color: 'var(--text)', fontSize: 14 }}>
               {workspace.name}
             </span>
@@ -1179,40 +1434,86 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           <span
             className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1 shrink-0"
             style={{
-              background: isTeacher
-                ? 'rgba(168, 85, 247, 0.18)'
-                : isStudent
-                ? studentAccess === 'no-view'
-                  ? 'rgba(239, 68, 68, 0.15)'
-                  : studentAccess === 'viewer'
+              background: workspaceType === 'educational'
+                ? isTeacher
+                  ? 'rgba(168, 85, 247, 0.18)'
+                  : isAccessComment
+                  ? 'rgba(59, 130, 246, 0.18)'
+                  : isAccessView
                   ? 'rgba(56, 189, 248, 0.15)'
                   : 'rgba(63, 185, 80, 0.15)'
+                : workspaceType === 'professional'
+                ? (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin')
+                  ? 'rgba(88, 166, 255, 0.18)'
+                  : isDeveloper
+                  ? 'rgba(16, 185, 129, 0.18)'
+                  : isTester
+                  ? 'rgba(244, 63, 94, 0.18)'
+                  : 'var(--surface-2)'
+                : workspaceType === 'competitive'
+                ? isCompetitiveAdmin
+                  ? 'rgba(245, 158, 11, 0.18)'
+                  : 'rgba(16, 185, 129, 0.18)'
                 : 'var(--surface-2)',
-              color: isTeacher
-                ? '#c084fc'
-                : isStudent
-                ? studentAccess === 'no-view'
-                  ? '#ef4444'
-                  : studentAccess === 'viewer'
+              color: workspaceType === 'educational'
+                ? isTeacher
+                  ? '#c084fc'
+                  : isAccessComment
+                  ? '#60a5fa'
+                  : isAccessView
                   ? '#38bdf8'
                   : '#3fb950'
+                : workspaceType === 'professional'
+                ? (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin')
+                  ? '#58a6ff'
+                  : isDeveloper
+                  ? '#10b981'
+                  : isTester
+                  ? '#f43f5e'
+                  : 'var(--text)'
+                : workspaceType === 'competitive'
+                ? isCompetitiveAdmin
+                  ? '#fbbf24'
+                  : '#10b981'
                 : 'var(--text)',
               border: '1px solid var(--border)',
             }}
           >
-            {isTeacher ? (
-              <span className="flex items-center gap-1"><GraduationCap size={11} /> Teacher</span>
-            ) : isStudent ? (
-              <span className="flex items-center gap-1">
-                {studentAccess === 'no-view' ? <EyeOff size={11} /> : studentAccess === 'viewer' ? <Eye size={11} /> : <Edit3 size={11} />}
-                Student: {studentAccess}
-              </span>
-            ) : currentRole === 'team_leader' ? (
-              <span className="flex items-center gap-1"><Crown size={11} /> Team Leader</span>
-            ) : currentRole === 'developer' ? (
-              <span className="flex items-center gap-1"><Code2 size={11} /> Developer</span>
+            {workspaceType === 'competitive' ? (
+              isCompetitiveAdmin ? (
+                <span className="flex items-center gap-1"><Crown size={11} /> Admin (View & Comment)</span>
+              ) : (
+                <span className="flex items-center gap-1"><Trophy size={11} /> Team Member (Edit)</span>
+              )
+            ) : workspaceType === 'educational' ? (
+              isTeacher ? (
+                <span className="flex items-center gap-1"><GraduationCap size={11} /> {currentRole === 'owner' ? 'Admin' : 'Teacher'}</span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  {isAccessComment ? <MessageSquare size={11} /> : isAccessView ? <Eye size={11} /> : <Edit3 size={11} />}
+                  Student: {isAccessComment ? 'comment' : isAccessView ? 'view' : 'edit'}
+                </span>
+              )
+            ) : workspaceType === 'professional' ? (
+              (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin') ? (
+                <span className="flex items-center gap-1"><Crown size={11} /> {currentRole === 'team_leader' ? 'Team Lead' : 'Admin'}</span>
+              ) : isDeveloper ? (
+                <span className="flex items-center gap-1"><Code2 size={11} /> Developer ({isAccessComment ? 'Comment' : isAccessView ? 'View' : 'Edit'})</span>
+              ) : isTester ? (
+                <span className="flex items-center gap-1"><Eye size={11} /> Tester ({isAccessEdit ? 'Edit' : isAccessComment ? 'Comment' : 'View'})</span>
+              ) : (
+                <span className="flex items-center gap-1">{currentRole}</span>
+              )
             ) : (
-              <>{currentRole}</>
+              <span className="flex items-center gap-1">
+                {currentRole === 'owner' || currentRole === 'admin' ? (
+                  <><Crown size={11} /> {currentRole}</>
+                ) : currentRole === 'editor' ? (
+                  <><Edit3 size={11} /> Edit</>
+                ) : (
+                  <><Eye size={11} /> View</>
+                )}
+              </span>
             )}
           </span>
         </div>
@@ -1403,6 +1704,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               </button>
             )
           ) : null}
+
+          {/* Workspace Chat toggle button (beside Call button) */}
+          <button
+            onClick={() => setShowChat(v => !v)}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all shadow-sm"
+            style={{
+              background: showChat ? 'var(--accent)' : 'var(--surface-2)',
+              color: showChat ? '#ffffff' : 'var(--text)',
+              border: `1px solid ${showChat ? 'var(--accent)' : 'var(--border)'}`,
+              cursor: 'pointer',
+            }}
+            title={showChat ? 'Close Workspace Chat' : 'Open Workspace Chat'}
+          >
+            <MessageSquare size={13} style={{ color: showChat ? '#ffffff' : 'var(--accent)' }} />
+            <span>Chat</span>
+          </button>
 
           {/* Theme toggle */}
           <button
@@ -1725,11 +2042,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
           {/* File tree */}
           <div className="flex-1 overflow-y-auto py-2">
-            {isNoView ? (
+            {isClassWaiting ? (
               <div className="p-4 text-center text-xs flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
-                <EyeOff size={24} className="text-red-400 opacity-60" />
-                <span className="font-semibold text-red-400">File Tree Restricted</span>
-                <span>Teacher has set your access to No-View.</span>
+                <GraduationCap size={24} className="text-purple-400 opacity-60 animate-pulse" />
+                <span className="font-semibold text-purple-400">Class Inactive</span>
+                <span>Waiting for teacher to start class…</span>
               </div>
             ) : tree.length === 0 ? (
               <p className="px-4 py-3 text-sm" style={{ color: 'var(--muted)' }}>
@@ -1884,20 +2201,21 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
 
           {/* Editor + Console */}
-          {isNoView ? (
+          {isClassWaiting ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center"
               style={{ background: 'var(--bg)', color: 'var(--text)' }}>
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
-                <EyeOff size={32} className="text-red-500" />
+                style={{ background: 'rgba(168, 85, 247, 0.12)', border: '1px solid rgba(168, 85, 247, 0.35)' }}>
+                <GraduationCap size={32} className="text-purple-400 animate-pulse" />
               </div>
-              <h2 className="text-xl font-bold mb-2">Access Restricted by Teacher</h2>
+              <h2 className="text-xl font-bold mb-2">Class Has Not Started Yet</h2>
               <p className="max-w-md text-sm mb-6" style={{ color: 'var(--muted)' }}>
-                Your student access level is currently set to <strong>No-View</strong>. Please wait for your instructor to grant view or edit permissions during this session.
+                Your teacher has not started this class session. Please wait; code files and classroom tools will appear here when class begins.
               </p>
               <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold"
                 style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: '#c084fc' }}>
-                <GraduationCap size={15} /> Educational Classroom Active
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping mr-1" />
+                Waiting for teacher to start class…
               </div>
             </div>
           ) : (
@@ -1908,7 +2226,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   className="flex-1 overflow-hidden relative flex flex-col"
                   style={{ display: isTerminalMaximized ? 'none' : 'flex' }}
                 >
-                  {/* Viewer Access Banner */}
+                  {/* View Access Banner */}
                   {isViewer && !isEditorLocked && (
                     <div
                       className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
@@ -1917,8 +2235,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       <span className="flex items-center gap-2">
                         <Eye size={13} />
                         {isStudent
-                          ? 'Viewer Access: You are observing live classroom code in read-only mode.'
-                          : 'Viewer Mode: Read-only access to this workspace.'}
+                          ? 'View Access: You are observing live classroom code in read-only mode.'
+                          : 'View Mode: Read-only access to this workspace.'}
                       </span>
                       <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
                         {isStudent ? 'Assigned by Teacher' : 'Read Only'}
@@ -2023,13 +2341,78 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     scrollLeft={editorScroll.left}
                   />
 
-                  {/* Line numbers */}
+                  {/* Line numbers gutter */}
                   <div
-                    className="py-4 pr-3 text-right select-none shrink-0 overflow-hidden"
-                    style={{ width: 52, background: '#0d1117', color: '#444', fontFamily: 'var(--font-mono)', fontSize: 13, lineHeight: '1.7' }}
+                    ref={gutterRef}
+                    className="py-4 text-right select-none shrink-0 overflow-hidden"
+                    style={{
+                      width: 58,
+                      background: '#0d1117',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 13,
+                      lineHeight: '23.8px',
+                    }}
                   >
-                    {activeTab.content.split('\n').map((_, i) => <div key={i}>{i + 1}</div>)}
+                    {activeTab.content.split('\n').map((_, i) => {
+                      const lineNum = i + 1;
+                      const lineComments = comments.filter(c => c.lineNumber === lineNum);
+                      const hasComments = lineComments.length > 0;
+                      const isHovered = hoveredLine === lineNum;
+                      const isActive = activeCommentLine === lineNum;
+                      const hasUnresolved = lineComments.some(c => !c.resolved);
+
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between px-1 relative transition-colors"
+                          style={{
+                            height: 23.8,
+                            background: isActive ? 'rgba(47, 129, 247, 0.18)' : isHovered ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                          }}
+                          onMouseEnter={() => setHoveredLine(lineNum)}
+                          onMouseLeave={() => setHoveredLine(null)}
+                        >
+                          <div className="w-5 flex items-center justify-center">
+                            {hasComments ? (
+                              <button
+                                onClick={() => setActiveCommentLine(prev => prev === lineNum ? null : lineNum)}
+                                className="flex items-center justify-center w-4 h-4 rounded hover:bg-white/10 transition-colors"
+                                style={{
+                                  color: hasUnresolved ? '#60a5fa' : '#34d399',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                                title={`${lineComments.length} comment(s) on line ${lineNum}`}
+                              >
+                                <MessageSquare size={11} />
+                              </button>
+                            ) : canComment && isHovered ? (
+                              <button
+                                onClick={() => setActiveCommentLine(lineNum)}
+                                className="flex items-center justify-center w-4 h-4 rounded bg-blue-600/30 text-blue-400 hover:bg-blue-600 hover:text-white transition-colors"
+                                style={{ border: 'none', cursor: 'pointer', padding: 0 }}
+                                title={`Add comment on line ${lineNum}`}
+                              >
+                                <Plus size={11} />
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <span
+                            className="text-xs transition-colors"
+                            style={{
+                              color: isActive ? '#58a6ff' : hasComments ? '#e6edf3' : isHovered ? '#8b949e' : '#484f58',
+                            }}
+                          >
+                            {lineNum}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
+
                   {/* Smart textarea */}
                   <textarea
                     ref={textareaRef}
@@ -2040,7 +2423,12 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     onClick={() => emitCursor(false)}
                     onMouseUp={() => emitCursor(false)}
                     onFocus={() => emitCursor(false)}
-                    onScroll={e => setEditorScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft })}
+                    onScroll={e => {
+                      setEditorScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft });
+                      if (gutterRef.current) {
+                        gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+                      }
+                    }}
                     spellCheck={false}
                     readOnly={isEffectiveReadOnly}
                     wrap="off"
@@ -2058,6 +2446,32 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       opacity: isEffectiveReadOnly ? 0.8 : 1,
                     }}
                   />
+
+                  {/* Floating Line Comment Thread */}
+                  {activeCommentLine !== null && activeTab && (
+                    <div
+                      className="absolute z-30 shadow-2xl transition-all"
+                      style={{
+                        top: Math.max(8, Math.min(window.innerHeight - 380, 16 + (activeCommentLine - 1) * 23.8 - editorScroll.top)),
+                        left: 64,
+                        width: 320,
+                      }}
+                    >
+                      <LineCommentThread
+                        comment={comments.find(c => c.lineNumber === activeCommentLine && !c.parentId)}
+                        filePath={activeTab.path}
+                        lineNumber={activeCommentLine}
+                        canComment={canComment}
+                        currentUserId={user?.id}
+                        currentUserRole={currentRole}
+                        onAddComment={handleAddComment}
+                        onResolveToggle={handleResolveComment}
+                        onDeleteComment={handleDeleteComment}
+                        onClose={() => setActiveCommentLine(null)}
+                      />
+                    </div>
+                  )}
+
                   {isEffectiveReadOnly && (
                     <div className="absolute top-4 right-6 pointer-events-none px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider z-20 flex items-center gap-1.5"
                       style={{
