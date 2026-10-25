@@ -12,6 +12,7 @@ import {
   sessionRoutes,
   professionalRoutes,
   commentRoutes,
+  previewRoutes,
   initWorkspaceSockets
 } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
@@ -35,6 +36,8 @@ app.use(express.json());
 
 // REST API routes
 app.use('/api/auth', authRoutes);
+app.use('/api', previewRoutes);
+app.use('/', previewRoutes);
 app.use('/api', workspaceRoutes);
 app.use('/api', memberRoutes);
 app.use('/api', inviteRoutes);

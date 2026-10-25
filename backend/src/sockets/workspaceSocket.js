@@ -1,6 +1,7 @@
 import workspaceService from '../services/workspaceService.js';
 import storageService from '../services/storageService.js';
 import executionService from '../services/executionService.js';
+import { setPortNotifier, getPreviewPort } from '../services/previewService.js';
 import attachWhiteboardSocketHandlers from './whiteboardSocket.js';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/authConfig.js';
@@ -14,6 +15,11 @@ import { checkPathLocked } from '../controllers/lockController.js';
  */
 function initWorkspaceSockets(io) {
   const workspaceNamespace = io.of('/workspace');
+
+  // Real-time notification when a terminal process starts listening on an HTTP port
+  setPortNotifier((wsId, port) => {
+    workspaceNamespace.to(`workspace:${wsId}`).emit('preview:port-detected', { port });
+  });
 
   // Room voice call tracking: roomName -> { teacherSocketId, teacherName }
   const activeCalls = new Map();
@@ -134,6 +140,12 @@ function initWorkspaceSockets(io) {
           editorLocked: membership.editorLocked,
           handRaised: membership.handRaised,
         });
+      }
+
+      // Notify client of currently active web preview port if running
+      const previewInfo = getPreviewPort(workspaceId);
+      if (previewInfo?.port) {
+        socket.emit('preview:port-detected', { port: previewInfo.port });
       }
 
       console.log(`[Socket] User ${socket.username} (${socket.id}) joined ${roomName} as [${socket.role}] / session:[${socket.sessionRole}] (locked: ${socket.editorLocked})`);
@@ -843,6 +855,120 @@ function initWorkspaceSockets(io) {
         } else {
           socket.emit('execution-stderr', { chunk: '\n[Server] Execution stopped by user.\n', isGlobal: false });
         }
+      }
+    });
+
+    // ── Interactive Terminal Command Execution ──────────────────────────────
+    socket.on('terminal:command', async ({ workspaceId, command, isGlobal }) => {
+      if (!workspaceId || !command || !command.trim()) return;
+
+      if (socket.role === 'no-view' || (socket.role === 'student' && socket.studentAccess === 'no-view')) {
+        socket.emit('workspace-error', { message: 'Access denied: no-view' });
+        return;
+      }
+
+      const hasFullAdminExec = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const isViewOnlyExec =
+        socket.role === 'viewer' ||
+        (socket.role === 'student' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'tester' && socket.studentAccess !== 'editor' && socket.studentAccess !== 'edit') ||
+        (socket.role === 'developer' && (socket.studentAccess === 'viewer' || socket.studentAccess === 'view')) ||
+        socket.studentAccess === 'viewer' ||
+        socket.studentAccess === 'view';
+
+      if (!hasFullAdminExec && isViewOnlyExec) {
+        socket.emit('workspace-error', { message: 'View only: you cannot execute terminal commands' });
+        return;
+      }
+
+      if (socket.sessionRole === 'student' && socket.editorLocked) {
+        socket.emit('workspace-error', { message: 'Terminal execution is locked by the teacher' });
+        return;
+      }
+
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const runGlobally = Boolean(isGlobal && isAdmin);
+      const roomName = `workspace:${workspaceId}`;
+      const userId = socket.userId || 'guest';
+      const username = socket.username || 'User';
+
+      if (runGlobally) {
+        workspaceNamespace.to(roomName).emit('execution-started', { filePath: command, isGlobal: true, initiatedBy: username, isTerminal: true });
+      } else {
+        socket.emit('execution-started', { filePath: command, isGlobal: false, initiatedBy: username, isTerminal: true });
+      }
+
+      try {
+        await executionService.executeTerminalCommand({
+          workspaceId,
+          userId,
+          username,
+          isGlobal: runGlobally,
+          command,
+          onStdout: (chunk) => {
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-stdout', { chunk, isGlobal: true });
+            } else {
+              socket.emit('execution-stdout', { chunk, isGlobal: false });
+            }
+          },
+          onStderr: (chunk) => {
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-stderr', { chunk, isGlobal: true });
+            } else {
+              socket.emit('execution-stderr', { chunk, isGlobal: false });
+            }
+          },
+          onExit: (exitCode) => {
+            const currentCwd = executionService.getCwd(runGlobally ? `${workspaceId}:global` : `${workspaceId}:${userId}`, workspaceId);
+            if (runGlobally) {
+              workspaceNamespace.to(roomName).emit('execution-finished', { exitCode, isGlobal: true, command, cwd: currentCwd });
+            } else {
+              socket.emit('execution-finished', { exitCode, isGlobal: false, command, cwd: currentCwd });
+            }
+          },
+        });
+      } catch (err) {
+        if (runGlobally) {
+          workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: `Terminal execution failed: ${err.message}\n`, isGlobal: true });
+          workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: -1, isGlobal: true });
+        } else {
+          socket.emit('execution-stderr', { chunk: `Terminal execution failed: ${err.message}\n`, isGlobal: false });
+          socket.emit('execution-finished', { exitCode: -1, isGlobal: false });
+        }
+      }
+    });
+
+    // Send input to stdin of running process
+    socket.on('terminal:stdin', ({ workspaceId, input, isGlobal }) => {
+      if (!workspaceId || input === undefined) return;
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const runGlobally = Boolean(isGlobal && isAdmin);
+      executionService.sendTerminalStdin({
+        workspaceId,
+        userId: socket.userId || 'guest',
+        isGlobal: runGlobally,
+        input,
+      });
+    });
+
+    // Kill running terminal process (Ctrl+C)
+    socket.on('terminal:kill', ({ workspaceId, isGlobal }) => {
+      if (!workspaceId) return;
+      const isAdmin = ['owner', 'admin', 'teacher', 'team_leader'].includes(socket.role) || socket.sessionRole === 'teacher';
+      const stopGlobal = Boolean(isGlobal && isAdmin);
+      executionService.stopExecutionByContext({
+        workspaceId,
+        userId: socket.userId || 'guest',
+        isGlobal: stopGlobal,
+      });
+      const roomName = `workspace:${workspaceId}`;
+      if (stopGlobal) {
+        workspaceNamespace.to(roomName).emit('execution-stderr', { chunk: '\n^C [Process terminated]\n', isGlobal: true });
+        workspaceNamespace.to(roomName).emit('execution-finished', { exitCode: 130, isGlobal: true });
+      } else {
+        socket.emit('execution-stderr', { chunk: '\n^C [Process terminated]\n', isGlobal: false });
+        socket.emit('execution-finished', { exitCode: 130, isGlobal: false });
       }
     });
 

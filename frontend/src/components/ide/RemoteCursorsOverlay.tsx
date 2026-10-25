@@ -76,7 +76,6 @@ export function RemoteCursorsOverlay({
   // Determine local cursor coordinates
   const localLine = localCursor ? Math.max(0, localCursor.line) : null;
   const localCol = localCursor ? Math.max(0, localCursor.col) : null;
-  const localColor = localCursor?.color || '#2f81f7';
 
   // Check which remote cursors overlap with the local cursor
   const isRemoteOverlappingWithLocal = (c: RemoteCursorData) => {
@@ -91,64 +90,7 @@ export function RemoteCursorsOverlay({
       className="absolute inset-0 pointer-events-none select-none z-10 overflow-hidden"
       style={{ left: 52 }} // 52px offsets the line numbers column
     >
-      {/* ── 1. Local User Cursor ("You") ── */}
-      {localCursor && localLine !== null && localCol !== null && (() => {
-        const top = paddingTop + (localLine * lineHeight) - scrollTop;
-        const left = paddingLeft + (localCol * charWidth) - scrollLeft;
-
-        if (top < -60 || top > 2500) return null;
-
-        return (
-          <div
-            key="local-user-cursor"
-            className="absolute pointer-events-none transition-all duration-75"
-            style={{
-              top,
-              left,
-              willChange: 'top, left',
-              zIndex: 35,
-            }}
-          >
-            {/* Top pip/flag for the local cursor */}
-            <div
-              className="absolute -top-1 left-0 w-2 h-1 rounded-sm"
-              style={{
-                background: localColor,
-                boxShadow: `0 0 6px ${localColor}`,
-              }}
-            />
-
-            {/* Local cursor caret bar */}
-            <div
-              className="w-0.5 rounded-full"
-              style={{
-                height: Math.round(lineHeight * 0.88),
-                background: localColor,
-                boxShadow: `0 0 6px ${localColor}aa`,
-              }}
-            />
-
-            {/* Local user badge: ALWAYS anchored securely above the caret */}
-            <div
-              className="absolute left-0 -top-6 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-white shadow-md whitespace-nowrap"
-              style={{
-                background: localColor,
-                lineHeight: 1.2,
-                boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
-              }}
-            >
-              <span>You ({localCursor.username})</span>
-              {/* Downward pointer triangle pointing to local caret */}
-              <div
-                className="absolute left-1 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4"
-                style={{ borderTopColor: localColor }}
-              />
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── 2. Remote Collaborator Cursors ── */}
+      {/* ── Remote Collaborator Cursors ── */}
       {activeCursors.map((c, index) => {
         const line = Math.max(0, c.cursor.line ?? 0);
         const col = Math.max(0, c.cursor.col ?? 0);

@@ -6,6 +6,7 @@ import whiteboardRoutes from './routes/whiteboardRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import professionalRoutes from './routes/professionalRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
+import previewRoutes from './routes/previewRoutes.js';
 import initWorkspaceSockets from './sockets/workspaceSocket.js';
 import workspaceService from './services/workspaceService.js';
 import storageService from './services/storageService.js';
@@ -22,6 +23,7 @@ export {
   sessionRoutes,
   professionalRoutes,
   commentRoutes,
+  previewRoutes,
   initWorkspaceSockets,
   workspaceService,
   storageService,
@@ -30,3 +32,4 @@ export {
   googleRedirect,
   googleCallback
 };
+

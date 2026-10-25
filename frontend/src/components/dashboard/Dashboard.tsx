@@ -66,6 +66,15 @@ const typeDetails: Record<WorkspaceType, {
   },
 };
 
+const PROJECT_TEMPLATES_LIST = [
+  { id: 'blank', label: 'Blank Project', desc: 'Clean workspace with README.md', badge: 'Empty' },
+  { id: 'node-express', label: 'Node.js Express', desc: 'REST server with Express & package.json', badge: 'Node.js' },
+  { id: 'python-flask', label: 'Python Flask', desc: 'Flask web app with requirements.txt', badge: 'Flask' },
+  { id: 'python-script', label: 'Python Script', desc: 'Starter main.py script runner', badge: 'Python' },
+  { id: 'java-maven', label: 'Java Maven', desc: 'Java 21 project with pom.xml', badge: 'Java' },
+  { id: 'react-vite', label: 'React + Vite', desc: 'React 19 single-page app structure', badge: 'React' },
+];
+
 interface Props { onOpen: (ws: Workspace, role: WorkspaceRole) => void; }
 
 export function Dashboard({ onOpen }: Props) {
@@ -77,6 +86,7 @@ export function Dashboard({ onOpen }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedType, setSelectedType] = useState<WorkspaceType>('educational');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('blank');
   const [allowedEmailsList, setAllowedEmailsList] = useState<string[]>([]);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSuggestions, setMemberSuggestions] = useState<Array<{ id: number; username: string; email: string }>>([]);
@@ -201,6 +211,7 @@ export function Dashboard({ onOpen }: Props) {
           name: newName.trim(),
           type: selectedType,
           allowedEmails,
+          template: selectedTemplate,
         }),
       });
       const d = await res.json();
@@ -811,6 +822,51 @@ export function Dashboard({ onOpen }: Props) {
                 </p>
               </div>
             )}
+
+            {/* Starter Project Template Selector */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>
+                Starter Project Template:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                {PROJECT_TEMPLATES_LIST.map(tmpl => {
+                  const isSelected = selectedTemplate === tmpl.id;
+                  return (
+                    <button
+                      key={tmpl.id}
+                      type="button"
+                      onClick={() => setSelectedTemplate(tmpl.id)}
+                      className="p-3 rounded-xl text-left transition-all flex flex-col justify-between border"
+                      style={{
+                        background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg)',
+                        borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                        boxShadow: isSelected ? '0 0 12px rgba(59, 130, 246, 0.2)' : 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase"
+                          style={{
+                            background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
+                            color: isSelected ? '#fff' : 'var(--muted)',
+                          }}
+                        >
+                          {tmpl.badge}
+                        </span>
+                        {isSelected && <Check size={12} style={{ color: 'var(--accent)' }} />}
+                      </div>
+                      <div className="text-xs font-semibold truncate" style={{ color: isSelected ? 'var(--accent)' : 'var(--text)' }}>
+                        {tmpl.label}
+                      </div>
+                      <div className="text-[10px] leading-tight mt-1 line-clamp-2" style={{ color: 'var(--muted)' }}>
+                        {tmpl.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Input + Action row */}
             <div className="flex gap-3.5 flex-wrap items-center">

@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ChatAndVoicePanel from './ChatAndVoicePanel';
 import {
-  Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder,
+  Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder, FolderPlus,
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
   Phone, PhoneOff, Mic, MicOff, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
   Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
   Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest, Crown,
-  Cpu, GitBranch
+  Cpu, GitBranch, FolderOpen, ChevronRight, Globe
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel, LineComment } from '../../types';
@@ -24,6 +24,7 @@ import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 import { collabService } from '../../services/workspaceCollabService';
 import { EnvironmentModal } from './EnvironmentModal';
 import { LockManagerModal, type WorkspaceLockItem } from './LockManagerModal';
+import { WebPreviewPanel } from './WebPreviewPanel';
 import logoImg from '../../assets/logo.png';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
@@ -79,12 +80,49 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   }), [token]);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [activeView, setActiveView] = useState<'editor' | 'whiteboard'>('editor');
+  const [activeView, setActiveView] = useState<'editor' | 'whiteboard' | 'preview'>('editor');
+  const [previewPort, setPreviewPort] = useState<number | null>(null);
+  const [showSplitPreview, setShowSplitPreview] = useState<boolean>(false);
+  const [splitPreviewWidth, setSplitPreviewWidth] = useState<number>(() =>
+    Math.max(340, Math.min(640, Math.round(window.innerWidth * 0.42)))
+  );
+  const isDraggingSplitRef = useRef<boolean>(false);
+  const dragSplitStartXRef = useRef<number>(0);
+  const dragSplitStartWidthRef = useRef<number>(400);
+
+  const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSplitRef.current = true;
+    dragSplitStartXRef.current = e.clientX;
+    dragSplitStartWidthRef.current = splitPreviewWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingSplitRef.current) return;
+      const deltaX = dragSplitStartXRef.current - moveEvent.clientX;
+      const newWidth = Math.max(280, Math.min(Math.round(window.innerWidth * 0.7), dragSplitStartWidthRef.current + deltaX));
+      setSplitPreviewWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingSplitRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [splitPreviewWidth]);
+
   const [tree, setTree] = useState<FileItem[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [output, setOutput] = useState('');
   const [running, setRunning] = useState(false);
+  const [runningCommand, setRunningCommand] = useState<string | null>(null);
+  const [terminalInput, setTerminalInput] = useState('');
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [terminalCwd, setTerminalCwd] = useState('~');
   const [saving, setSaving] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -99,8 +137,25 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   // File management UI state
   const [newFileName, setNewFileName] = useState('');
   const [showNewFile, setShowNewFile] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // Inline file/folder creation inside folders
+  const [inlineCreate, setInlineCreate] = useState<{
+    parentPath: string;
+    type: 'file' | 'folder';
+  } | null>(null);
+  const [inlineCreateName, setInlineCreateName] = useState('');
+  const isCommittingCreateRef = useRef(false);
+  // Drag and drop file moving state
+  const [draggedNode, setDraggedNode] = useState<FileItem | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  // Right-click context menu
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; node: FileItem;
+  } | null>(null);
 
   // ── Education & Professional RBAC State ──
   const [sessionActive, setSessionActive] = useState(false);
@@ -198,7 +253,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     )) ||
     isFileLockedByOther;
   const socketRef = useRef<Socket | null>(null);
-  const outputRef = useRef<HTMLPreElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const terminalInputRef = useRef<HTMLInputElement>(null);
   const isRemoteUpdatingRef = useRef<boolean>(false);
   const prevTabPathRef = useRef<string | null>(null);
   const localOffsetRef = useRef<number>(0);
@@ -300,7 +356,14 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [output]);
+  }, [output, running]);
+
+  // Auto-focus terminal input when terminal is open
+  useEffect(() => {
+    if (isTerminalOpen && !isTerminalCollapsed) {
+      terminalInputRef.current?.focus();
+    }
+  }, [isTerminalOpen, isTerminalCollapsed]);
 
   // ── Voice call (broadcast from teacher or owner/admin) ──
   const isBroadcaster = sessionActive ? isTeacher : canAdmin;
@@ -362,7 +425,17 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     } catch { /* ignore */ }
   }, [workspace.id, authHeaders, isClassWaiting]);
 
-  useEffect(() => { loadTree(); }, [loadTree]);
+  useEffect(() => {
+    loadTree();
+    fetch(`${BASE_URL}/api/preview/${workspace.id}/status`)
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && d.port) {
+          setPreviewPort(d.port);
+        }
+      })
+      .catch(() => {});
+  }, [loadTree, workspace.id]);
 
   // Fetch comments when active tab changes
   useEffect(() => {
@@ -502,13 +575,16 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       });
     });
 
-    socket.on('execution-started', ({ filePath, isGlobal, initiatedBy }: { filePath: string; isGlobal?: boolean; initiatedBy?: string }) => {
+    socket.on('execution-started', ({ filePath, isGlobal, initiatedBy, isTerminal }: { filePath: string; isGlobal?: boolean; initiatedBy?: string; isTerminal?: boolean }) => {
       setRunning(true);
+      setRunningCommand(filePath);
+      setIsTerminalOpen(true);
+      setIsTerminalCollapsed(false);
       const prefix = isGlobal ? `> [Global Broadcast by ${initiatedBy || 'Admin'}] ` : '> ';
       setOutput(prev => {
-        const line = `${prefix}Running ${filePath}...\n`;
+        const line = isTerminal ? `${prefix}${filePath}\n` : `${prefix}Running ${filePath}...\n`;
         if (prev.endsWith(line)) return prev;
-        return line;
+        return prev ? `${prev}\n${line}` : line;
       });
     });
 
@@ -520,14 +596,26 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setOutput(prev => prev + chunk);
     });
 
-    socket.on('execution-finished', ({ exitCode, isGlobal }: { exitCode: number; isGlobal?: boolean }) => {
+    socket.on('execution-finished', ({ exitCode, isGlobal, cwd }: { exitCode: number; isGlobal?: boolean; cwd?: string }) => {
       setRunning(false);
+      setRunningCommand(null);
+      if (cwd) setTerminalCwd(cwd);
       setOutput(prev => {
-        const finishMsg = `\n> Process finished with exit code ${exitCode}${isGlobal ? ' [Global]' : ''}`;
+        if (exitCode === 0) return prev;
+        const finishMsg = `\n> Process finished with exit code ${exitCode}${isGlobal ? ' [Global]' : ''}\n`;
         if (prev.endsWith(finishMsg)) return prev;
         return prev + finishMsg;
       });
+      loadTree();
     });
+
+    socket.on('preview:port-detected', ({ port }: { port: number | null }) => {
+      setPreviewPort(port);
+      if (port) {
+        setShowSplitPreview(true);
+      }
+    });
+
 
     socket.on('workspace-ready', (data: {
       workspaceId: string;
@@ -892,10 +980,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     }
   }, [activeTab, activeTabId, workspace.id, authHeaders, isEffectiveReadOnly]);
 
-  const createFile = async () => {
+  const createFile = async (nameOverride?: string, prefixDir?: string) => {
     if (isEffectiveReadOnly) return;
-    const name = newFileName.trim();
-    if (!name) return;
+    const rawName = nameOverride ?? newFileName.trim();
+    if (!rawName) return;
+    const name = prefixDir ? `${prefixDir}/${rawName}` : rawName;
     try {
       const res = await fetch(`${BASE_URL}/api/workspaces/${workspace.id}/files`, {
         method: 'POST',
@@ -916,6 +1005,84 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setProjectToast('Could not connect to server');
       setTimeout(() => setProjectToast(null), 4000);
     }
+  };
+
+  const createFolder = async (nameOverride?: string, prefixDir?: string) => {
+    if (isEffectiveReadOnly) return;
+    const rawName = nameOverride ?? newFolderName.trim();
+    if (!rawName) return;
+    const name = prefixDir ? `${prefixDir}/${rawName}` : rawName;
+    try {
+      const res = await fetch(`${BASE_URL}/api/workspaces/${workspace.id}/files`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ filePath: name, isDirectory: true }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        await loadTree();
+        setShowNewFolder(false);
+        setNewFolderName('');
+        // Auto-expand the new dir and parent dir
+        setExpandedDirs(prev => {
+          const next = new Set(prev);
+          next.add(name);
+          if (prefixDir) next.add(prefixDir);
+          return next;
+        });
+      } else {
+        setProjectToast(d.error ?? 'Could not create folder');
+        setTimeout(() => setProjectToast(null), 4000);
+      }
+    } catch {
+      setProjectToast('Could not connect to server');
+      setTimeout(() => setProjectToast(null), 4000);
+    }
+  };
+
+  const startCreateInFolder = (folderPath: string, type: 'file' | 'folder') => {
+    if (isEffectiveReadOnly) return;
+    setExpandedDirs(prev => new Set([...prev, folderPath]));
+    setInlineCreate({ parentPath: folderPath, type });
+    setInlineCreateName('');
+    setShowNewFile(false);
+    setShowNewFolder(false);
+  };
+
+  const commitInlineCreate = async () => {
+    if (isCommittingCreateRef.current) return;
+    isCommittingCreateRef.current = true;
+    try {
+      if (!inlineCreate || !inlineCreateName.trim() || isEffectiveReadOnly) {
+        setInlineCreate(null);
+        setInlineCreateName('');
+        return;
+      }
+      const rawName = inlineCreateName.trim();
+      const parent = inlineCreate.parentPath;
+      const isFolder = inlineCreate.type === 'folder';
+
+      setInlineCreate(null);
+      setInlineCreateName('');
+
+      if (isFolder) {
+        await createFolder(rawName, parent);
+      } else {
+        await createFile(rawName, parent);
+      }
+    } finally {
+      setTimeout(() => {
+        isCommittingCreateRef.current = false;
+      }, 100);
+    }
+  };
+
+  const toggleDir = (dirPath: string) => {
+    setExpandedDirs(prev => {
+      const next = new Set(prev);
+      if (next.has(dirPath)) { next.delete(dirPath); } else { next.add(dirPath); }
+      return next;
+    });
   };
 
   const deleteFile = async (filePath: string, e: React.MouseEvent) => {
@@ -969,6 +1136,73 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     setRenamingPath(null);
   };
 
+  const moveItem = async (sourcePath: string, destinationDir: string) => {
+    if (isEffectiveReadOnly || !sourcePath) return;
+
+    const normSource = sourcePath.replace(/\\/g, '/');
+    const normDestDir = destinationDir.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const itemName = normSource.split('/').pop();
+    if (!itemName) return;
+
+    const lastSlash = normSource.lastIndexOf('/');
+    const currentParent = lastSlash === -1 ? '' : normSource.slice(0, lastSlash);
+
+    // If destination folder is already the current folder, do nothing
+    if (normDestDir === currentParent) return;
+
+    const newPath = normDestDir ? `${normDestDir}/${itemName}` : itemName;
+    if (newPath === normSource) return;
+
+    // Guard against moving a directory into its own child folder
+    if (newPath.startsWith(normSource + '/')) {
+      setProjectToast('Cannot move a folder into its own subfolder');
+      setTimeout(() => setProjectToast(null), 3000);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/workspaces/${workspace.id}/files/rename`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ oldPath: normSource, newPath }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        // Update tabs for moved file or files inside moved directory
+        setTabs(prev => prev.map(t => {
+          if (t.path === normSource) {
+            return { ...t, name: itemName, path: newPath, id: `tab-${newPath}` };
+          }
+          if (t.path.startsWith(normSource + '/')) {
+            const suffix = t.path.slice(normSource.length);
+            const updatedPath = newPath + suffix;
+            return { ...t, path: updatedPath, id: `tab-${updatedPath}` };
+          }
+          return t;
+        }));
+
+        if (activeTabId === `tab-${normSource}`) {
+          setActiveTabId(`tab-${newPath}`);
+        }
+
+        // Expand the destination folder so user sees the newly moved item
+        if (normDestDir) {
+          setExpandedDirs(prev => new Set([...prev, normDestDir]));
+        }
+
+        await loadTree();
+        setProjectToast(`Moved ${itemName} to ${normDestDir ? `~/${normDestDir}` : 'workspace root'}`);
+        setTimeout(() => setProjectToast(null), 3000);
+      } else {
+        setProjectToast(d.error ?? 'Failed to move item');
+        setTimeout(() => setProjectToast(null), 4000);
+      }
+    } catch {
+      setProjectToast('Failed to connect to server');
+      setTimeout(() => setProjectToast(null), 4000);
+    }
+  };
+
   // ── Code execution ─────────────────────────────────────────────────────────
   const runFile = async () => {
     if (!activeTab || running || isEffectiveReadOnly) return;
@@ -1000,11 +1234,117 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const stopExecution = () => {
     setRunning(false);
+    setRunningCommand(null);
     setOutput(prev => prev + '\n[Client] Stop execution requested.\n');
     socketRef.current?.emit('stop-execution', {
       workspaceId: workspace.id,
       isGlobal: Boolean(globalExecutionMode && canAdmin),
     });
+  };
+
+  // ── Interactive Terminal Command Execution ─────────────────────────────────
+  const runTerminalCommand = (customCmd?: string) => {
+    const cmd = (customCmd !== undefined ? customCmd : terminalInput).trim();
+    if (!cmd) return;
+    if (isEffectiveReadOnly) {
+      setOutput(prev => prev + '\n[Permission Denied] You do not have permission to run terminal commands.\n');
+      return;
+    }
+
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setOutput(prev => prev + '\n[Error] Not connected to backend server.\n');
+      return;
+    }
+
+    setIsTerminalOpen(true);
+    setIsTerminalCollapsed(false);
+
+    // If a process is ALREADY running and user typed in the box, send it to stdin!
+    if (running && customCmd === undefined) {
+      setOutput(prev => prev + `${cmd}\n`);
+      socket.emit('terminal:stdin', {
+        workspaceId: workspace.id,
+        input: cmd,
+        isGlobal: Boolean(globalExecutionMode && canAdmin),
+      });
+      setTerminalInput('');
+      return;
+    }
+
+    // Otherwise, start a new terminal command
+    setCommandHistory(prev => [cmd, ...prev.filter(c => c !== cmd)].slice(0, 50));
+    setHistoryIndex(null);
+    setTerminalInput('');
+    setRunning(true);
+    setRunningCommand(cmd);
+
+    // Optimistic directory update for instant UI feedback
+    const trimmed = cmd.trim();
+    if (trimmed === 'cd' || trimmed === 'cd ~' || trimmed === 'cd /') {
+      setTerminalCwd('~');
+    } else if (trimmed === 'cd ..') {
+      setTerminalCwd(prev => {
+        if (prev === '~' || !prev.includes('/')) return '~';
+        const parts = prev.split('/').filter(Boolean);
+        parts.pop();
+        return parts.length === 0 || (parts[0] === '~' && parts.length === 1) ? '~' : parts.join('/');
+      });
+    } else if (trimmed.startsWith('cd ') || trimmed.startsWith('cd\t')) {
+      const target = trimmed.slice(2).trim();
+      if (target && !target.startsWith('..')) {
+        setTerminalCwd(prev => (prev === '~' ? `~/${target}` : `${prev}/${target}`));
+      }
+    }
+
+    const isGlobal = Boolean(globalExecutionMode && canAdmin);
+    setOutput(prev => prev ? `${prev}\n${terminalCwd}$ ${cmd}\n` : `${terminalCwd}$ ${cmd}\n`);
+
+    socket.emit('terminal:command', {
+      workspaceId: workspace.id,
+      command: cmd,
+      isGlobal,
+    });
+  };
+
+  const killTerminalProcess = () => {
+    socketRef.current?.emit('terminal:kill', {
+      workspaceId: workspace.id,
+      isGlobal: Boolean(globalExecutionMode && canAdmin),
+    });
+    setRunning(false);
+    setRunningCommand(null);
+  };
+
+  const handleTerminalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runTerminalCommand();
+    } else if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+      if (running) {
+        e.preventDefault();
+        killTerminalProcess();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (commandHistory.length > 0) {
+        const nextIdx = historyIndex === null ? 0 : Math.min(historyIndex + 1, commandHistory.length - 1);
+        setHistoryIndex(nextIdx);
+        setTerminalInput(commandHistory[nextIdx]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex !== null) {
+        if (historyIndex > 0) {
+          const nextIdx = historyIndex - 1;
+          setHistoryIndex(nextIdx);
+          setTerminalInput(commandHistory[nextIdx]);
+        } else {
+          setHistoryIndex(null);
+          setTerminalInput('');
+        }
+      }
+    }
   };
 
   // ── Classroom Session Handlers (Teacher) ──
@@ -1250,143 +1590,229 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // ── File tree renderer ─────────────────────────────────────────────────────
   const renderTree = (nodes: FileItem[], depth = 0): React.ReactNode =>
-    nodes.map(node => (
-      <div key={node.path ?? node.name} className="group">
-        {renamingPath === node.path ? (
-          // ── Inline rename input ──
-          <div className="flex items-center gap-1 px-2 py-0.5" style={{ paddingLeft: 12 + depth * 14 }}>
-            <input
-              value={renameValue}
-              onChange={e => setRenameValue(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-                if (e.key === 'Escape') setRenamingPath(null);
-              }}
-              onBlur={commitRename}
-              autoFocus
-              className="flex-1 h-6 px-1.5 rounded text-xs focus:outline-none"
-              style={{ background: 'var(--bg)', border: '1px solid var(--accent)', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}
-            />
-            <button onClick={commitRename} style={{ color: 'var(--success)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-              <CheckCheck size={12} />
-            </button>
-          </div>
-        ) : (
-          // ── Normal file row ──
-          (() => {
-            const itemLock = workspaceLocks.find(l =>
-              l.targetPath === node.path ||
-              (l.lockType === 'folder' && node.path.startsWith(l.targetPath.endsWith('/') ? l.targetPath : `${l.targetPath}/`))
-            );
-            const isLocker = itemLock && itemLock.lockedBy === user?.id;
-            const canRelease = itemLock && (isLocker || canAdmin);
+    nodes.map(node => {
+      const isDir = node.type === 'directory';
+      const isExpanded = isDir && expandedDirs.has(node.path);
 
-            return (
-              <div className="relative flex items-center">
-                <button
-                  onClick={() => openFile(node)}
-                  className="flex-1 flex items-center gap-2 py-1.5 text-left transition-colors"
-                  style={{
-                    paddingLeft: 12 + depth * 14,
-                    paddingRight: 64,
-                    background: 'transparent',
-                    border: 'none',
-                    color: tabs.find(t => t.path === node.path) ? 'var(--accent)' : 'var(--text-secondary)',
-                    fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                    width: '100%',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  {node.type === 'directory'
-                    ? <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
-                    : <FileCode size={13} style={{ color: extColor(node.name), flexShrink: 0 }} />
-                  }
-                  <span className="truncate">{node.name}</span>
-                  {itemLock && (
-                    <span
-                      title={`Locked by ${itemLock.lockedByName} (${itemLock.lockType})`}
-                      className="ml-auto mr-1 flex items-center"
-                    >
-                      <Lock size={11} className="text-amber-400 shrink-0" />
-                    </span>
-                  )}
-                </button>
+      return (
+        <div key={node.path ?? node.name} className="group">
+          {renamingPath === node.path ? (
+            // ── Inline rename input ──
+            <div className="flex items-center gap-1 px-2 py-0.5" style={{ paddingLeft: 12 + depth * 14 }}>
+              <input
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                  if (e.key === 'Escape') setRenamingPath(null);
+                }}
+                onBlur={commitRename}
+                autoFocus
+                className="flex-1 h-6 px-1.5 rounded text-xs focus:outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--accent)', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}
+              />
+              <button onClick={commitRename} style={{ color: 'var(--success)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                <CheckCheck size={12} />
+              </button>
+            </div>
+          ) : (
+            // ── Normal file/folder row ──
+            (() => {
+              const itemLock = workspaceLocks.find(l =>
+                l.targetPath === node.path ||
+                (l.lockType === 'folder' && node.path.startsWith(l.targetPath.endsWith('/') ? l.targetPath : `${l.targetPath}/`))
+              );
 
-                {/* Hover action buttons */}
+              const isTargetFolder = isDir && dragOverTarget === node.path;
+              const isBeingDragged = draggedNode?.path === node.path;
+
+              return (
                 <div
-                  className="absolute right-1 top-0 bottom-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ display: 'flex' }}
+                  className="relative flex items-center transition-all select-none"
+                  draggable={!isEffectiveReadOnly && renamingPath !== node.path}
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', node.path);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggedNode(node);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedNode(null);
+                    setDragOverTarget(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (!draggedNode || draggedNode.path === node.path) return;
+                    if (draggedNode.type === 'directory' && (node.path === draggedNode.path || node.path.startsWith(draggedNode.path + '/'))) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'move';
+                    const targetDir = isDir ? node.path : (node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/')) : '');
+                    setDragOverTarget(targetDir || '__root__');
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const sourcePath = e.dataTransfer.getData('text/plain') || draggedNode?.path;
+                    setDraggedNode(null);
+                    setDragOverTarget(null);
+                    if (!sourcePath || sourcePath === node.path) return;
+                    const destDir = isDir ? node.path : (node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/')) : '');
+                    moveItem(sourcePath, destDir);
+                  }}
+                  style={{
+                    opacity: isBeingDragged ? 0.35 : 1,
+                  }}
                 >
-                  {/* Lock/Unlock button for editors & admins */}
-                  {canLock && (
-                    itemLock ? (
-                      canRelease && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: itemLock.id });
-                          }}
-                          title={`Unlock ${node.name}`}
-                          className="flex items-center justify-center w-5 h-5 rounded text-amber-400 hover:text-amber-200"
-                          style={{ cursor: 'pointer', background: 'none', border: 'none' }}
-                        >
-                          <Unlock size={11} />
-                        </button>
-                      )
+                  <button
+                    onClick={() => {
+                      if (isDir) { toggleDir(node.path); }
+                      else { openFile(node); }
+                    }}
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu({ x: e.clientX, y: e.clientY, node });
+                    }}
+                    className="flex-1 flex items-center gap-1.5 py-1.5 text-left transition-colors"
+                    style={{
+                      paddingLeft: 12 + depth * 14,
+                      paddingRight: 12,
+                      background: isTargetFolder ? 'rgba(47, 129, 247, 0.2)' : 'transparent',
+                      outline: isTargetFolder ? '1px dashed var(--accent)' : 'none',
+                      borderRadius: isTargetFolder ? 4 : 0,
+                      border: 'none',
+                      color: tabs.find(t => t.path === node.path) ? 'var(--accent)' : 'var(--text-secondary)',
+                      fontFamily: node.type === 'file' ? 'var(--font-mono)' : undefined,
+                      fontSize: 13,
+                      cursor: isBeingDragged ? 'grabbing' : 'pointer',
+                      width: '100%',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isTargetFolder) {
+                        e.currentTarget.style.background = 'var(--surface-2)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isTargetFolder) {
+                        e.currentTarget.style.background = 'transparent';
+                      }
+                    }}
+                  >
+                    {isDir ? (
+                      <>
+                        {isExpanded
+                          ? <ChevronDown size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                          : <ChevronRight size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                        }
+                        {isExpanded
+                          ? <FolderOpen size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+                          : <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+                        }
+                      </>
                     ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          socketRef.current?.emit('lock:create', {
-                            workspaceId: workspace.id,
-                            lockType: node.type === 'directory' ? 'folder' : 'file',
-                            targetPath: node.path,
-                          });
-                        }}
-                        title={`Lock ${node.name}`}
-                        className="flex items-center justify-center w-5 h-5 rounded hover:text-amber-400"
-                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                      <FileCode size={13} style={{ color: extColor(node.name), flexShrink: 0, marginLeft: 12 }} />
+                    )}
+                    <span className="truncate">{node.name}</span>
+                    {itemLock && (
+                      <span
+                        title={`Locked by ${itemLock.lockedByName} (${itemLock.lockType})`}
+                        className="ml-auto mr-1 flex items-center"
                       >
-                        <Lock size={11} />
-                      </button>
-                    )
-                  )}
-
-                  {!isEffectiveReadOnly && (!itemLock || isLocker || canAdmin) && (
-                    <>
-                      <button
-                        onClick={e => startRename(node.path, node.name, e)}
-                        title="Rename"
-                        className="flex items-center justify-center w-5 h-5 rounded"
-                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
-                      >
-                        <Pencil size={11} />
-                      </button>
-                      <button
-                        onClick={e => deleteFile(node.path, e)}
-                        title="Delete"
-                        className="flex items-center justify-center w-5 h-5 rounded"
-                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--error)')}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </>
-                  )}
+                        <Lock size={11} className="text-amber-400 shrink-0" />
+                      </span>
+                    )}
+                  </button>
                 </div>
-              </div>
-            );
-          })()
-        )}
-        {node.type === 'directory' && node.children && renderTree(node.children, depth + 1)}
-      </div>
-    ));
+              );
+            })()
+          )}
+          {isDir && isExpanded && (
+            <>
+              {inlineCreate && inlineCreate.parentPath === node.path && (
+                <div
+                  className="flex items-center gap-1 px-2 py-0.5"
+                  style={{ paddingLeft: 12 + (depth + 1) * 14 }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {inlineCreate.type === 'folder' ? (
+                    <Folder size={13} style={{ color: 'var(--warning)', flexShrink: 0, marginLeft: 12 }} />
+                  ) : (
+                    <FileCode size={13} style={{ color: 'var(--accent)', flexShrink: 0, marginLeft: 12 }} />
+                  )}
+                  <input
+                    value={inlineCreateName}
+                    onChange={e => setInlineCreateName(e.target.value)}
+                    placeholder={inlineCreate.type === 'folder' ? 'Folder name…' : 'File name…'}
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitInlineCreate();
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setInlineCreate(null);
+                        setInlineCreateName('');
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        if (inlineCreateName.trim()) {
+                          commitInlineCreate();
+                        } else {
+                          setInlineCreate(null);
+                          setInlineCreateName('');
+                        }
+                      }, 100);
+                    }}
+                    className="flex-1 h-6 px-1.5 rounded text-xs focus:outline-none"
+                    style={{
+                      background: 'var(--bg)',
+                      border: `1px solid ${inlineCreate.type === 'folder' ? 'var(--warning)' : 'var(--accent)'}`,
+                      color: 'var(--text)',
+                      fontFamily: inlineCreate.type === 'file' ? 'var(--font-mono)' : undefined,
+                    }}
+                  />
+                  <button
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      commitInlineCreate();
+                    }}
+                    title="Create"
+                    style={{ color: 'var(--success)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
+                  >
+                    <CheckCheck size={12} />
+                  </button>
+                  <button
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      setInlineCreate(null);
+                      setInlineCreateName('');
+                    }}
+                    title="Cancel"
+                    style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+              {node.children && node.children.length > 0 ? (
+                renderTree(node.children, depth + 1)
+              ) : !(inlineCreate && inlineCreate.parentPath === node.path) ? (
+                <div
+                  className="text-[11px] py-1 select-none italic"
+                  style={{ paddingLeft: 26 + depth * 14, color: 'var(--muted)' }}
+                >
+                  (empty folder)
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      );
+    });
+
+
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1549,6 +1975,24 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               }}
             >
               <Layers size={13} /> Whiteboard
+            </button>
+
+            <button
+              onClick={() => setActiveView('preview')}
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all relative"
+              style={{
+                background: activeView === 'preview' ? 'var(--surface-2)' : 'transparent',
+                color: activeView === 'preview' ? 'var(--accent)' : 'var(--muted)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+              title="Full-screen Sandboxed Web Application Preview"
+            >
+              <Globe size={13} />
+              <span>Web Preview</span>
+              {previewPort && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" title={`Active on port ${previewPort}`} />
+              )}
             </button>
           </div>
 
@@ -2010,14 +2454,24 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               Explorer
             </span>
             {!isEffectiveReadOnly && (
-              <button
-                onClick={() => setShowNewFile(v => !v)}
-                title="New file"
-                className="flex items-center justify-center w-6 h-6 rounded transition-colors"
-                style={{ color: showNewFile ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
-              >
-                <Plus size={14} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { setShowNewFile(v => !v); setShowNewFolder(false); setInlineCreate(null); }}
+                  title="New File"
+                  className="flex items-center justify-center w-6 h-6 rounded transition-colors"
+                  style={{ color: showNewFile ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  onClick={() => { setShowNewFolder(v => !v); setShowNewFile(false); setInlineCreate(null); }}
+                  title="New Folder"
+                  className="flex items-center justify-center w-6 h-6 rounded transition-colors"
+                  style={{ color: showNewFolder ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', background: 'none', border: 'none' }}
+                >
+                  <FolderPlus size={14} />
+                </button>
+              </div>
             )}
           </div>
 
@@ -2027,7 +2481,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <input
                 value={newFileName}
                 onChange={e => setNewFileName(e.target.value)}
-                placeholder="e.g. main.py"
+                placeholder="e.g. main.py or src/utils/helpers.js"
                 autoFocus
                 onKeyDown={e => {
                   if (e.key === 'Enter') createFile();
@@ -2036,12 +2490,63 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 className="w-full h-8 px-2.5 rounded text-sm focus:outline-none"
                 style={{ background: 'var(--bg)', border: '1px solid var(--accent)', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}
               />
-              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Enter to create · Esc to cancel</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                Tip: type <code style={{ color: 'var(--accent)' }}>src/utils/file.js</code> to nest inside folders · Enter to create · Esc to cancel
+              </p>
             </div>
           )}
 
+          {/* New folder input */}
+          {showNewFolder && (
+            <div className="px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+              <input
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                placeholder="e.g. components or src/utils"
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter') createFolder();
+                  if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName(''); }
+                }}
+                className="w-full h-8 px-2.5 rounded text-sm focus:outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--warning)', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                New folder · Enter to create · Esc to cancel
+              </p>
+            </div>
+          )}
+
+
           {/* File tree */}
-          <div className="flex-1 overflow-y-auto py-2">
+          <div
+            className="flex-1 overflow-y-auto py-2 transition-colors relative"
+            onDragOver={(e) => {
+              if (!draggedNode) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (dragOverTarget !== '__root__') {
+                setDragOverTarget('__root__');
+              }
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget === e.target) {
+                setDragOverTarget(null);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const sourcePath = e.dataTransfer.getData('text/plain') || draggedNode?.path;
+              setDraggedNode(null);
+              setDragOverTarget(null);
+              if (sourcePath) {
+                moveItem(sourcePath, '');
+              }
+            }}
+            style={{
+              background: dragOverTarget === '__root__' ? 'rgba(47, 129, 247, 0.05)' : 'transparent',
+            }}
+          >
             {isClassWaiting ? (
               <div className="p-4 text-center text-xs flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
                 <GraduationCap size={24} className="text-purple-400 opacity-60 animate-pulse" />
@@ -2052,7 +2557,23 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <p className="px-4 py-3 text-sm" style={{ color: 'var(--muted)' }}>
                 No files yet — click + to create one
               </p>
-            ) : renderTree(tree)}
+            ) : (
+              <>
+                {renderTree(tree)}
+                {draggedNode && dragOverTarget === '__root__' && (
+                  <div
+                    className="mx-3 my-2 p-2 rounded text-center text-xs font-mono select-none transition-all"
+                    style={{
+                      border: '1px dashed var(--accent)',
+                      color: 'var(--accent)',
+                      background: 'rgba(47, 129, 247, 0.1)',
+                    }}
+                  >
+                    Drop here to move to root
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Sidebar Footer: Management Hub (Bottom Left Corner) */}
@@ -2162,46 +2683,85 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             />
           </div>
 
-          {/* Editor view */}
+          {/* Full Web Preview view */}
           <div
             className="w-full h-full flex flex-col overflow-hidden"
-            style={{ display: activeView === 'editor' ? 'flex' : 'none' }}
+            style={{ display: activeView === 'preview' ? 'flex' : 'none' }}
           >
-            {/* Tab bar */}
-          <div
-            className="flex items-end overflow-x-auto shrink-0"
-            style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
-          >
-            {tabs.map(tab => (
-              <div
-                key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
-                className="flex items-center gap-2 px-4 h-full text-sm cursor-pointer transition-colors shrink-0 select-none"
-                style={{
-                  borderRight: '1px solid var(--border)',
-                  borderTop: activeTabId === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
-                  background: activeTabId === tab.id ? '#0d1117' : 'var(--surface)',
-                  color: activeTabId === tab.id ? 'var(--text)' : 'var(--muted)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                }}
-              >
-                <FileCode size={12} style={{ color: extColor(tab.name), flexShrink: 0 }} />
-                <span>{tab.name}</span>
-                {tab.dirty && <span style={{ color: 'var(--accent)', fontSize: 10 }}>●</span>}
-                <button
-                  onClick={e => closeTab(tab.id, e)}
-                  className="ml-1 flex items-center justify-center w-4 h-4 rounded opacity-60 hover:opacity-100 transition-opacity"
-                  style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
-                >
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
+            <WebPreviewPanel
+              workspaceId={workspace.id}
+              detectedPort={previewPort}
+              onPortChange={setPreviewPort}
+            />
           </div>
 
-          {/* Editor + Console */}
-          {isClassWaiting ? (
+          {/* Editor view (supports side-by-side split live preview) */}
+          <div
+            className="w-full h-full flex flex-row overflow-hidden"
+            style={{ display: activeView === 'editor' ? 'flex' : 'none' }}
+          >
+            {/* Left Column: Code Tabs, Editor, and Terminal */}
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+              {/* Tab bar */}
+              <div
+                className="flex items-center justify-between shrink-0"
+                style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
+              >
+                <div className="flex items-end overflow-x-auto h-full flex-1">
+                  {tabs.map(tab => (
+                    <div
+                      key={tab.id}
+                      onClick={() => setActiveTabId(tab.id)}
+                      className="flex items-center gap-2 px-4 h-full text-sm cursor-pointer transition-colors shrink-0 select-none"
+                      style={{
+                        borderRight: '1px solid var(--border)',
+                        borderTop: activeTabId === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                        background: activeTabId === tab.id ? '#0d1117' : 'var(--surface)',
+                        color: activeTabId === tab.id ? 'var(--text)' : 'var(--muted)',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 13,
+                      }}
+                    >
+                      <FileCode size={12} style={{ color: extColor(tab.name), flexShrink: 0 }} />
+                      <span>{tab.name}</span>
+                      {tab.dirty && <span style={{ color: 'var(--accent)', fontSize: 10 }}>●</span>}
+                      <button
+                        onClick={e => closeTab(tab.id, e)}
+                        className="ml-1 flex items-center justify-center w-4 h-4 rounded opacity-60 hover:opacity-100 transition-opacity"
+                        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Right side of tab bar: Split Live Preview button */}
+                <div className="flex items-center gap-1.5 px-3 h-full shrink-0 border-l" style={{ borderColor: 'var(--border)' }}>
+                  <button
+                    onClick={() => setShowSplitPreview(prev => !prev)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                      showSplitPreview
+                        ? 'bg-[var(--accent)] text-white'
+                        : 'text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]'
+                    }`}
+                    style={{
+                      border: showSplitPreview ? 'none' : '1px solid var(--border)',
+                      cursor: 'pointer',
+                    }}
+                    title={showSplitPreview ? 'Hide Live Preview' : 'Open Live Web Preview beside editor'}
+                  >
+                    <Globe size={13} />
+                    <span>{showSplitPreview ? 'Hide Preview' : 'Live Preview'}</span>
+                    {previewPort && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Editor + Console */}
+              {isClassWaiting ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center"
               style={{ background: 'var(--bg)', color: 'var(--text)' }}>
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
@@ -2523,31 +3083,48 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   style={{ borderBottom: isTerminalCollapsed ? 'none' : '1px solid var(--border)', background: 'var(--surface)' }}
                   onDoubleClick={() => setIsTerminalMaximized(prev => !prev)}
                 >
-                  <div className="flex items-center gap-2">
-                    <Terminal size={13} style={{ color: 'var(--muted)' }} />
-                    <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-                      Console
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Terminal size={13} style={{ color: 'var(--accent)' }} />
+                    <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
+                      Terminal
                     </span>
                     <span
-                      className="text-[10px] px-1.5 py-0.2 rounded select-none opacity-60"
+                      className="text-[10px] px-1.5 py-0.2 rounded select-none opacity-60 hidden sm:inline"
                       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-                      title="Press Ctrl + ` to toggle console"
+                      title="Press Ctrl + ` to toggle terminal"
                     >
                       Ctrl + `
                     </span>
-                    {running && (
-                      <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--warning)' }}>
-                        <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--warning)', display: 'inline-block' }} />
-                        Executing…
+                    {running ? (
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1.5 text-xs text-amber-400 font-mono">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="truncate max-w-[140px] sm:max-w-[220px]">
+                            {runningCommand || 'Running…'}
+                          </span>
+                        </span>
+                        <button
+                          onClick={killTerminalProcess}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors cursor-pointer"
+                          title="Stop process (Ctrl+C)"
+                        >
+                          <Square size={10} fill="currentColor" />
+                          <span>Stop</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-emerald-400/80 font-mono hidden md:inline">
+                        ● Ready
                       </span>
                     )}
                   </div>
+
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setOutput('')}
                       className="text-xs px-2 py-0.5 rounded transition-colors hover:bg-[var(--surface-2)]"
                       style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title="Clear console"
+                      title="Clear terminal"
                     >
                       Clear
                     </button>
@@ -2555,7 +3132,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       onClick={() => setIsTerminalCollapsed(prev => !prev)}
                       className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
                       style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title={isTerminalCollapsed ? "Expand console" : "Collapse console"}
+                      title={isTerminalCollapsed ? "Expand terminal" : "Collapse terminal"}
                     >
                       {isTerminalCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
@@ -2566,7 +3143,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       }}
                       className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
                       style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title={isTerminalMaximized ? "Restore panel size" : "Maximize console panel"}
+                      title={isTerminalMaximized ? "Restore panel size" : "Maximize terminal panel"}
                     >
                       {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
                     </button>
@@ -2574,7 +3151,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       onClick={() => setIsTerminalOpen(false)}
                       className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
                       style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title="Close console (Ctrl + `)"
+                      title="Close terminal (Ctrl + `)"
                     >
                       <X size={13} />
                     </button>
@@ -2582,25 +3159,84 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 </div>
 
                 {!isTerminalCollapsed && (
-                  <pre
+                  <div
                     ref={outputRef}
-                    className="p-4 text-sm leading-relaxed overflow-auto flex-1 select-text"
+                    onClick={() => {
+                      if (!window.getSelection()?.toString()) {
+                        terminalInputRef.current?.focus();
+                      }
+                    }}
+                    className="p-4 text-xs sm:text-sm font-mono leading-relaxed overflow-auto flex-1 select-text cursor-text flex flex-col"
                     style={{
-                      margin: 0,
                       background: '#0a0c10',
                       color: '#e6edf3',
-                      fontFamily: 'var(--font-mono)',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
                     }}
                   >
-                    {output || <span style={{ color: 'var(--muted)' }}>Console output will appear here after clicking Run…</span>}
-                  </pre>
+                    {/* Rendered output text */}
+                    {output && (
+                      <div className="whitespace-pre-wrap break-all select-text mb-1">
+                        {output}
+                      </div>
+                    )}
+
+                    {/* Inline Active Command Prompt */}
+                    <div className="flex items-center gap-1.5 select-none w-full">
+                      <span className="font-bold select-none shrink-0" style={{ color: running ? '#f59e0b' : '#34d399' }}>
+                        {running ? '>' : `${terminalCwd}$`}
+                      </span>
+                      <input
+                        ref={terminalInputRef}
+                        type="text"
+                        value={terminalInput}
+                        onChange={e => setTerminalInput(e.target.value)}
+                        onKeyDown={handleTerminalKeyDown}
+                        placeholder=""
+                        className="flex-1 bg-transparent font-mono text-xs sm:text-sm border-none outline-none shadow-none focus:outline-none focus:ring-0 focus:border-none focus:shadow-none p-0 m-0 select-text"
+                        style={{
+                          color: '#f0f6fc',
+                          caretColor: '#38bdf8',
+                          outline: 'none',
+                          boxShadow: 'none',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                        }}
+                        autoFocus
+                        spellCheck={false}
+                        autoComplete="off"
+                        autoCapitalize="off"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
           </div>
         )}
+            </div>
+
+            {/* Right Column: Split Live Web Preview */}
+            {showSplitPreview && (
+              <>
+                <div
+                  onMouseDown={handleSplitMouseDown}
+                  className="w-1 cursor-col-resize hover:bg-[var(--accent)] active:bg-[var(--accent)] transition-colors shrink-0 z-10"
+                  style={{ background: 'var(--border)' }}
+                  title="Drag to resize live preview"
+                />
+                <div
+                  style={{ width: splitPreviewWidth }}
+                  className="h-full shrink-0 flex flex-col overflow-hidden"
+                >
+                  <WebPreviewPanel
+                    workspaceId={workspace.id}
+                    detectedPort={previewPort}
+                    onPortChange={setPreviewPort}
+                    isSplit={true}
+                    onCloseSplit={() => setShowSplitPreview(false)}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </main>
       </div>
@@ -2678,10 +3314,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             onClick={toggleTerminal}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
             style={{ color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)' }}
-            title="Toggle Console (Ctrl + `)"
+            title="Toggle Terminal (Ctrl + `)"
           >
             <Terminal size={11} />
-            <span>Console</span>
+            <span>Terminal</span>
           </button>
 
           {/* Chat Toggle Button */}
@@ -2882,6 +3518,148 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         currentUserId={user?.id ?? 0}
         activeFilePath={activeTab?.path}
       />
+
+      {/* ── Right-click Context Menu ── */}
+      {contextMenu && (
+        <>
+          {/* Backdrop to close the menu on outside click */}
+          <div
+            className="fixed inset-0 z-40"
+            onMouseDown={() => setContextMenu(null)}
+          />
+          <div
+            className="fixed z-50 rounded-lg shadow-2xl py-1 min-w-[170px] text-xs"
+            style={{
+              top: contextMenu.y,
+              left: contextMenu.x,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+            }}
+          >
+            {(() => {
+              const itemLock = workspaceLocks.find(l =>
+                l.targetPath === contextMenu.node.path ||
+                (l.lockType === 'folder' && contextMenu.node.path.startsWith(l.targetPath.endsWith('/') ? l.targetPath : `${l.targetPath}/`))
+              );
+              const isLocker = itemLock && itemLock.lockedBy === user?.id;
+              const canRelease = itemLock && (isLocker || canAdmin);
+
+              return (
+                <>
+                  {contextMenu.node.type === 'directory' && !isEffectiveReadOnly && (!itemLock || isLocker || canAdmin) && (
+                    <>
+                      <button
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        onClick={() => {
+                          const targetPath = contextMenu.node.path;
+                          setContextMenu(null);
+                          startCreateInFolder(targetPath, 'file');
+                        }}
+                      >
+                        <Plus size={12} style={{ color: 'var(--accent)' }} />
+                        New File Inside
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        onClick={() => {
+                          const targetPath = contextMenu.node.path;
+                          setContextMenu(null);
+                          startCreateInFolder(targetPath, 'folder');
+                        }}
+                      >
+                        <FolderPlus size={12} style={{ color: 'var(--warning)' }} />
+                        New Folder Inside
+                      </button>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                    </>
+                  )}
+
+                  {contextMenu.node.type === 'file' && (
+                    <button
+                      className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                      onClick={() => {
+                        openFile(contextMenu.node);
+                        setContextMenu(null);
+                      }}
+                    >
+                      <FileCode size={12} style={{ color: extColor(contextMenu.node.name) }} />
+                      Open File
+                    </button>
+                  )}
+
+                  {canLock && (
+                    itemLock ? (
+                      canRelease && (
+                        <button
+                          className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors text-amber-400"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                          onClick={() => {
+                            socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: itemLock.id });
+                            setContextMenu(null);
+                          }}
+                        >
+                          <Unlock size={12} />
+                          Unlock {contextMenu.node.type === 'directory' ? 'Folder' : 'File'}
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        onClick={() => {
+                          socketRef.current?.emit('lock:create', {
+                            workspaceId: workspace.id,
+                            lockType: contextMenu.node.type === 'directory' ? 'folder' : 'file',
+                            targetPath: contextMenu.node.path,
+                          });
+                          setContextMenu(null);
+                        }}
+                      >
+                        <Lock size={12} style={{ color: 'var(--muted)' }} />
+                        Lock {contextMenu.node.type === 'directory' ? 'Folder' : 'File'}
+                      </button>
+                    )
+                  )}
+
+                  {!isEffectiveReadOnly && (!itemLock || isLocker || canAdmin) && (
+                    <>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                      <button
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        onClick={(e) => {
+                          const node = contextMenu.node;
+                          setContextMenu(null);
+                          startRename(node.path, node.name, e as unknown as React.MouseEvent);
+                        }}
+                      >
+                        <Pencil size={12} style={{ color: 'var(--accent)' }} />
+                        Rename
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--surface-2)] text-left transition-colors"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)' }}
+                        onClick={(e) => {
+                          const node = contextMenu.node;
+                          setContextMenu(null);
+                          deleteFile(node.path, e as unknown as React.MouseEvent);
+                        }}
+                      >
+                        <Trash2 size={12} />
+                        {contextMenu.node.type === 'directory' ? 'Delete Folder' : 'Delete File'}
+                      </button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </>
+      )}
 
     </div>
   );

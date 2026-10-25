@@ -15,13 +15,61 @@ import {
 } from '../models/index.js';
 import { checkPathLocked } from './lockController.js';
 
+// Project template definitions — maps template key to initial file tree
+const PROJECT_TEMPLATES = {
+  'node-express': {
+    'package.json': JSON.stringify({
+      name: 'my-app',
+      version: '1.0.0',
+      main: 'index.js',
+      scripts: { start: 'node index.js', dev: 'node index.js' },
+      dependencies: { express: '^4.18.0' }
+    }, null, 2),
+    'index.js': `const express = require('express');\nconst app = express();\nconst PORT = process.env.PORT || 3000;\n\napp.get('/', (req, res) => {\n  res.json({ message: 'Hello World!' });\n});\n\napp.listen(PORT, () => console.log(\`Server running on port \${PORT}\`));\n`,
+    'README.md': `# Node.js Express App\n\nRun: \`npm install && npm run dev\`\n`,
+  },
+  'python-flask': {
+    'app.py': `import os\nfrom flask import Flask, jsonify\n\napp = Flask(__name__)\n\n@app.route('/')\ndef hello():\n    return jsonify({'message': 'Hello World!'})\n\nif __name__ == '__main__':\n    port = int(os.environ.get('PORT', 8000))\n    app.run(host='0.0.0.0', port=port, debug=True)\n`,
+    'requirements.txt': `flask>=3.0.0\n`,
+    'README.md': `# Python Flask App\n\nRun: \`pip install -r requirements.txt && python app.py\`\n`,
+  },
+  'python-script': {
+    'main.py': `# Python Script\n\ndef main():\n    print("Hello, World!")\n\nif __name__ == "__main__":\n    main()\n`,
+    'README.md': `# Python Script\n\nRun: \`python main.py\`\n`,
+  },
+  'java-maven': {
+    'src/main/java/Main.java': `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}\n`,
+    'pom.xml': `<?xml version="1.0" encoding="UTF-8"?>\n<project xmlns="http://maven.apache.org/POM/4.0.0"\n  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>com.codesync</groupId>\n  <artifactId>my-app</artifactId>\n  <version>1.0-SNAPSHOT</version>\n  <properties>\n    <maven.compiler.source>21</maven.compiler.source>\n    <maven.compiler.target>21</maven.compiler.target>\n  </properties>\n</project>\n`,
+    'README.md': `# Java Maven Project\n\nCompile: \`mvn compile\`  Run: \`mvn exec:java -Dexec.mainClass="Main"\`\n`,
+  },
+  'react-vite': {
+    'package.json': JSON.stringify({
+      name: 'my-react-app',
+      version: '0.0.0',
+      scripts: { dev: 'vite', build: 'vite build' },
+      dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
+      devDependencies: { vite: '^6.0.0', '@vitejs/plugin-react': '^4.0.0' }
+    }, null, 2),
+    'index.html': `<!doctype html>\n<html lang="en">\n  <head><meta charset="UTF-8" /><title>React App</title></head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.jsx"></script>\n  </body>\n</html>\n`,
+    'src/main.jsx': `import { StrictMode } from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\ncreateRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>);\n`,
+    'src/App.jsx': `export default function App() {\n  return <h1>Hello from React!</h1>;\n}\n`,
+    'README.md': `# React + Vite\n\nRun: \`npm install && npm run dev\`\n`,
+  },
+  'blank': null, // use default README only
+};
+
 /**
  * POST /api/workspaces
  * Creates a new workspace.
  * Supports types: 'educational', 'professional', 'competitive'
+ * Optional body field: template — one of 'node-express', 'python-flask', 'python-script', 'java-maven', 'react-vite', 'blank'
  */
 const createWorkspace = asyncWrapper(async (req, res) => {
-  const { name, description, type, allowedEmails } = req.body;
+  const { name, description, type, allowedEmails, template } = req.body;
+
+  // Resolve template files (null = use default README)
+  const templateKey = template && PROJECT_TEMPLATES.hasOwnProperty(template) ? template : 'blank';
+  const templateFiles = PROJECT_TEMPLATES[templateKey] || null;
   const validTypes = ['educational', 'professional', 'competitive'];
   const workspaceType = validTypes.includes(type) ? type : 'educational';
 
@@ -58,6 +106,7 @@ const createWorkspace = asyncWrapper(async (req, res) => {
     allowedEmails: normalized,
     createdBy: req.user.id,
     creatorEmail: userEmail,
+    templateFiles,
   });
 
   const initialRole =

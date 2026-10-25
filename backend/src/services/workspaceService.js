@@ -34,7 +34,7 @@ class WorkspaceService {
   /**
    * Creates a new workspace session and initializes its folder.
    */
-  async createWorkspace({ name, description = '', type = 'educational', allowedEmails = [], createdBy = null, creatorEmail = null }) {
+  async createWorkspace({ name, description = '', type = 'educational', allowedEmails = [], createdBy = null, creatorEmail = null, templateFiles = null }) {
     const workspaceId = `ws-${uuidv4().substring(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -55,8 +55,8 @@ class WorkspaceService {
       activeUsers: 0,
     };
 
-    // Create directory + default files on disk
-    await storageService.createWorkspaceDirectory(workspaceId);
+    // Create directory + template or default files on disk
+    await storageService.createWorkspaceDirectory(workspaceId, templateFiles);
 
     // Persist metadata so it survives restarts
     await this._writeMeta(workspaceMeta);
@@ -66,6 +66,7 @@ class WorkspaceService {
 
     return workspaceMeta;
   }
+
 
   /**
    * Lists all workspaces — scans disk to recover any not yet in memory.

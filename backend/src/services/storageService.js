@@ -10,16 +10,24 @@ class StorageService {
    * @param {string} workspaceId 
    * @returns {Promise<string>} workspace directory path
    */
-  async createWorkspaceDirectory(workspaceId) {
+  async createWorkspaceDirectory(workspaceId, templateFiles = null) {
     const workspaceDir = getWorkspacePath(workspaceId);
 
     if (!fsSync.existsSync(workspaceDir)) {
       await fs.mkdir(workspaceDir, { recursive: true });
 
-      // Create default files
-      for (const [filename, content] of Object.entries(DEFAULT_FILES)) {
-        const filePath = path.join(workspaceDir, filename);
-        await fs.writeFile(filePath, content, 'utf-8');
+      // Use provided template files, or fall back to the default README
+      const filesToCreate = templateFiles && Object.keys(templateFiles).length > 0
+        ? templateFiles
+        : DEFAULT_FILES;
+
+      for (const [relativePath, content] of Object.entries(filesToCreate)) {
+        const fullPath = path.join(workspaceDir, relativePath);
+        const parentDir = path.dirname(fullPath);
+        if (!fsSync.existsSync(parentDir)) {
+          await fs.mkdir(parentDir, { recursive: true });
+        }
+        await fs.writeFile(fullPath, content, 'utf-8');
       }
     }
 
@@ -43,10 +51,69 @@ class StorageService {
     const items = [];
 
     for (const entry of entries) {
-      // Ignore hidden files 
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      // Ignore hidden files and internal meta
+      if (entry.name.startsWith('.')) continue;
 
       const entryRelativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+
+      // Include node_modules in tree and populate its installed package directories
+      if (entry.name === 'node_modules') {
+        if (entry.isDirectory()) {
+          const nmPath = path.join(targetDir, entry.name);
+          let packageItems = [];
+          try {
+            const nmEntries = await fs.readdir(nmPath, { withFileTypes: true });
+            for (const pkg of nmEntries) {
+              if (pkg.name.startsWith('.') && pkg.name !== '.bin') continue;
+              const pkgRelPath = path.join(entryRelativePath, pkg.name).replace(/\\/g, '/');
+              if (pkg.isDirectory()) {
+                if (pkg.name.startsWith('@')) {
+                  const scopePath = path.join(nmPath, pkg.name);
+                  const scopeEntries = await fs.readdir(scopePath, { withFileTypes: true }).catch(() => []);
+                  const scopeChildren = scopeEntries.filter(s => !s.name.startsWith('.')).map(s => ({
+                    name: s.name,
+                    path: path.join(pkgRelPath, s.name).replace(/\\/g, '/'),
+                    type: s.isDirectory() ? 'directory' : 'file',
+                  }));
+                  packageItems.push({
+                    name: pkg.name,
+                    path: pkgRelPath,
+                    type: 'directory',
+                    children: scopeChildren,
+                  });
+                } else {
+                  packageItems.push({
+                    name: pkg.name,
+                    path: pkgRelPath,
+                    type: 'directory',
+                  });
+                }
+              } else {
+                packageItems.push({
+                  name: pkg.name,
+                  path: pkgRelPath,
+                  type: 'file',
+                });
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          packageItems.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          items.push({
+            name: entry.name,
+            path: entryRelativePath,
+            type: 'directory',
+            children: packageItems
+          });
+        }
+        continue;
+      }
 
       if (entry.isDirectory()) {
         const children = await this.getFileTree(workspaceId, entryRelativePath);
@@ -191,6 +258,15 @@ class StorageService {
 
     if (fsSync.existsSync(newPath)) {
       throw new Error(`Destination item already exists: ${newRelativePath}`);
+    }
+
+    const normOld = oldRelativePath.replace(/\\/g, '/');
+    const normNew = newRelativePath.replace(/\\/g, '/');
+    if (normNew === normOld) {
+      return { oldPath: normOld, newPath: normNew };
+    }
+    if (normNew.startsWith(normOld + '/')) {
+      throw new Error(`Cannot move folder into itself or its own subdirectories`);
     }
 
     const parentDir = path.dirname(newPath);

@@ -14,7 +14,7 @@ import { requireWorkspaceMember } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
-router.use(authenticateToken);
+router.use('/workspaces', authenticateToken);
 
 // ── Task Routes ──
 router.get('/workspaces/:id/tasks', requireWorkspaceMember('viewer'), getTasks);

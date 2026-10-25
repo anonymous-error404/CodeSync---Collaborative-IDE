@@ -9,11 +9,13 @@ import {
   DOCKER_CPU_LIMIT,
   CONTAINER_NAME_PREFIX,
 } from '../config/dockerConfig.js';
+import { detectPortFromOutput, clearPreviewPort } from './previewService.js';
 
 class ExecutionService {
   constructor() {
     // Map<envKey, { process: ChildProcess, containerName: string|null, workspaceId: string, userId: string|number, username: string, isGlobal: boolean, filePath: string, isDocker: boolean, timeoutHandle: NodeJS.Timeout, safeExit: Function, startedAt: number }>
     this.runningContainers = new Map();
+    this.sessionCwd = new Map();
     this._dockerCheckCache = null;
   }
 
@@ -187,6 +189,218 @@ class ExecutionService {
       clearTimeout(timeoutHandle);
       safeExit(code ?? 0);
     });
+  }
+
+  /**
+   * Executes an interactive shell command directly in the workspace directory.
+   * Enables running npm install, npm run dev, pip install, python app.py, git, etc.
+   * Streams stdout and stderr, supports bidirectional stdin, and handles termination.
+   */
+  async executeTerminalCommand({
+    workspaceId,
+    userId = 'global',
+    username = 'User',
+    isGlobal = false,
+    command,
+    onStdout,
+    onStderr,
+    onExit,
+  }) {
+    if (!command || !command.trim()) {
+      onStderr('Cannot execute empty command.\n');
+      onExit(-1);
+      return;
+    }
+
+    const workspaceDir = getWorkspacePath(workspaceId);
+    if (!fs.existsSync(workspaceDir)) {
+      onStderr(`[Error] Workspace directory does not exist: ${workspaceId}\n`);
+      onExit(-1);
+      return;
+    }
+
+    const envKey = isGlobal ? `${workspaceId}:global` : `${workspaceId}:${userId}`;
+
+    // Resolve or restore current working directory for this terminal session
+    let currentCwd = this.sessionCwd.get(envKey) || workspaceDir;
+    if (!fs.existsSync(currentCwd)) {
+      currentCwd = workspaceDir;
+      this.sessionCwd.set(envKey, workspaceDir);
+    }
+
+    const trimmed = command.trim();
+
+    // ── Built-in `cd` command support ──
+    if (trimmed === 'cd' || trimmed.startsWith('cd ') || trimmed.startsWith('cd\t')) {
+      const arg = trimmed.slice(2).trim();
+      let targetPath;
+
+      if (!arg || arg === '~' || arg === '/' || arg === '.') {
+        targetPath = workspaceDir;
+      } else {
+        targetPath = path.resolve(currentCwd, arg);
+      }
+
+      // Security check: strictly cannot escape workspace boundary
+      const relativeFromRoot = path.relative(workspaceDir, targetPath);
+      if (relativeFromRoot.startsWith('..') || path.isAbsolute(relativeFromRoot)) {
+        onStderr(`cd: Access denied: cannot navigate outside workspace directory\n`);
+        onExit(1);
+        return;
+      }
+
+      if (!fs.existsSync(targetPath)) {
+        onStderr(`cd: no such file or directory: ${arg}\n`);
+        onExit(1);
+        return;
+      }
+
+      const stat = fs.statSync(targetPath);
+      if (!stat.isDirectory()) {
+        onStderr(`cd: not a directory: ${arg}\n`);
+        onExit(1);
+        return;
+      }
+
+      this.sessionCwd.set(envKey, targetPath);
+      // Silent on success, exactly like real bash/zsh/cmd terminal
+      onExit(0);
+      return;
+    }
+
+    // ── Built-in `pwd` command support ──
+    if (trimmed === 'pwd') {
+      const relativeFromRoot = path.relative(workspaceDir, currentCwd);
+      const displayRel = relativeFromRoot ? `~/${relativeFromRoot.replace(/\\/g, '/')}` : '~';
+      onStdout(`${displayRel}\n`);
+      onExit(0);
+      return;
+    }
+
+    // Kill any existing running process for this environment
+    this.stopExecution(envKey);
+
+    let exited = false;
+    const safeExit = (code) => {
+      if (exited) return;
+      exited = true;
+      this.runningContainers.delete(envKey);
+      onExit(code);
+    };
+
+    console.log(`[Terminal Engine] Running command in ${currentCwd}: ${command}`);
+
+    // Prepare a clean environment for the terminal child process.
+    // Explicitly delete host backend variables (PORT, secrets, db credentials)
+    // so user applications do not collide with CodeSync's own server port (5000)
+    // and cannot inspect server internal secrets.
+    const childEnv = { ...process.env, FORCE_COLOR: '1' };
+    delete childEnv.PORT;
+    delete childEnv.JWT_SECRET;
+    delete childEnv.JWT_EXPIRES_IN;
+    delete childEnv.DB_STORAGE;
+    delete childEnv.WORKSPACES_STORAGE_PATH;
+    delete childEnv.GOOGLE_CLIENT_SECRET;
+    delete childEnv.GOOGLE_CLIENT_ID;
+    delete childEnv.GOOGLE_CALLBACK_URL;
+
+    // Spawn child process with currentCwd as working directory
+    const child = spawn(command, {
+      cwd: currentCwd,
+      shell: true,
+      env: childEnv,
+    });
+
+    this.runningContainers.set(envKey, {
+      process: child,
+      containerName: null,
+      workspaceId,
+      userId,
+      username,
+      isGlobal,
+      command,
+      filePath: command,
+      isDocker: false,
+      timeoutHandle: null,
+      safeExit,
+      startedAt: Date.now(),
+    });
+
+    child.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      detectPortFromOutput(workspaceId, chunk);
+      onStdout(chunk);
+    });
+    child.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      detectPortFromOutput(workspaceId, chunk);
+      onStderr(chunk);
+    });
+
+    child.on('error', (err) => {
+      onStderr(`\n[Terminal Error]: ${err.message}\n`);
+      safeExit(-1);
+    });
+
+    child.on('close', (code) => {
+      clearPreviewPort(workspaceId);
+      safeExit(code ?? 0);
+    });
+  }
+
+
+  /**
+   * Sends user input into standard input (stdin) of the running process.
+   */
+  sendTerminalStdin({ workspaceId, userId = null, isGlobal = false, input }) {
+    let targetEntry = null;
+
+    if (isGlobal) {
+      targetEntry = this.runningContainers.get(`${workspaceId}:global`);
+    } else if (userId !== null && userId !== undefined) {
+      targetEntry = this.runningContainers.get(`${workspaceId}:${userId}`);
+    }
+
+    if (!targetEntry) {
+      for (const [k, v] of this.runningContainers.entries()) {
+        if (v.workspaceId === workspaceId) {
+          targetEntry = v;
+          break;
+        }
+      }
+    }
+
+    if (!targetEntry || !targetEntry.process || !targetEntry.process.stdin || targetEntry.process.stdin.destroyed) {
+      return false;
+    }
+
+    try {
+      const data = input.endsWith('\n') ? input : `${input}\n`;
+      targetEntry.process.stdin.write(data);
+      return true;
+    } catch (err) {
+      console.error('[Terminal stdin error]:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Returns display-friendly relative current working directory for this terminal session.
+   */
+  getCwd(envKey, workspaceId) {
+    const workspaceDir = getWorkspacePath(workspaceId);
+    let currentCwd = this.sessionCwd.get(envKey);
+    if (!currentCwd) {
+      for (const [k, v] of this.sessionCwd.entries()) {
+        if (k.startsWith(`${workspaceId}:`)) {
+          currentCwd = v;
+          break;
+        }
+      }
+    }
+    currentCwd = currentCwd || workspaceDir;
+    const rel = path.relative(workspaceDir, currentCwd);
+    return rel ? `~/${rel.replace(/\\/g, '/')}` : '~';
   }
 
   /**
