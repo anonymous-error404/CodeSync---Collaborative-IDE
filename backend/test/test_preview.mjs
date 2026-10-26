@@ -1,7 +1,9 @@
 import assert from 'assert';
 import http from 'http';
 import { detectPortFromOutput, getPreviewPort, clearPreviewPort, setPreviewPort } from '../src/services/previewService.js';
-import { startServer } from '../server.js';
+
+process.env.NO_AUTO_START = 'true';
+const { startServer } = await import('../server.js');
 
 async function runTests() {
   console.log('--- Testing Web Preview & Port Detection ---');

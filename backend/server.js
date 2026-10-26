@@ -99,7 +99,8 @@ const startServer = async (port = PORT) => {
   }
 };
 
-if (process.argv[1] && new URL(import.meta.url).pathname.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop())) {
+// Automatically start the server unless explicitly disabled by NO_AUTO_START
+if (!process.env.NO_AUTO_START) {
   startServer();
 }
 
