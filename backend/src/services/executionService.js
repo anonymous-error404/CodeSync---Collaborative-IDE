@@ -303,6 +303,15 @@ class ExecutionService {
     delete childEnv.GOOGLE_CLIENT_SECRET;
     delete childEnv.GOOGLE_CLIENT_ID;
     delete childEnv.GOOGLE_CALLBACK_URL;
+    // Always force development environment in workspaces so `npm install`
+    // installs all packages including devDependencies (vite, nodemon, etc.)
+    childEnv.NODE_ENV = 'development';
+
+    // Prepend workspace and current directory node_modules/.bin to PATH
+    const cwdBin = path.join(currentCwd, 'node_modules', '.bin');
+    const wsBin = path.join(workspaceDir, 'node_modules', '.bin');
+    const pathDelimiter = path.delimiter || ';';
+    childEnv.PATH = `${cwdBin}${pathDelimiter}${wsBin}${pathDelimiter}${childEnv.PATH || ''}`;
 
     // Spawn child process with currentCwd as working directory
     const child = spawn(command, {

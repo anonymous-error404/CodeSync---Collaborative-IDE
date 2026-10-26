@@ -84,15 +84,7 @@ const proxyHandler = (req, res) => {
     `);
   }
 
-  // If accessing without trailing slash on root, redirect with trailing slash
-  // so browser relative URLs resolve inside /api/preview/:workspaceId/
   const subpath = req.params[0] ?? '';
-  if (!subpath && !req.url.startsWith('/?') && !req.url.endsWith('/') && req.method === 'GET') {
-    const qIndex = req.url.indexOf('?');
-    const queryPart = qIndex >= 0 ? req.url.slice(qIndex) : '';
-    return res.redirect(302, `/api/preview/${workspaceId}/${queryPart}`);
-  }
-
   const rawPath = subpath ? `/${subpath}` : '/';
   const queryString = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
   const targetPath = rawPath + queryString;

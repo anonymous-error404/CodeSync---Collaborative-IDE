@@ -46,8 +46,8 @@ const PROJECT_TEMPLATES = {
     'package.json': JSON.stringify({
       name: 'my-react-app',
       version: '0.0.0',
-      scripts: { dev: 'vite', build: 'vite build' },
-      dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
+      scripts: { dev: 'vite --host', build: 'vite build' },
+      dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0', vite: '^6.0.0' },
       devDependencies: { vite: '^6.0.0', '@vitejs/plugin-react': '^4.0.0' }
     }, null, 2),
     'index.html': `<!doctype html>\n<html lang="en">\n  <head><meta charset="UTF-8" /><title>React App</title></head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.jsx"></script>\n  </body>\n</html>\n`,
