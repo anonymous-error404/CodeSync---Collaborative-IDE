@@ -2245,7 +2245,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       )}
 
       {/* ── Classroom Session Strip ── */}
-      {sessionActive && (
+      {workspaceType === 'educational' && sessionActive && (
         <div
           className="flex items-center justify-between px-5 py-1.5 shrink-0 select-none text-xs z-30"
           style={{

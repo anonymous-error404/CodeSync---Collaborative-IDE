@@ -173,7 +173,7 @@ function initWorkspaceSockets(io) {
           mySessionRole: socket.sessionRole,
           editorLocked: socket.editorLocked,
           studentAccess: socket.studentAccess,
-          classInSession: !isStudentWithoutSession,
+          classInSession: Boolean(isEducational && activeSession),
           locks,
         });
       } catch (err) {

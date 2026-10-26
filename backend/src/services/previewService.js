@@ -13,11 +13,13 @@
  */
 
 const PORT_PATTERNS = [
+  /http:\/\/[^:\/\s]+:(\d{4,5})/i,
+  /https:\/\/[^:\/\s]+:(\d{4,5})/i,
   /(?:listening|running|started|server).*?(?:port|:)\s*(\d{4,5})/i,
   /localhost:(\d{4,5})/i,
   /127\.0\.0\.1:(\d{4,5})/i,
   /0\.0\.0\.0:(\d{4,5})/i,
-  /:\s*(\d{4,5})\s*(?:\n|$)/,
+  /:\s*(\d{4,5})\s*(?:\/|\n|\s|$)/,
 ];
 
 /** @type {Map<string, { port: number, detectedAt: number }>} workspaceId → port info */
@@ -39,8 +41,15 @@ export function setPortNotifier(fn) {
  */
 export function detectPortFromOutput(workspaceId, text) {
   if (!text || !workspaceId) return;
+
+  // Strip ANSI color/formatting escape sequences (e.g. \x1b[1m5173\x1b[22m in Vite)
+  const clean = text
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\[\d+m/g, '');
+
   for (const pattern of PORT_PATTERNS) {
-    const match = text.match(pattern);
+    const match = clean.match(pattern);
     if (match) {
       const port = parseInt(match[1], 10);
       // Ignore backend's own port (5000) and system reserved ports
