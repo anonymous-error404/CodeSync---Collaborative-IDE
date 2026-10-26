@@ -318,6 +318,7 @@ class ExecutionService {
       cwd: currentCwd,
       shell: true,
       env: childEnv,
+      detached: process.platform !== 'win32',
     });
 
     this.runningContainers.set(envKey, {
@@ -502,7 +503,17 @@ class ExecutionService {
           try { child.kill('SIGKILL'); } catch { /* ignore */ }
         }
       } else {
-        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        // On Linux / POSIX: kill the entire process group (negative PID)
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          try {
+            spawn('pkill', ['-9', '-P', String(child.pid)], { shell: false });
+            process.kill(child.pid, 'SIGKILL');
+          } catch {
+            try { child.kill('SIGKILL'); } catch { /* ignore */ }
+          }
+        }
       }
     }
 
