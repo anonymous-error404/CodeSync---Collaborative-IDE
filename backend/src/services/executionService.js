@@ -295,7 +295,17 @@ class ExecutionService {
     // so user applications do not collide with CodeSync's own server port (5000)
     // and cannot inspect server internal secrets.
     const childEnv = { ...process.env, FORCE_COLOR: '1' };
-    delete childEnv.PORT;
+    // Assign an isolated port per workspace (range 3100-3899)
+    // so different workspaces never collide on the default port (3000)
+    const portHash = Math.abs(workspaceId.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0)) % 800;
+    childEnv.PORT = String(3100 + portHash);
+
+    // Clean up any lingering zombie processes from this specific workspace directory
+    if (process.platform !== 'win32') {
+      try {
+        spawn('pkill', ['-9', '-f', workspaceId], { shell: false });
+      } catch { /* ignore */ }
+    }
     delete childEnv.JWT_SECRET;
     delete childEnv.JWT_EXPIRES_IN;
     delete childEnv.DB_STORAGE;
