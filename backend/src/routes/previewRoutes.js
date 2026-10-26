@@ -126,7 +126,12 @@ const proxyHandler = (req, res) => {
       proxyRes.on('data', (chunk) => chunks.push(chunk));
       proxyRes.on('end', () => {
         let html = Buffer.concat(chunks).toString('utf-8');
-        const baseTag = `<base href="/api/preview/${workspaceId}/">`;
+        const prefix = `/api/preview/${workspaceId}/`;
+        const baseTag = `<base href="${prefix}">`;
+
+        // Rewrite root-relative asset URLs (e.g. /src/main.jsx, /@vite/client)
+        // so they route through the proxy subpath instead of the server root
+        html = html.replace(/(src|href)=["']\/(?!\/)([^"']*)["']/g, `$1="${prefix}$2"`);
 
         if (html.includes('<head>')) {
           html = html.replace('<head>', `<head>\n  ${baseTag}`);
