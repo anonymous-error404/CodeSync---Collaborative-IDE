@@ -13,8 +13,44 @@ import { checkPathLocked } from '../controllers/lockController.js';
  * Enforces both Workspace RBAC (Professional) and Teaching Session RBAC (Education).
  * @param {import('socket.io').Server} io 
  */
+// Module-level namespace reference so REST controllers can broadcast file tree updates without circular imports
+let _workspaceNamespace = null;
+
+/**
+ * Broadcast an updated file tree to every client connected to a workspace room.
+ * Called by workspaceController after create / delete / rename file operations.
+ * @param {string} workspaceId
+ */
+export async function broadcastFileTreeUpdate(workspaceId) {
+  if (!_workspaceNamespace || !workspaceId) return;
+  try {
+    const fileTree = await storageService.getFileTree(workspaceId);
+    _workspaceNamespace.to(`workspace:${workspaceId}`).emit('tree-updated', { workspaceId, fileTree });
+  } catch (err) {
+    console.error('[Socket] Failed to broadcast file tree update:', err);
+  }
+}
+
+/**
+ * Broadcast task events (created, updated, deleted) to every client in the workspace room.
+ * Called by professionalController after REST task operations.
+ * @param {string} workspaceId
+ * @param {string} event - e.g. 'task:created', 'task:updated', 'task:deleted'
+ * @param {object} data
+ */
+export function broadcastTaskEvent(workspaceId, event, data) {
+  if (!_workspaceNamespace || !workspaceId) return;
+  try {
+    _workspaceNamespace.to(`workspace:${workspaceId}`).emit(event, data);
+  } catch (err) {
+    console.error(`[Socket] Failed to broadcast task event ${event}:`, err);
+  }
+}
+
+
 function initWorkspaceSockets(io) {
   const workspaceNamespace = io.of('/workspace');
+  _workspaceNamespace = workspaceNamespace; // expose for broadcastFileTreeUpdate
 
   // Real-time notification when a terminal process starts listening on an HTTP port
   setPortNotifier((wsId, port) => {
@@ -23,6 +59,8 @@ function initWorkspaceSockets(io) {
 
   // Room voice call tracking: roomName -> { teacherSocketId, teacherName }
   const activeCalls = new Map();
+  // In-memory chat history: workspaceId -> Message[] (capped at 200 messages)
+  const workspaceChatHistory = new Map();
 
   workspaceNamespace.on('connection', (socket) => {
     let currentWorkspaceId = null;
@@ -143,6 +181,10 @@ function initWorkspaceSockets(io) {
       }
 
       // Notify client of currently active web preview port if running
+      // Send chat history to joining client
+      const chatHistory = workspaceChatHistory.get(workspaceId) || [];
+      socket.emit('chat-history', { messages: chatHistory });
+
       const previewInfo = getPreviewPort(workspaceId);
       if (previewInfo?.port) {
         socket.emit('preview:port-detected', { port: previewInfo.port });
@@ -272,21 +314,32 @@ function initWorkspaceSockets(io) {
       });
     });
 
+    // Real-time file-tree sync (client-triggered redundancy path)
+    socket.on('file-tree-changed', ({ workspaceId: wsId }) => {
+      if (wsId) broadcastFileTreeUpdate(wsId);
+    });
+
     // Real-time workspace chat
     socket.on('chatMessage', ({ workspaceId, id, text, timestamp }) => {
       if (!workspaceId || typeof text !== 'string') return;
-      const roomName = `workspace:${workspaceId}`;
-      if (!socket.rooms.has(roomName)) return;
-
       const clean = text.trim().slice(0, 2000);
       if (!clean) return;
 
-      socket.to(roomName).emit('chatMessage', {
-        id,
+      const messageObj = {
+        id: id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         sender: socket.username || 'Collaborator',
         text: clean,
-        timestamp,
-      });
+        timestamp: timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      if (!workspaceChatHistory.has(workspaceId)) {
+        workspaceChatHistory.set(workspaceId, []);
+      }
+      const history = workspaceChatHistory.get(workspaceId);
+      history.push(messageObj);
+      if (history.length > 200) history.shift();
+
+      socket.to(`workspace:${workspaceId}`).emit('chatMessage', messageObj);
     });
 
     // Voice call (teacher in education mode, or owner/admin in professional mode)

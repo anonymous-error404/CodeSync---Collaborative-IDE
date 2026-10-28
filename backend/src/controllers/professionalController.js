@@ -1,4 +1,5 @@
 import { ProjectTask, CodeReview, User, WorkspaceMember } from '../models/index.js';
+import { broadcastTaskEvent } from '../sockets/workspaceSocket.js';
 import asyncWrapper from '../utils/asyncWrapper.js';
 
 // ─── TASKS MANAGEMENT ────────────────────────────────────────────────────────
@@ -19,7 +20,17 @@ export const getTasks = asyncWrapper(async (req, res) => {
 
 export const createTask = asyncWrapper(async (req, res) => {
   const workspaceId = req.params.workspaceId || req.params.id;
-  const { title, description, priority, assignedTo, filePath } = req.body;
+  const { title, description, priority, assignedTo, filePath, sprint, storyPoints } = req.body;
+
+  const actorRole = req.membership?.role || 'viewer';
+  const isLeader = ['team_leader', 'owner', 'admin', 'teacher'].includes(actorRole);
+
+  if (!isLeader) {
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied: Only a team leader or workspace administrator can create tasks',
+    });
+  }
 
   if (!title || !title.trim()) {
     return res.status(400).json({ success: false, error: 'Task title is required' });
@@ -44,6 +55,8 @@ export const createTask = asyncWrapper(async (req, res) => {
     description: description ? description.trim() : null,
     priority: taskPriority,
     status: 'todo',
+    sprint: (sprint && sprint.trim()) || 'Sprint 1',
+    storyPoints: Number(storyPoints) || 3,
     assignedTo: assignedTo || null,
     createdBy: req.user.id,
     filePath: filePath || null,
@@ -56,6 +69,9 @@ export const createTask = asyncWrapper(async (req, res) => {
     ],
   });
 
+  // Broadcast real-time task creation across workspace
+  broadcastTaskEvent(workspaceId, 'task:created', { task: fullTask });
+
   res.status(201).json({ success: true, task: fullTask });
 });
 
@@ -66,6 +82,20 @@ export const updateTask = asyncWrapper(async (req, res) => {
   const task = await ProjectTask.findByPk(taskId);
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
+  }
+
+  const actorRole = req.membership?.role || 'viewer';
+  const isLeader = ['team_leader', 'owner', 'admin', 'teacher'].includes(actorRole);
+  const isCreator = task.createdBy === req.user.id;
+
+  // Regular members can update task status (dragging cards on the Kanban board) or file link
+  if (!isLeader && !isCreator) {
+    if (title !== undefined || description !== undefined || priority !== undefined || assignedTo !== undefined || sprint !== undefined || storyPoints !== undefined) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: Only a team leader can reassign tasks or modify sprint details',
+      });
+    }
   }
 
   const validStatuses = ['todo', 'in_progress', 'in_review', 'done'];
@@ -92,11 +122,14 @@ export const updateTask = asyncWrapper(async (req, res) => {
     }
   }
 
+  const { sprint, storyPoints } = req.body;
   if (title !== undefined) task.title = title.trim();
   if (description !== undefined) task.description = description ? description.trim() : null;
   if (status !== undefined) task.status = status;
   if (priority !== undefined) task.priority = priority;
   if (filePath !== undefined) task.filePath = filePath || null;
+  if (sprint !== undefined) task.sprint = sprint.trim() || 'Sprint 1';
+  if (storyPoints !== undefined) task.storyPoints = Number(storyPoints) || 0;
 
   await task.save();
 
@@ -106,6 +139,9 @@ export const updateTask = asyncWrapper(async (req, res) => {
       { model: User, as: 'creator', attributes: ['id', 'username', 'email'] },
     ],
   });
+
+  // Broadcast real-time task update across workspace
+  broadcastTaskEvent(task.workspaceId, 'task:updated', { task: updatedTask });
 
   res.status(200).json({ success: true, task: updatedTask });
 });
@@ -127,6 +163,9 @@ export const deleteTask = asyncWrapper(async (req, res) => {
   }
 
   await task.destroy();
+
+  // Broadcast real-time task deletion across workspace
+  broadcastTaskEvent(task.workspaceId, 'task:deleted', { taskId: Number(taskId) });
 
   res.status(200).json({ success: true, message: 'Task deleted successfully', taskId: Number(taskId) });
 });

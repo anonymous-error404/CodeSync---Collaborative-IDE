@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { Mic, MicOff, Send, X, MessageSquare, Sparkles } from 'lucide-react';
 
-interface Message {
+export interface ChatMessage {
   id: string;
   sender: string;
   text: string;
@@ -13,16 +13,22 @@ interface ChatAndVoicePanelProps {
   username?: string;
   socket?: Socket | null;
   workspaceId?: string;
+  messages?: ChatMessage[];
+  onSendMessage?: (text: string) => void;
   onClose?: () => void;
 }
 
 export default function ChatAndVoicePanel({
-  username = 'easha_16',
+  username = 'Anonymous',
   socket,
   workspaceId,
+  messages: propMessages,
+  onSendMessage,
   onClose,
 }: ChatAndVoicePanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+  const messages = propMessages ?? localMessages;
+
   const [inputMessage, setInputMessage] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isConnected, setIsConnected] = useState(socket?.connected ?? false);
@@ -31,7 +37,7 @@ export default function ChatAndVoicePanel({
   const baseTextRef = useRef('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // Track connection state and listen for incoming messages
+  // Track connection state and listen for incoming messages (if not handled by parent)
   useEffect(() => {
     if (!socket) {
       setIsConnected(false);
@@ -42,22 +48,26 @@ export default function ChatAndVoicePanel({
     const onConnect = () => setIsConnected(true);
     const onDisconnect = () => setIsConnected(false);
 
-    const handleIncomingMessage = (msg: Message) => {
-      setMessages((prev) =>
+    const handleIncomingMessage = (msg: ChatMessage) => {
+      setLocalMessages((prev) =>
         prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
       );
     };
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('chatMessage', handleIncomingMessage);
+    if (!propMessages) {
+      socket.on('chatMessage', handleIncomingMessage);
+    }
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('chatMessage', handleIncomingMessage);
+      if (!propMessages) {
+        socket.off('chatMessage', handleIncomingMessage);
+      }
     };
-  }, [socket]);
+  }, [socket, propMessages]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -76,7 +86,6 @@ export default function ChatAndVoicePanel({
     recognition.lang = 'en-US';
 
     recognition.onresult = (event: any) => {
-      // event.results holds the whole session so far, so rebuild from index 0
       let transcript = '';
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
@@ -124,22 +133,24 @@ export default function ChatAndVoicePanel({
       setIsListening(false);
     }
 
-    const newMessage: Message = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      sender: username,
-      text,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    };
+    if (onSendMessage) {
+      onSendMessage(text);
+    } else {
+      const newMessage: ChatMessage = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        sender: username,
+        text,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
 
-    // Always show my own message immediately
-    setMessages((prev) => [...prev, newMessage]);
+      setLocalMessages((prev) => [...prev, newMessage]);
 
-    // Broadcast to everyone else in the workspace
-    if (socket && isConnected) {
-      socket.emit('chatMessage', { ...newMessage, workspaceId });
+      if (socket) {
+        socket.emit('chatMessage', { ...newMessage, workspaceId });
+      }
     }
 
     setInputMessage('');

@@ -412,7 +412,7 @@ export function Dashboard({ onOpen }: Props) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
-      {/* ── Header ── */}
+      {/* ΓöÇΓöÇ Header ΓöÇΓöÇ */}
       <header style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 30 }}>
         <div className="max-w-7xl mx-auto px-6 sm:px-10 flex items-center justify-between" style={{ height: 68 }}>
 
@@ -469,10 +469,10 @@ export function Dashboard({ onOpen }: Props) {
         </div>
       </header>
 
-      {/* ── Main Container ── */}
+      {/* ΓöÇΓöÇ Main Container ΓöÇΓöÇ */}
       <main className="max-w-7xl mx-auto px-6 sm:px-10 py-10 sm:py-14">
 
-        {/* ── Hero / Page Title Row ── */}
+        {/* ΓöÇΓöÇ Hero / Page Title Row ΓöÇΓöÇ */}
         <div className="flex items-start sm:items-center justify-between mb-8 flex-col sm:flex-row gap-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -515,7 +515,7 @@ export function Dashboard({ onOpen }: Props) {
           </div>
         </div>
 
-        {/* ── Join workspace inline form ── */}
+        {/* ΓöÇΓöÇ Join workspace inline form ΓöÇΓöÇ */}
         {showJoin && (
           <div className="rounded-2xl p-7 sm:p-8 mb-10 shadow-2xl animate-fade-in"
             style={{ background: 'var(--surface)', border: '1.5px solid var(--accent)' }}>
@@ -567,7 +567,7 @@ export function Dashboard({ onOpen }: Props) {
           </div>
         )}
 
-        {/* ── New workspace inline form ── */}
+        {/* ΓöÇΓöÇ New workspace inline form ΓöÇΓöÇ */}
         {showNew && (
           <div className="rounded-2xl p-7 sm:p-8 mb-10 shadow-2xl animate-fade-in"
             style={{ background: 'var(--surface)', border: '1.5px solid var(--accent)' }}>
@@ -728,7 +728,7 @@ export function Dashboard({ onOpen }: Props) {
                             setShowMemberDropdown(false);
                           }
                         }}
-                        placeholder="Type registered user's email or username to search…"
+                        placeholder="Type registered user's email or username to searchΓÇª"
                         className="w-full h-11 px-4 text-sm rounded-xl focus:outline-none shadow-inner"
                         style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                       />
@@ -926,11 +926,11 @@ export function Dashboard({ onOpen }: Props) {
           </div>
         )}
 
-        {/* ── Workspace grid / Empty State ── */}
+        {/* ΓöÇΓöÇ Workspace grid / Empty State ΓöÇΓöÇ */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Spinner size={32} />
-            <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>Loading workspaces…</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>Loading workspacesΓÇª</p>
           </div>
         ) : workspaces.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in" style={{ color: 'var(--muted)' }}>
@@ -964,7 +964,7 @@ export function Dashboard({ onOpen }: Props) {
             </div>
           </div>
         ) : (
-          /* ── Workspaces Section (when workspaces exist) ── */
+          /* ΓöÇΓöÇ Workspaces Section (when workspaces exist) ΓöÇΓöÇ */
           <div>
             {/* Workspace Controls & Bulk Selection Bar */}
             <div
@@ -1055,7 +1055,7 @@ export function Dashboard({ onOpen }: Props) {
               )}
             </div>
 
-            {/* ── Workspaces Grid ── */}
+            {/* ΓöÇΓöÇ Workspaces Grid ΓöÇΓöÇ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {workspaces.map(ws => {
                 const wsType = (ws.type || 'educational') as WorkspaceType;
@@ -1168,6 +1168,8 @@ export function Dashboard({ onOpen }: Props) {
                               wsType === 'competitive'
                                 ? ws.myRole === 'team_member'
                                   ? 'rgba(16, 185, 129, 0.15)'
+                                  : ws.myRole === 'team_leader'
+                                  ? 'rgba(99, 102, 241, 0.15)'
                                   : 'rgba(234, 179, 8, 0.15)'
                                 : ws.myRole === 'teacher'
                                 ? 'rgba(168, 85, 247, 0.15)'
@@ -1184,6 +1186,8 @@ export function Dashboard({ onOpen }: Props) {
                               wsType === 'competitive'
                                 ? ws.myRole === 'team_member'
                                   ? '#10b981'
+                                  : ws.myRole === 'team_leader'
+                                  ? '#818cf8'
                                   : '#eab308'
                                 : ws.myRole === 'teacher'
                                 ? '#c084fc'
@@ -1200,6 +1204,8 @@ export function Dashboard({ onOpen }: Props) {
                           }}>
                           {wsType === 'competitive' && (ws.myRole === 'admin' || ws.myRole === 'owner') ? (
                             <span className="flex items-center gap-1"><Crown size={12} /> Admin (Comment)</span>
+                          ) : wsType === 'competitive' && ws.myRole === 'team_leader' ? (
+                            <span className="flex items-center gap-1"><Crown size={12} /> Team Leader</span>
                           ) : ws.myRole === 'team_member' ? (
                             <span className="flex items-center gap-1"><Terminal size={12} /> Team Member</span>
                           ) : ws.myRole === 'teacher' ? (

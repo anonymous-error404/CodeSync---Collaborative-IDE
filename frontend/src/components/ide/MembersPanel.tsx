@@ -68,7 +68,7 @@ export function MembersPanel({
     : isProfessional
     ? (isOwner || isAdmin || isTeamLeader)
     : isCompetitive
-    ? (isOwner || isAdmin)
+    ? (isOwner || isAdmin || isTeamLeader)
     : (isOwner || isAdmin || isTeacher || isTeamLeader);
   const canManageInvites = canManageRoles || myRole === 'editor' || myRole === 'developer';
 
@@ -243,8 +243,14 @@ export function MembersPanel({
   };
 
   const canChangeMember = (targetMember: WorkspaceMember) => {
-    if (isEducational || isCompetitive) return false;
+    if (isEducational) return false;
     if (targetMember.userId === currentUserId) return false;
+    if (isCompetitive) {
+      if (isOwner || isAdmin) {
+        return targetMember.role === 'team_member' || targetMember.role === 'team_leader';
+      }
+      return false;
+    }
     if (isProfessional) {
       if (isOwner || isAdmin || isTeamLeader) {
         return targetMember.role === 'developer' || targetMember.role === 'tester';
@@ -265,6 +271,9 @@ export function MembersPanel({
     if (isCompetitive) {
       if (isOwner || isAdmin) {
         return targetMember.role !== 'owner' && targetMember.role !== 'admin';
+      }
+      if (isTeamLeader) {
+        return targetMember.role === 'team_member';
       }
       return false;
     }
@@ -442,7 +451,8 @@ export function MembersPanel({
     switch (role) {
       case 'owner': return '#e3b341';
       case 'teacher': return '#a855f7';
-      case 'team_leader': return '#f59e0b';
+      case 'team_leader': return '#818cf8';
+      case 'team_member': return '#10b981';
       case 'admin': return '#58a6ff';
       case 'editor': return '#3fb950';
       case 'developer': return '#10b981';
@@ -458,6 +468,7 @@ export function MembersPanel({
       case 'owner': return <Crown size={12} />;
       case 'teacher': return <GraduationCap size={12} />;
       case 'team_leader': return <Crown size={12} />;
+      case 'team_member': return <Edit3 size={12} />;
       case 'admin': return <Shield size={12} />;
       case 'editor': return <Edit3 size={12} />;
       case 'developer': return <Edit3 size={12} />;
@@ -518,7 +529,7 @@ export function MembersPanel({
                       : isProfessional
                       ? (myRole === 'team_leader' || myRole === 'owner' || myRole === 'admin' ? '#58a6ff' : myRole === 'developer' ? '#10b981' : '#f43f5e')
                       : isCompetitive
-                      ? (myRole === 'admin' || myRole === 'owner' ? '#eab308' : '#10b981')
+                      ? (myRole === 'admin' || myRole === 'owner' ? '#eab308' : myRole === 'team_leader' ? '#818cf8' : '#10b981')
                       : roleColor(myRole)
                   }}>
                   You: {
@@ -527,7 +538,7 @@ export function MembersPanel({
                       : isProfessional
                       ? (myRole === 'team_leader' ? 'Team Lead' : myRole === 'owner' || myRole === 'admin' ? 'Admin' : myRole === 'developer' ? 'Developer' : myRole === 'tester' ? 'Tester' : myRole)
                       : isCompetitive
-                      ? (myRole === 'admin' || myRole === 'owner' ? 'Admin (View & Comment)' : 'Team Member (Edit)')
+                      ? (myRole === 'admin' || myRole === 'owner' ? 'Admin (View & Comment)' : myRole === 'team_leader' ? 'Team Leader (All Access + Kanban)' : 'Team Member (Edit)')
                       : (myRole === 'editor' ? 'Edit' : myRole === 'viewer' ? 'View' : myRole)
                   }
                 </span>
@@ -1027,11 +1038,28 @@ export function MembersPanel({
                                 style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
                                 <Crown size={11} /> Admin
                               </span>
+                            ) : canChangeMember(m) ? (
+                              <select
+                                value={m.role === 'team_leader' ? 'team_leader' : 'team_member'}
+                                onChange={(e) => handleRoleChange(m.userId, e.target.value as WorkspaceRole)}
+                                className="text-xs p-1 rounded outline-none cursor-pointer font-medium"
+                                style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                              >
+                                <option value="team_leader">Team Leader</option>
+                                <option value="team_member">Team Member</option>
+                              </select>
                             ) : (
-                              <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold"
-                                style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                                <Edit3 size={11} /> Team Member
-                              </span>
+                              m.role === 'team_leader' ? (
+                                <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold"
+                                  style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                                  <Crown size={11} /> Team Leader
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold"
+                                  style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                                  <Edit3 size={11} /> Team Member
+                                </span>
+                              )
                             )
                           ) : isEducational ? (
                             isTargetOwner ? (
@@ -1321,6 +1349,7 @@ export function MembersPanel({
                       ) : workspaceType === 'competitive' ? (
                         <>
                           <option value="team_member">Team Member</option>
+                          <option value="team_leader">Team Leader</option>
                           {isOwner && <option value="admin">Admin</option>}
                         </>
                       ) : (

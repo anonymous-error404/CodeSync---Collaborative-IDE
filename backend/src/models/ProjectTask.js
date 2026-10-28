@@ -33,6 +33,16 @@ ProjectTask.init(
       allowNull: false,
       defaultValue: 'medium',
     },
+    sprint: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'Sprint 1',
+    },
+    storyPoints: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 3,
+    },
     assignedTo: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -53,5 +63,19 @@ ProjectTask.init(
     timestamps: true,
   }
 );
+
+// Gracefully ensure new columns exist on existing databases
+setTimeout(async () => {
+  try {
+    await sequelize.query('ALTER TABLE project_tasks ADD COLUMN sprint VARCHAR(255) DEFAULT "Sprint 1";');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await sequelize.query('ALTER TABLE project_tasks ADD COLUMN storyPoints INTEGER DEFAULT 3;');
+  } catch {
+    /* column already exists */
+  }
+}, 500);
 
 export default ProjectTask;

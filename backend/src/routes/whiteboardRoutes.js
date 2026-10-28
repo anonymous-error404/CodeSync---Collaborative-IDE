@@ -9,6 +9,8 @@ import {
   cleanLayout,
   generateTaskProposals,
   generateFromPrompt,
+  aiTextToDiagram,
+  aiDiagramToCode,
 } from '../controllers/whiteboardController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { requireWorkspaceMember } from '../middleware/rbacMiddleware.js';
@@ -29,5 +31,9 @@ router.post('/whiteboards/recognize-stroke', authenticateToken, recognizeStroke)
 router.post('/whiteboards/clean-layout', authenticateToken, cleanLayout);
 router.post('/whiteboards/generate-tasks', authenticateToken, generateTaskProposals);
 router.post('/whiteboards/generate-from-prompt', authenticateToken, generateFromPrompt);
+
+// AI Diagram & Code Hub routes
+router.post('/whiteboards/ai/text-to-diagram', authenticateToken, aiTextToDiagram);
+router.post('/whiteboards/ai/diagram-to-code', authenticateToken, aiDiagramToCode);
 
 export default router;

@@ -14,6 +14,7 @@ import {
   User,
 } from '../models/index.js';
 import { checkPathLocked } from './lockController.js';
+import { broadcastFileTreeUpdate } from '../sockets/workspaceSocket.js';
 
 // Project template definitions — maps template key to initial file tree
 const PROJECT_TEMPLATES = {
@@ -448,6 +449,7 @@ const createItem = asyncWrapper(async (req, res) => {
   }
 
   const item = await storageService.createItem(id, filePath, !!isDirectory);
+  broadcastFileTreeUpdate(id).catch(() => {});
   res.status(201).json({ success: true, item });
 });
 
@@ -477,6 +479,7 @@ const deleteItem = asyncWrapper(async (req, res) => {
   }
 
   const result = await storageService.deleteItem(id, filePath);
+  broadcastFileTreeUpdate(id).catch(() => {});
   res.status(200).json({ success: true, ...result });
 });
 
@@ -506,6 +509,7 @@ const renameItem = asyncWrapper(async (req, res) => {
   }
 
   const result = await storageService.renameItem(id, oldPath, newPath);
+  broadcastFileTreeUpdate(id).catch(() => {});
   res.status(200).json({ success: true, ...result });
 });
 

@@ -11,7 +11,7 @@ import {
   Undo2, Redo2, Download, LayoutDashboard, Terminal,
   FileText, ShieldCheck, Maximize2,
   CheckCircle, AlertCircle, Clock, ChevronDown, Loader2,
-  Sun, Moon,
+  Sun, Moon, Sparkles,
 } from 'lucide-react';
 import type { LayoutAlgorithm } from '../../types/whiteboard';
 
@@ -30,6 +30,7 @@ interface Props {
   onExport: (format: 'json' | 'svg' | 'png') => void;
   onOpenCommandPalette: () => void;
   onOpenTextToDiagram: () => void;
+  onOpenAiHub?: () => void;
   onOpenValidation: () => void;
   selectedCount: number;
   boardTheme?: 'dark' | 'light';
@@ -157,6 +158,7 @@ export function WhiteboardHeader({
   onExport,
   onOpenCommandPalette,
   onOpenTextToDiagram,
+  onOpenAiHub,
   onOpenValidation,
   selectedCount,
   boardTheme = 'dark',
@@ -245,9 +247,17 @@ export function WhiteboardHeader({
       />
 
       <HeaderButton
+        icon={Sparkles}
+        label="AI Hub"
+        onClick={onOpenAiHub || onOpenTextToDiagram}
+        title="AI Text-to-Diagram & Diagram-to-Code generator"
+        accent
+      />
+
+      <HeaderButton
         icon={FileText}
         label="Text→Diagram"
-        onClick={onOpenTextToDiagram}
+        onClick={onOpenAiHub || onOpenTextToDiagram}
         title="Convert text to diagram"
       />
 

@@ -18,9 +18,9 @@ router.use('/workspaces', authenticateToken);
 
 // ── Task Routes ──
 router.get('/workspaces/:id/tasks', requireWorkspaceMember('viewer'), getTasks);
-router.post('/workspaces/:id/tasks', requireWorkspaceMember('developer'), createTask);
-router.patch('/workspaces/:id/tasks/:taskId', requireWorkspaceMember('developer'), updateTask);
-router.delete('/workspaces/:id/tasks/:taskId', requireWorkspaceMember('developer'), deleteTask);
+router.post('/workspaces/:id/tasks', requireWorkspaceMember('viewer'), createTask);
+router.patch('/workspaces/:id/tasks/:taskId', requireWorkspaceMember('viewer'), updateTask);
+router.delete('/workspaces/:id/tasks/:taskId', requireWorkspaceMember('viewer'), deleteTask);
 
 // ── Code Review Routes ──
 router.get('/workspaces/:id/reviews', requireWorkspaceMember('viewer'), getReviews);

@@ -110,7 +110,7 @@ export const collabService = {
   getTasks: (wsId: string, token: string | null) =>
     req<{ success: boolean; tasks: ProjectTask[] }>(`/api/workspaces/${wsId}/tasks`, token),
 
-  createTask: (wsId: string, data: { title: string; description?: string; priority?: TaskPriority; assignedTo?: number | null; filePath?: string | null }, token: string | null) =>
+  createTask: (wsId: string, data: { title: string; description?: string; priority?: TaskPriority; assignedTo?: number | null; filePath?: string | null; sprint?: string; storyPoints?: number }, token: string | null) =>
     req<{ success: boolean; task: ProjectTask }>(`/api/workspaces/${wsId}/tasks`, token, {
       method: 'POST',
       body: JSON.stringify(data),

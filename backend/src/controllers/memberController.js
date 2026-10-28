@@ -44,7 +44,7 @@ export const updateMemberRole = asyncWrapper(async (req, res) => {
     member.role = role;
     if (role === 'viewer' || role === 'tester') {
       member.studentAccess = 'viewer';
-    } else if (role === 'editor' || role === 'developer' || role === 'team_member') {
+    } else if (role === 'editor' || role === 'developer' || role === 'team_member' || role === 'team_leader') {
       member.studentAccess = 'editor';
     }
   }

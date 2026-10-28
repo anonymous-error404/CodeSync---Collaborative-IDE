@@ -33,6 +33,7 @@ import { CommandPalette } from './CommandPalette';
 import { TextToDiagramModal } from './TextToDiagramModal';
 import { ValidationPanel } from './ValidationPanel';
 import { TaskProposalModal } from './TaskProposalModal';
+import { AiDiagramHubModal } from './AiDiagramHubModal';
 
 import { updateWhiteboard, recognizeStroke, generateTaskProposals, fetchWhiteboard } from '../../services/whiteboardApi';
 import { recognizeStrokeLocally } from '../../services/strokeRecognition';
@@ -67,11 +68,13 @@ const NODE_TYPE_DEFAULTS: Partial<Record<DiagramNodeType, Partial<CanvasElement>
 
 interface Props {
   boardId?: string;
-  workspace?: { id: string; name?: string };
+  workspace?: { id: string; name?: string; type?: 'educational' | 'professional' | 'competitive' };
   initialData?: WhiteboardData;
   socket?: Socket | null;
   userId?: string;
   username?: string;
+  userRole?: string;
+  sessionRole?: string;
   onOpenFile?: (path: string) => void;
   onOpenInIDE?: (path: string) => void;
   onTaskCreated?: (task: Record<string, unknown>) => void;
@@ -664,6 +667,7 @@ export function IntelligentWhiteboard({
 
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showTextToDiagram, setShowTextToDiagram] = useState(false);
+  const [showAiHub, setShowAiHub] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskProposals, setTaskProposals] = useState<any[]>([]);
@@ -1152,6 +1156,7 @@ export function IntelligentWhiteboard({
         onExport={handleExport}
         onOpenCommandPalette={() => { if (!readOnly) setShowCommandPalette(true); }}
         onOpenTextToDiagram={() => { if (!readOnly) setShowTextToDiagram(true); }}
+        onOpenAiHub={() => { if (!readOnly) setShowAiHub(true); }}
         onOpenValidation={() => setShowValidation(true)}
         selectedCount={selectedIds.length}
         boardTheme={boardTheme}
@@ -1254,6 +1259,19 @@ export function IntelligentWhiteboard({
           existingElements={elements}
           onClose={() => setShowTextToDiagram(false)}
           onConfirm={handleTextToDiagramConfirm}
+        />
+      )}
+
+      {showAiHub && (
+        <AiDiagramHubModal
+          workspaceId={workspace?.id || boardId || ''}
+          workspaceType={workspace?.type || 'professional'}
+          userRole={userRole || 'developer'}
+          sessionRole={sessionRole}
+          currentElements={elements}
+          onAddElements={handleAiElementsAdded}
+          onOpenFileInIDE={onOpenFile || onOpenInIDE}
+          onClose={() => setShowAiHub(false)}
         />
       )}
 

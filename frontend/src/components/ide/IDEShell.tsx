@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import ChatAndVoicePanel from './ChatAndVoicePanel';
+import ChatAndVoicePanel, { type ChatMessage } from './ChatAndVoicePanel';
 import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder, FolderPlus,
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
@@ -18,6 +18,7 @@ import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { ProfessionalPanel } from './ProfessionalPanel';
+import { KanbanSprintHub } from '../kanban/KanbanSprintHub';
 import { LineCommentThread } from './LineCommentThread';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
@@ -125,7 +126,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [terminalCwd, setTerminalCwd] = useState('~');
   const [saving, setSaving] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [liveSocket, setLiveSocket] = useState<Socket | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const showChatRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    showChatRef.current = showChat;
+    if (showChat) {
+      setUnreadChatCount(0);
+    }
+  }, [showChat]);
 
   // Collab state
   const [showMembersPanel, setShowMembersPanel] = useState(false);
@@ -174,6 +186,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // ── Professional Workspace State ──
   const [showProfessionalPanel, setShowProfessionalPanel] = useState(false);
+  const [showKanbanHub, setShowKanbanHub] = useState(false);
   const [activeMemberFiles, setActiveMemberFiles] = useState<Record<number, string>>({});
   const [openReviewsCount, setOpenReviewsCount] = useState<number>(0);
   const [projectToast, setProjectToast] = useState<string | null>(null);
@@ -200,6 +213,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const isDeveloper = currentRole === 'developer';
   const isCompetitive = workspaceType === 'competitive';
   const isCompetitiveAdmin = isCompetitive && (currentRole === 'admin' || currentRole === 'owner');
+  const isCompetitiveLeader = isCompetitive && currentRole === 'team_leader';
   const isCompetitiveMember = isCompetitive && currentRole === 'team_member';
 
   const isAccessComment = studentAccess === 'commenter' || studentAccess === 'comment';
@@ -213,6 +227,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   const canComment =
     isCompetitiveAdmin ||
+    isCompetitiveLeader ||
     isCompetitiveMember ||
     canAdmin ||
     (workspaceType === 'educational' && sessionActive && (isAccessComment || isAccessEdit)) ||
@@ -459,6 +474,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       transports: ['websocket', 'polling'],
     });
     socketRef.current = socket;
+    setLiveSocket(socket);
 
     socket.on('connect', () => {
       setSocketConnected(true);
@@ -858,7 +874,28 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setTimeout(() => setProjectToast(null), 4000);
     });
 
-    return () => { socket.disconnect(); };
+    socket.on('tree-updated', (data: { workspaceId?: string; fileTree?: FileItem[] }) => {
+      if (data.fileTree) {
+        setTree(data.fileTree);
+      } else {
+        loadTree();
+      }
+    });
+
+    socket.on('chat-history', ({ messages }: { messages: ChatMessage[] }) => {
+      if (Array.isArray(messages)) {
+        setChatMessages(messages);
+      }
+    });
+
+    socket.on('chatMessage', (msg: ChatMessage) => {
+      setChatMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      if (!showChatRef.current) {
+        setUnreadChatCount(c => c + 1);
+      }
+    });
+
+    return () => { socket.disconnect(); setLiveSocket(null); };
   }, [workspace.id, user?.id, user?.username, token]);
 
   // Initial session fetch
@@ -964,6 +1001,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     }
   };
 
+  const handleSendChatMessage = useCallback((text: string) => {
+    if (!text || !socketRef.current) return;
+    const msgObj: ChatMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sender: user?.username || 'Anonymous',
+      text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatMessages(prev => [...prev, msgObj]);
+    socketRef.current.emit('chatMessage', { ...msgObj, workspaceId: workspace.id });
+  }, [user?.username, workspace.id]);
+
   // ── File operations ────────────────────────────────────────────────────────
   const saveActive = useCallback(async () => {
     if (!activeTab || isEffectiveReadOnly) return;
@@ -994,6 +1043,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       const d = await res.json();
       if (d.success) {
         await loadTree();
+        socketRef.current?.emit('file-tree-changed', { workspaceId: workspace.id });
         setShowNewFile(false);
         setNewFileName('');
         openFileByPath(name);
@@ -1021,6 +1071,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       const d = await res.json();
       if (d.success) {
         await loadTree();
+        socketRef.current?.emit('file-tree-changed', { workspaceId: workspace.id });
         setShowNewFolder(false);
         setNewFolderName('');
         // Auto-expand the new dir and parent dir
@@ -1101,6 +1152,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         { method: 'DELETE', headers: authHeaders() }
       );
       await loadTree();
+      socketRef.current?.emit('file-tree-changed', { workspaceId: workspace.id });
     } catch { /* ignore */ }
   };
 
@@ -1132,6 +1184,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         body: JSON.stringify({ oldPath: renamingPath, newPath }),
       });
       await loadTree();
+      socketRef.current?.emit('file-tree-changed', { workspaceId: workspace.id });
     } catch { /* ignore */ }
     setRenamingPath(null);
   };
@@ -1191,6 +1244,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         }
 
         await loadTree();
+        socketRef.current?.emit('file-tree-changed', { workspaceId: workspace.id });
         setProjectToast(`Moved ${itemName} to ${normDestDir ? `~/${normDestDir}` : 'workspace root'}`);
         setTimeout(() => setProjectToast(null), 3000);
       } else {
@@ -1879,6 +1933,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 : workspaceType === 'competitive'
                 ? isCompetitiveAdmin
                   ? 'rgba(245, 158, 11, 0.18)'
+                  : isCompetitiveLeader
+                  ? 'rgba(99, 102, 241, 0.18)'
                   : 'rgba(16, 185, 129, 0.18)'
                 : 'var(--surface-2)',
               color: workspaceType === 'educational'
@@ -1900,6 +1956,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 : workspaceType === 'competitive'
                 ? isCompetitiveAdmin
                   ? '#fbbf24'
+                  : isCompetitiveLeader
+                  ? '#818cf8'
                   : '#10b981'
                 : 'var(--text)',
               border: '1px solid var(--border)',
@@ -1908,6 +1966,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             {workspaceType === 'competitive' ? (
               isCompetitiveAdmin ? (
                 <span className="flex items-center gap-1"><Crown size={11} /> Admin (View & Comment)</span>
+              ) : isCompetitiveLeader ? (
+                <span className="flex items-center gap-1"><Trophy size={11} /> Team Leader (All Access + Kanban)</span>
               ) : (
                 <span className="flex items-center gap-1"><Trophy size={11} /> Team Member (Edit)</span>
               )
@@ -2064,21 +2124,39 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </div>
           )}
 
-          {/* Professional Sprint & Review Hub button */}
+          {/* Sprint Hub Button for Competitive & Professional Workspaces */}
+          {(workspaceType === 'professional' || workspaceType === 'competitive') && (
+            <button
+              onClick={() => setShowKanbanHub(v => !v)}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
+              style={{
+                background: showKanbanHub ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
+                color: showKanbanHub ? '#60a5fa' : 'var(--text)',
+                border: `1px solid ${showKanbanHub ? '#3b82f6' : 'var(--border)'}`,
+                cursor: 'pointer',
+              }}
+              title="Open Kanban Sprint Hub"
+            >
+              <Briefcase size={13} className="text-blue-400" />
+              <span>Sprint Hub</span>
+            </button>
+          )}
+
+          {/* Professional Code Reviews Button */}
           {workspaceType === 'professional' && (
             <button
               onClick={() => setShowProfessionalPanel(v => !v)}
               className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
               style={{
-                background: showProfessionalPanel ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
-                color: showProfessionalPanel ? '#60a5fa' : 'var(--text)',
-                border: `1px solid ${showProfessionalPanel ? '#3b82f6' : 'var(--border)'}`,
+                background: showProfessionalPanel ? 'rgba(168, 85, 247, 0.2)' : 'var(--surface-2)',
+                color: showProfessionalPanel ? '#c084fc' : 'var(--text)',
+                border: `1px solid ${showProfessionalPanel ? '#a855f7' : 'var(--border)'}`,
                 cursor: 'pointer',
               }}
-              title="Open Sprint Tasks & Code Review Hub"
+              title="Open Code Reviews"
             >
-              <Briefcase size={13} className="text-blue-400" />
-              <span>Sprint Hub</span>
+              <GitPullRequest size={13} className="text-purple-400" />
+              <span>Reviews</span>
               {openReviewsCount > 0 && (
                 <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black">
                   {openReviewsCount}
@@ -2163,6 +2241,11 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           >
             <MessageSquare size={13} style={{ color: showChat ? '#ffffff' : 'var(--accent)' }} />
             <span>Chat</span>
+            {unreadChatCount > 0 && !showChat && (
+              <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold bg-rose-500 text-white rounded-full leading-none">
+                {unreadChatCount}
+              </span>
+            )}
           </button>
 
           {/* Theme toggle */}
@@ -2671,6 +2754,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               boardId={workspace.id}
               socket={socketRef.current}
               username={user?.username ?? 'Anonymous'}
+              userRole={currentRole}
+              sessionRole={sessionRole}
               readOnly={isEffectiveReadOnly}
               onOpenFile={filePath => {
                 setActiveView('editor');
@@ -3376,6 +3461,21 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         />
       )}
 
+      {/* Kanban Sprint Hub (Competitive & Professional) */}
+      {showKanbanHub && (workspaceType === 'professional' || workspaceType === 'competitive') && (
+        <KanbanSprintHub
+          workspaceId={workspace.id}
+          workspaceType={workspaceType as 'competitive' | 'professional'}
+          myRole={currentRole}
+          currentUserId={user?.id ?? 0}
+          token={token}
+          socket={liveSocket}
+          activeFilePath={activeTab?.path}
+          onOpenFile={(filePath) => openFileByPath(filePath)}
+          onClose={() => setShowKanbanHub(false)}
+        />
+      )}
+
       {/* Professional Tasks & Code Review Panel Overlay */}
       {showProfessionalPanel && (
         <ProfessionalPanel
@@ -3427,8 +3527,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         >
           <ChatAndVoicePanel
             username={user?.username ?? 'Anonymous'}
-            socket={socketRef.current}
+            socket={liveSocket}
             workspaceId={workspace.id}
+            messages={chatMessages}
+            onSendMessage={handleSendChatMessage}
             onClose={() => setShowChat(false)}
           />
         </div>

@@ -23,16 +23,16 @@ export const roleRanks = {
  * - editor/viewer/student: cannot change any roles
  */
 export function canManageMemberRole(actorRole, currentRole, newRole) {
-  if (['owner', 'teacher', 'team_leader'].includes(actorRole)) return true;
+  if (['owner', 'teacher'].includes(actorRole)) return true;
+  if (actorRole === 'team_leader') {
+    if (['owner', 'admin', 'teacher'].includes(currentRole)) return false;
+    return ['team_member', 'developer', 'tester', 'editor', 'viewer'].includes(newRole);
+  }
   if (actorRole === 'admin') {
-    // In competitive workspaces, admin can manage team_member
-    if (newRole === 'team_member') return true;
-    // Cannot touch owners, admins, teachers, or team leaders
-    if (['owner', 'admin', 'teacher', 'team_leader'].includes(currentRole)) return false;
-    // Cannot promote to admin, owner, teacher, or team leader
-    if (['owner', 'admin', 'teacher', 'team_leader'].includes(newRole)) return false;
-    // Can only manage between regular member roles
-    return ['editor', 'viewer', 'student', 'developer', 'tester', 'team_member'].includes(newRole);
+    // In competitive workspaces, admin can manage team_member and team_leader
+    if (['owner'].includes(currentRole)) return false;
+    if (['owner', 'teacher'].includes(newRole)) return false;
+    return ['editor', 'viewer', 'student', 'developer', 'tester', 'team_member', 'team_leader'].includes(newRole);
   }
   return false;
 }
@@ -44,12 +44,15 @@ export function canManageMemberRole(actorRole, currentRole, newRole) {
  * - editor/viewer/student: cannot remove anyone
  */
 export function canRemoveMember(actorRole, targetRole) {
-  if (['owner', 'teacher', 'team_leader'].includes(actorRole)) {
+  if (['owner', 'teacher'].includes(actorRole)) {
     // Cannot remove owner unless self-transfer
     return targetRole !== 'owner';
   }
-  if (actorRole === 'admin') {
+  if (actorRole === 'team_leader') {
     return !['owner', 'admin', 'teacher', 'team_leader'].includes(targetRole);
+  }
+  if (actorRole === 'admin') {
+    return !['owner', 'admin'].includes(targetRole);
   }
   return false;
 }
@@ -62,11 +65,11 @@ export function canCreateInviteRole(actorRole, inviteRole) {
   if (inviteRole === 'teacher') {
     return ['owner', 'admin'].includes(actorRole);
   }
-  // No one can claim owner or team_leader via invite
-  if (['owner', 'team_leader'].includes(inviteRole)) return false;
+  // No one can claim owner via invite
+  if (['owner'].includes(inviteRole)) return false;
 
   if (['owner', 'admin', 'teacher', 'team_leader'].includes(actorRole)) {
-    return ['admin', 'editor', 'viewer', 'student', 'developer', 'tester', 'team_member'].includes(inviteRole);
+    return ['admin', 'editor', 'viewer', 'student', 'developer', 'tester', 'team_member', 'team_leader'].includes(inviteRole);
   }
   if (['editor', 'developer'].includes(actorRole)) {
     return ['editor', 'viewer', 'developer', 'tester'].includes(inviteRole);
@@ -153,6 +156,8 @@ export function requireWorkspaceMember(minRole = 'viewer') {
           } else {
             userRank = 3; // administrative rank
           }
+        } else if (membership.role === 'team_leader') {
+          userRank = 4; // full access (view, comment, edit, kanban management)
         } else if (membership.role === 'team_member') {
           userRank = 2; // full edit access
         }

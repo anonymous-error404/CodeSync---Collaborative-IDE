@@ -1,4 +1,6 @@
 import whiteboardService from '../services/whiteboardService.js';
+import workspaceService from '../services/workspaceService.js';
+import aiWhiteboardService from '../services/aiWhiteboardService.js';
 import diagramRecognitionService from '../services/diagramRecognitionService.js';
 import nlpDiagramService from '../services/nlpDiagramService.js';
 import { WorkspaceMember } from '../models/index.js';
@@ -162,6 +164,83 @@ export async function generateTaskProposals(req, res, next) {
     const proposals = diagramRecognitionService.generateTaskProposals(elements);
     res.status(200).json({ success: true, proposals });
   } catch (error) {
+    next(error);
+  }
+}
+
+
+export async function aiTextToDiagram(req, res, next) {
+  try {
+    const { prompt, diagramType, workspaceId } = req.body;
+    let workspaceType = 'professional';
+    let userRole = 'developer';
+    let sessionRole = 'none';
+
+    if (workspaceId && req.user?.id) {
+      const ws = await workspaceService.getWorkspace(workspaceId);
+      if (ws) workspaceType = ws.type;
+
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId, userId: req.user.id },
+      });
+      if (membership) {
+        userRole = membership.role;
+        sessionRole = membership.sessionRole;
+      }
+    }
+
+    const elements = await aiWhiteboardService.generateDiagramFromText({
+      prompt,
+      diagramType,
+      workspaceType,
+      userRole,
+      sessionRole,
+    });
+
+    res.status(200).json({ success: true, elements });
+  } catch (error) {
+    if (error.status === 403) {
+      return res.status(403).json({ success: false, error: error.message });
+    }
+    next(error);
+  }
+}
+
+export async function aiDiagramToCode(req, res, next) {
+  try {
+    const { elements, prompt, language, codeType, workspaceId } = req.body;
+    let workspaceType = 'professional';
+    let userRole = 'developer';
+    let sessionRole = 'none';
+
+    if (workspaceId && req.user?.id) {
+      const ws = await workspaceService.getWorkspace(workspaceId);
+      if (ws) workspaceType = ws.type;
+
+      const membership = await WorkspaceMember.findOne({
+        where: { workspaceId, userId: req.user.id },
+      });
+      if (membership) {
+        userRole = membership.role;
+        sessionRole = membership.sessionRole;
+      }
+    }
+
+    const result = await aiWhiteboardService.generateCodeFromDiagram({
+      elements,
+      prompt,
+      language,
+      codeType,
+      workspaceType,
+      userRole,
+      sessionRole,
+    });
+
+    res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    if (error.status === 403) {
+      return res.status(403).json({ success: false, error: error.message });
+    }
     next(error);
   }
 }

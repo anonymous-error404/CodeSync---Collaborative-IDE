@@ -148,6 +148,8 @@ export interface ProjectTask {
   description?: string;
   status: TaskStatus;
   priority: TaskPriority;
+  sprint?: string;
+  storyPoints?: number;
   assignedTo?: number | null;
   createdBy: number;
   filePath?: string | null;
