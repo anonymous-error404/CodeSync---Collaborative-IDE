@@ -559,6 +559,8 @@ export function IntelligentWhiteboard({
   socket,
   userId,
   username = 'User',
+  userRole,
+  sessionRole,
   onOpenFile,
   onOpenInIDE,
   onTaskCreated,
@@ -1094,6 +1096,11 @@ export function IntelligentWhiteboard({
     };
     commit([...elements, textNode, ...newEls]);
     // Run hierarchical layout on the new nodes only
+    setTimeout(() => handleCleanLayout('hierarchical'), 100);
+  }, [elements, commit, handleCleanLayout]);
+
+  const handleAiElementsAdded = useCallback((newEls: CanvasElement[]) => {
+    commit([...elements, ...newEls]);
     setTimeout(() => handleCleanLayout('hierarchical'), 100);
   }, [elements, commit, handleCleanLayout]);
 

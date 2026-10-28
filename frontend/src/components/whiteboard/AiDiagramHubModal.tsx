@@ -1,20 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Sparkles,
   Code2,
   Layers,
   X,
-  Play,
   Copy,
   Check,
   FileCode,
   AlertTriangle,
   Lock,
   ArrowRight,
-  Database,
-  Globe,
-  Cpu,
-  RefreshCw,
   FolderPlus,
 } from 'lucide-react';
 import type { CanvasElement } from '../../types/whiteboard';
@@ -189,6 +184,10 @@ export function AiDiagramHubModal({
           isDirectory: false,
         }),
       });
+
+      if (!res.ok && res.status !== 409) {
+        throw new Error('Failed to create file in workspace');
+      }
 
       // Write code contents into file
       await fetch(`${BASE_URL}/api/workspaces/${workspaceId}/files/content`, {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import {
   GitBranch as GitBranchIcon,
   GitCommit,
@@ -122,7 +122,7 @@ export function SourceControlPanel({
     } catch { /* ignore */ }
   };
 
-  const handleSaveCredentials = async (e: React.FormEvent) => {
+  const handleSaveCredentials = async (e: FormEvent) => {
     e.preventDefault();
     setSavingCreds(true);
     setError(null);
@@ -267,7 +267,7 @@ export function SourceControlPanel({
   };
 
   // Clone in uninitialized workspace
-  const handleCloneRepo = async (e: React.FormEvent) => {
+  const handleCloneRepo = async (e: FormEvent) => {
     e.preventDefault();
     if (!cloneUrl.trim()) return;
     setCloning(true);

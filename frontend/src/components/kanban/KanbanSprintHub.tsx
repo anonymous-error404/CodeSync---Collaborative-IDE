@@ -1,20 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, type DragEvent, type FormEvent } from 'react';
 import {
   Trophy,
   Briefcase,
   Plus,
-  CheckCircle2,
-  Clock,
   Search,
-  User as UserIcon,
   FileCode,
   Trash2,
   ChevronLeft,
   ChevronRight,
-  Filter,
-  Sparkles,
-  Layers,
-  ArrowRight,
   X,
   Target,
   Flame,
@@ -224,7 +217,7 @@ export function KanbanSprintHub({
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, taskId: number) => {
+  const handleDragStart = (e: DragEvent, taskId: number) => {
     e.dataTransfer.setData('text/plain', String(taskId));
     setDraggingTaskId(taskId);
   };
@@ -253,7 +246,7 @@ export function KanbanSprintHub({
   };
 
   // Create Task
-  const handleCreateTask = async (e: React.FormEvent) => {
+  const handleCreateTask = async (e: FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
     setSubmitting(true);
@@ -698,7 +691,7 @@ export function KanbanSprintHub({
                     <option value="">Unassigned</option>
                     {members.map((m) => (
                       <option key={m.userId} value={m.userId}>
-                        {m.user?.username ?? `User #${m.userId}`} ({m.role})
+                        {m.User?.username ?? (m as any).user?.username ?? `User #${m.userId}`} ({m.role})
                       </option>
                     ))}
                   </select>
