@@ -18,6 +18,15 @@ class User extends Model {
   toJSON() {
     const values = { ...this.get() };
     delete values.password;
+    if (values.githubToken) {
+      values.hasGithubToken = true;
+      values.githubTokenMasked = values.githubToken.length > 8
+        ? `${values.githubToken.slice(0, 4)}...${values.githubToken.slice(-4)}`
+        : '••••••••';
+    } else {
+      values.hasGithubToken = false;
+    }
+    delete values.githubToken;
     return values;
   }
 }
@@ -70,6 +79,16 @@ User.init(
           msg: 'Password must be at least 6 characters long',
         },
       },
+    },
+    githubToken: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      defaultValue: null,
+    },
+    githubUsername: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: null,
     },
   },
   {

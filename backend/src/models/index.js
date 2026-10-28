@@ -61,6 +61,22 @@ const syncDatabase = async (options = {}) => {
 
     await sequelize.sync(options);
 
+    // Auto-migrate: ensure new columns exist in users
+    try {
+      const [userCols] = await sequelize.query("PRAGMA table_info('users');");
+      const userColNames = (userCols || []).map(c => c.name);
+      if (userColNames.length > 0) {
+        if (!userColNames.includes('githubToken')) {
+          await sequelize.query("ALTER TABLE users ADD COLUMN githubToken TEXT DEFAULT NULL;");
+        }
+        if (!userColNames.includes('githubUsername')) {
+          await sequelize.query("ALTER TABLE users ADD COLUMN githubUsername TEXT DEFAULT NULL;");
+        }
+      }
+    } catch (uErr) {
+      console.warn('[Database Notice]: Column check on users:', uErr.message);
+    }
+
     // Auto-migrate: ensure new columns exist in workspace_members
     try {
       const [cols] = await sequelize.query("PRAGMA table_info('workspace_members');");

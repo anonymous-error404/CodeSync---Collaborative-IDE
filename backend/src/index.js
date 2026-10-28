@@ -7,6 +7,7 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import professionalRoutes from './routes/professionalRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
 import previewRoutes from './routes/previewRoutes.js';
+import gitRoutes from './routes/gitRoutes.js';
 import initWorkspaceSockets from './sockets/workspaceSocket.js';
 import workspaceService from './services/workspaceService.js';
 import storageService from './services/storageService.js';
@@ -24,6 +25,7 @@ export {
   professionalRoutes,
   commentRoutes,
   previewRoutes,
+  gitRoutes,
   initWorkspaceSockets,
   workspaceService,
   storageService,

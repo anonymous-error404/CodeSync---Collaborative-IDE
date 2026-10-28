@@ -19,6 +19,7 @@ import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { ProfessionalPanel } from './ProfessionalPanel';
 import { KanbanSprintHub } from '../kanban/KanbanSprintHub';
+import { SourceControlPanel } from './SourceControlPanel';
 import { LineCommentThread } from './LineCommentThread';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
 import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
@@ -141,6 +142,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // Collab state
   const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [showSourceControl, setShowSourceControl] = useState(false);
   const [activeUsers, setActiveUsers] = useState<Array<{ socketId: string, username: string }>>([]);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursorData>>({});
   const [localCursor, setLocalCursor] = useState<{ line: number; col: number } | null>(null);
@@ -335,6 +337,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       if ((e.ctrlKey || e.metaKey) && isBackquote) {
         e.preventDefault();
         toggleTerminal();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault();
+        setShowSourceControl(p => !p);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -2124,6 +2130,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </div>
           )}
 
+          {/* Git Source Control Button */}
+          <button
+            onClick={() => setShowSourceControl(v => !v)}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
+            style={{
+              background: showSourceControl ? 'rgba(249, 115, 22, 0.2)' : 'var(--surface-2)',
+              color: showSourceControl ? '#fb923c' : 'var(--text)',
+              border: `1px solid ${showSourceControl ? '#f97316' : 'var(--border)'}`,
+              cursor: 'pointer',
+            }}
+            title="Open Git Source Control (Ctrl+Shift+G)"
+          >
+            <GitPullRequest size={13} className="text-orange-400" />
+            <span>Git</span>
+          </button>
+
           {/* Sprint Hub Button for Competitive & Professional Workspaces */}
           {(workspaceType === 'professional' || workspaceType === 'competitive') && (
             <button
@@ -2664,6 +2686,27 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             className="p-2 shrink-0 flex flex-col gap-1 border-t select-none"
             style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
           >
+            {/* Git Source Control Button */}
+            <button
+              onClick={() => setShowSourceControl(v => !v)}
+              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+              style={{
+                color: showSourceControl ? '#fb923c' : 'var(--text)',
+                border: 'none',
+                background: showSourceControl ? 'var(--surface)' : 'transparent',
+                cursor: 'pointer',
+              }}
+              title="Git Source Control & Version History (Ctrl+Shift+G)"
+            >
+              <div className="flex items-center gap-2">
+                <GitPullRequest size={13} className="text-orange-400" />
+                <span>Source Control</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: '#fb923c' }}>
+                Git
+              </span>
+            </button>
+
             {/* Team Members Button */}
             <button
               onClick={() => setShowMembersPanel(v => !v)}
@@ -3458,6 +3501,17 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               });
             }
           }}
+        />
+      )}
+
+      {/* Git Source Control Panel Overlay */}
+      {showSourceControl && (
+        <SourceControlPanel
+          workspaceId={workspace.id}
+          token={token}
+          currentUserId={user?.id}
+          onOpenFile={(filePath) => openFileByPath(filePath)}
+          onClose={() => setShowSourceControl(false)}
         />
       )}
 

@@ -13,6 +13,7 @@ import {
   professionalRoutes,
   commentRoutes,
   previewRoutes,
+  gitRoutes,
   initWorkspaceSockets
 } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
@@ -45,6 +46,7 @@ app.use('/api', whiteboardRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', professionalRoutes);
 app.use('/api', commentRoutes);
+app.use('/api', gitRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

@@ -66,7 +66,7 @@ const PROJECT_TEMPLATES = {
  * Optional body field: template — one of 'node-express', 'python-flask', 'python-script', 'java-maven', 'react-vite', 'blank'
  */
 const createWorkspace = asyncWrapper(async (req, res) => {
-  const { name, description, type, allowedEmails, template } = req.body;
+  const { name, description, type, allowedEmails, template, gitRepoUrl, gitBranch, gitToken, gitUsername } = req.body;
 
   // Resolve template files (null = use default README)
   const templateKey = template && PROJECT_TEMPLATES.hasOwnProperty(template) ? template : 'blank';
@@ -100,6 +100,9 @@ const createWorkspace = asyncWrapper(async (req, res) => {
     }
   }
 
+  const resolvedGitToken = gitToken || req.user?.githubToken || null;
+  const resolvedGitUser = gitUsername || req.user?.githubUsername || req.user?.username || null;
+
   const workspace = await workspaceService.createWorkspace({
     name,
     description,
@@ -108,6 +111,12 @@ const createWorkspace = asyncWrapper(async (req, res) => {
     createdBy: req.user.id,
     creatorEmail: userEmail,
     templateFiles,
+    gitRepoUrl: gitRepoUrl ? gitRepoUrl.trim() : null,
+    gitBranch: gitBranch ? gitBranch.trim() : null,
+    gitToken: resolvedGitToken,
+    gitUsername: resolvedGitUser,
+    authorName: req.user?.username,
+    authorEmail: req.user?.email,
   });
 
   const initialRole =

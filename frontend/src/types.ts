@@ -175,3 +175,37 @@ export interface CodeReview {
   reviewer?: { id: number; username: string; email: string };
 }
 
+
+export interface GitFileChange {
+  path: string;
+  status: 'M' | 'A' | 'D' | 'R' | 'U';
+}
+
+export interface GitStatus {
+  isGitRepo: boolean;
+  canInitialize?: boolean;
+  branch?: string;
+  tracking?: string | null;
+  ahead?: number;
+  behind?: number;
+  remoteUrl?: string | null;
+  lastCommit?: {
+    hash: string;
+    author: string;
+    date: string;
+    message: string;
+  } | null;
+  staged?: GitFileChange[];
+  unstaged?: GitFileChange[];
+  untracked?: GitFileChange[];
+  hasCredentials?: boolean;
+  authorName?: string | null;
+  authorEmail?: string | null;
+  error?: string;
+}
+
+export interface GitBranch {
+  name: string;
+  isCurrent: boolean;
+  isRemote: boolean;
+}

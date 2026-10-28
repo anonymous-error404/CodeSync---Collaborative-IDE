@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Plus, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2,
   GraduationCap, Briefcase, Trophy, Check, Crown, Terminal, Sparkles, Eye,
-  Shield, X
+  Shield, X, GitPullRequest
 } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
@@ -87,6 +87,11 @@ export function Dashboard({ onOpen }: Props) {
   const [newName, setNewName] = useState('');
   const [selectedType, setSelectedType] = useState<WorkspaceType>('educational');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('blank');
+  const [cloneFromGit, setCloneFromGit] = useState(false);
+  const [gitRepoUrl, setGitRepoUrl] = useState('');
+  const [gitBranch, setGitBranch] = useState('');
+  const [gitToken, setGitToken] = useState('');
+  const [showGitToken, setShowGitToken] = useState(false);
   const [allowedEmailsList, setAllowedEmailsList] = useState<string[]>([]);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSuggestions, setMemberSuggestions] = useState<Array<{ id: number; username: string; email: string }>>([]);
@@ -211,7 +216,10 @@ export function Dashboard({ onOpen }: Props) {
           name: newName.trim(),
           type: selectedType,
           allowedEmails,
-          template: selectedTemplate,
+          template: cloneFromGit ? 'blank' : selectedTemplate,
+          gitRepoUrl: cloneFromGit && gitRepoUrl.trim() ? gitRepoUrl.trim() : undefined,
+          gitBranch: cloneFromGit && gitBranch.trim() ? gitBranch.trim() : undefined,
+          gitToken: cloneFromGit && gitToken.trim() ? gitToken.trim() : undefined,
         }),
       });
       const d = await res.json();
@@ -220,6 +228,10 @@ export function Dashboard({ onOpen }: Props) {
         setShowNew(false);
         setNewName('');
         setAllowedEmailsList([]);
+        setCloneFromGit(false);
+        setGitRepoUrl('');
+        setGitBranch('');
+        setGitToken('');
         setMemberSearchQuery('');
         setMemberSuggestions([]);
         setMemberSearchError('');
@@ -822,6 +834,79 @@ export function Dashboard({ onOpen }: Props) {
                 </p>
               </div>
             )}
+
+            {/* Clone from GitHub Section */}
+            <div className="mb-5 p-3.5 rounded-xl border" style={{ background: 'var(--surface-2)', borderColor: cloneFromGit ? 'var(--accent)' : 'var(--border)' }}>
+              <div className="flex items-center justify-between cursor-pointer" onClick={() => setCloneFromGit(p => !p)}>
+                <div className="flex items-center gap-2">
+                  <GitPullRequest size={15} className="text-orange-400" />
+                  <span className="text-xs font-semibold text-[var(--text)]">Clone from GitHub Repository</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 font-mono">Git</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={cloneFromGit}
+                  onChange={(e) => setCloneFromGit(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded text-blue-600 cursor-pointer"
+                />
+              </div>
+
+              {cloneFromGit && (
+                <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-3 animate-fade-in">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
+                      GitHub Repository URL <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={gitRepoUrl}
+                      onChange={e => setGitRepoUrl(e.target.value)}
+                      placeholder="https://github.com/owner/repository.git"
+                      className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
+                        Branch (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={gitBranch}
+                        onChange={e => setGitBranch(e.target.value)}
+                        placeholder="main"
+                        className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-medium text-[var(--muted)]">
+                          GitHub Token (For private repos)
+                        </label>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showGitToken ? 'text' : 'password'}
+                          value={gitToken}
+                          onChange={e => setGitToken(e.target.value)}
+                          placeholder="ghp_••••••••••••"
+                          className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500 font-mono pr-7"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowGitToken(p => !p)}
+                          className="absolute right-2 top-2 text-[var(--muted)] hover:text-[var(--text)]"
+                        >
+                          <Eye size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Starter Project Template Selector */}
             <div className="mb-5">

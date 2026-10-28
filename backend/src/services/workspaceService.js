@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import fsSync from 'fs';
 import path from 'path';
 import storageService from './storageService.js';
+import gitService from './gitService.js';
 import { STORAGE_ROOT } from '../config/workspaceConfig.js';
 
 const META_FILENAME = '.codesync-meta.json';
@@ -34,7 +35,21 @@ class WorkspaceService {
   /**
    * Creates a new workspace session and initializes its folder.
    */
-  async createWorkspace({ name, description = '', type = 'educational', allowedEmails = [], createdBy = null, creatorEmail = null, templateFiles = null }) {
+  async createWorkspace({
+    name,
+    description = '',
+    type = 'educational',
+    allowedEmails = [],
+    createdBy = null,
+    creatorEmail = null,
+    templateFiles = null,
+    gitRepoUrl = null,
+    gitBranch = null,
+    gitToken = null,
+    gitUsername = null,
+    authorName = null,
+    authorEmail = null,
+  }) {
     const workspaceId = `ws-${uuidv4().substring(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -53,10 +68,29 @@ class WorkspaceService {
       createdAt: now,
       updatedAt: now,
       activeUsers: 0,
+      gitRepoUrl: gitRepoUrl || null,
     };
 
-    // Create directory + template or default files on disk
-    await storageService.createWorkspaceDirectory(workspaceId, templateFiles);
+    // Create directory on disk
+    await storageService.createWorkspaceDirectory(workspaceId, gitRepoUrl ? null : templateFiles);
+
+    // If a Git repository URL is provided, clone it into the new workspace
+    if (gitRepoUrl && gitRepoUrl.trim()) {
+      try {
+        await gitService.cloneRepo({
+          workspaceId,
+          repoUrl: gitRepoUrl.trim(),
+          branch: gitBranch,
+          token: gitToken,
+          username: gitUsername,
+          authorName,
+          authorEmail,
+        });
+      } catch (cloneErr) {
+        console.error(`[WorkspaceService] Git clone failed for ${workspaceId}:`, cloneErr.message);
+        workspaceMeta.gitCloneError = cloneErr.message;
+      }
+    }
 
     // Persist metadata so it survives restarts
     await this._writeMeta(workspaceMeta);
