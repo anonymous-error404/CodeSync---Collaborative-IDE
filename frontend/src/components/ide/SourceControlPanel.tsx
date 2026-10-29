@@ -314,49 +314,57 @@ export function SourceControlPanel({
 
   return (
     <div
-      className="fixed top-0 bottom-0 left-12 z-40 flex flex-col shadow-2xl animate-fade-in"
+      className="fixed top-0 bottom-0 right-0 z-50 flex flex-col shadow-2xl animate-fade-in"
       style={{
         width: 360,
         background: 'var(--surface)',
-        borderRight: '1px solid var(--border)',
+        borderLeft: '1px solid var(--border)',
       }}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between px-3.5 py-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}
+        className="flex items-center justify-between p-4 shrink-0"
+        style={{ borderBottom: '1px solid var(--border)' }}
       >
         <div className="flex items-center gap-2">
-          <GitPullRequest className="w-4 h-4 text-orange-400" />
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
-            Source Control {status?.isGitRepo && totalChanges > 0 && `(${totalChanges})`}
-          </h2>
+          <GitPullRequest size={18} className="text-orange-400" />
+          <div>
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+              Source Control {status?.isGitRepo && totalChanges > 0 && `(${totalChanges})`}
+            </h2>
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-orange-400">
+              Git & GitHub Sync
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
           <button
             onClick={fetchStatus}
             disabled={loading}
-            className="p-1 rounded hover:bg-[var(--bg)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
+            style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="Refresh Git status"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
           <button
             onClick={handleOpenCredentials}
-            className="p-1 rounded hover:bg-[var(--bg)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
+            style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="GitHub Credentials & Author Settings"
           >
-            <Key className="w-3.5 h-3.5" />
+            <Key size={16} />
           </button>
 
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--bg)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
+            style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="Close Source Control"
           >
-            <X className="w-4 h-4" />
+            <X size={18} />
           </button>
         </div>
       </div>

@@ -151,7 +151,18 @@ Keep x coordinates spaced by 220px horizontally and y coordinates spaced by 120p
   if (!rawText) return null;
 
   const parsed = JSON.parse(rawText);
-  return Array.isArray(parsed) ? parsed : parsed.elements || [];
+  const rawElements = Array.isArray(parsed) ? parsed : parsed.elements || [];
+  return rawElements.map((el, i) => ({
+    ...el,
+    id: el.id || `gemini-el-${i}-${Date.now()}`,
+    type: el.type || 'rectangle',
+    x: typeof el.x === 'number' ? el.x : (el.type === 'connector' ? 0 : 120 + (i % 3) * 240),
+    y: typeof el.y === 'number' ? el.y : (el.type === 'connector' ? 0 : 160 + Math.floor(i / 3) * 130),
+    width: el.width || (el.type === 'connector' ? undefined : 160),
+    height: el.height || (el.type === 'connector' ? undefined : 70),
+    strokeWidth: el.strokeWidth || 2,
+    strokeColor: el.strokeColor || '#58a6ff',
+  }));
 }
 
 async function callGeminiForCode(elements, prompt, language, codeType) {
@@ -218,10 +229,10 @@ function synthesizeDiagramLocally(prompt, diagramType) {
   const timestamp = Date.now();
   const elements = [];
 
-  // Split on connectors or clauses
+  // Split on connectors, punctuation, and clauses
   const tokens = prompt
     .replace(/(->|-->|=>|connects to|calls|queries|publishes to|subscribes to|reads from|writes to|then)/gi, ' -> ')
-    .split(/->|\n|,|\./)
+    .split(/->|\n|,|\.|\band\b|;/)
     .map(s => s.trim())
     .filter(Boolean);
 
@@ -229,8 +240,11 @@ function synthesizeDiagramLocally(prompt, diagramType) {
   const seenLabels = new Set();
 
   for (const token of tokens) {
-    const clean = token.replace(/^[-\*\d\.\s]+/, '').trim();
-    if (!clean || seenLabels.has(clean.toLowerCase())) continue;
+    const clean = token
+      .replace(/^[-\*\d\.\s]+/, '')
+      .replace(/^(and|with|a|an|the|create|build|diagram|of)\s+/i, '')
+      .trim();
+    if (!clean || clean.length < 2 || seenLabels.has(clean.toLowerCase())) continue;
     seenLabels.add(clean.toLowerCase());
     const kind = classifyKeyword(clean);
     parsedNodes.push({
@@ -292,6 +306,8 @@ function synthesizeDiagramLocally(prompt, diagramType) {
     elements.push({
       id: `ai-conn-${i}-${timestamp}`,
       type: 'connector',
+      x: 0,
+      y: 0,
       sourceId: src.id,
       targetId: dst.id,
       strokeColor: '#388bfd',

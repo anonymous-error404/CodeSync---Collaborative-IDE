@@ -9,7 +9,7 @@
 import { useState, useRef } from 'react';
 import {
   Undo2, Redo2, Download, LayoutDashboard, Terminal,
-  FileText, ShieldCheck, Maximize2,
+  ShieldCheck, Maximize2,
   CheckCircle, AlertCircle, Clock, ChevronDown, Loader2,
   Sun, Moon, Sparkles,
 } from 'lucide-react';
@@ -29,7 +29,7 @@ interface Props {
   onCleanLayout: (algorithm: LayoutAlgorithm) => void;
   onExport: (format: 'json' | 'svg' | 'png') => void;
   onOpenCommandPalette: () => void;
-  onOpenTextToDiagram: () => void;
+  onOpenTextToDiagram?: () => void;
   onOpenAiHub?: () => void;
   onOpenValidation: () => void;
   selectedCount: number;
@@ -254,12 +254,6 @@ export function WhiteboardHeader({
         accent
       />
 
-      <HeaderButton
-        icon={FileText}
-        label="Text→Diagram"
-        onClick={onOpenAiHub || onOpenTextToDiagram}
-        title="Convert text to diagram"
-      />
 
       <HeaderButton
         icon={ShieldCheck}

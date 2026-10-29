@@ -340,7 +340,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
         e.preventDefault();
-        setShowSourceControl(p => !p);
+        setShowSourceControl(p => { const n = !p; if (n) { setShowMembersPanel(false); setShowChat(false); } return n; });
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -2130,21 +2130,6 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </div>
           )}
 
-          {/* Git Source Control Button */}
-          <button
-            onClick={() => setShowSourceControl(v => !v)}
-            className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
-            style={{
-              background: showSourceControl ? 'rgba(249, 115, 22, 0.2)' : 'var(--surface-2)',
-              color: showSourceControl ? '#fb923c' : 'var(--text)',
-              border: `1px solid ${showSourceControl ? '#f97316' : 'var(--border)'}`,
-              cursor: 'pointer',
-            }}
-            title="Open Git Source Control (Ctrl+Shift+G)"
-          >
-            <GitPullRequest size={13} className="text-orange-400" />
-            <span>Git</span>
-          </button>
 
           {/* Sprint Hub Button for Competitive & Professional Workspaces */}
           {(workspaceType === 'professional' || workspaceType === 'competitive') && (
@@ -2688,7 +2673,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           >
             {/* Git Source Control Button */}
             <button
-              onClick={() => setShowSourceControl(v => !v)}
+              onClick={() => setShowSourceControl(v => { const n = !v; if (n) { setShowMembersPanel(false); setShowChat(false); } return n; })}
               className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
               style={{
                 color: showSourceControl ? '#fb923c' : 'var(--text)',
@@ -2709,7 +2694,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
             {/* Team Members Button */}
             <button
-              onClick={() => setShowMembersPanel(v => !v)}
+              onClick={() => setShowMembersPanel(v => { const n = !v; if (n) { setShowSourceControl(false); setShowChat(false); } return n; })}
               className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
               style={{
                 color: showMembersPanel ? 'var(--accent)' : 'var(--text)',

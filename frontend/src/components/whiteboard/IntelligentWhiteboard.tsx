@@ -30,7 +30,7 @@ import { WhiteboardHeader, type SaveState } from './WhiteboardHeader';
 import { WhiteboardToolbar } from './WhiteboardToolbar';
 import { WhiteboardPropertiesPanel } from './WhiteboardPropertiesPanel';
 import { CommandPalette } from './CommandPalette';
-import { TextToDiagramModal } from './TextToDiagramModal';
+// import { TextToDiagramModal } from './TextToDiagramModal';
 import { ValidationPanel } from './ValidationPanel';
 import { TaskProposalModal } from './TaskProposalModal';
 import { AiDiagramHubModal } from './AiDiagramHubModal';
@@ -668,7 +668,7 @@ export function IntelligentWhiteboard({
   const [remoteCursors, setRemoteCursors] = useState<RemoteWhiteboardCursor[]>([]);
 
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [showTextToDiagram, setShowTextToDiagram] = useState(false);
+//   const [showTextToDiagram, setShowTextToDiagram] = useState(false);
   const [showAiHub, setShowAiHub] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -1082,30 +1082,95 @@ export function IntelligentWhiteboard({
 
   // ── Text → diagram ────────────────────────────────────────────────────────
 
-  const handleTextToDiagramConfirm = useCallback((newEls: CanvasElement[], originalText: string) => {
-    // Add original text as a locked text node
-    const textNode: CanvasElement = {
-      id: genId('txt'),
-      type: 'text',
-      x: 20, y: 20,
-      text: `[Source text]\n${originalText}`,
-      fontSize: 11,
-      locked: true,
-      strokeColor: '#7d8590',
-      opacity: 0.6,
-    };
-    commit([...elements, textNode, ...newEls]);
-    // Run hierarchical layout on the new nodes only
-    setTimeout(() => handleCleanLayout('hierarchical'), 100);
-  }, [elements, commit, handleCleanLayout]);
-
   const handleAiElementsAdded = useCallback((newEls: CanvasElement[]) => {
-    commit([...elements, ...newEls]);
-    setTimeout(() => handleCleanLayout('hierarchical'), 100);
-  }, [elements, commit, handleCleanLayout]);
+    if (!newEls || newEls.length === 0) return;
 
-  // ── Task generation ───────────────────────────────────────────────────────
+    // Generate unique IDs and resolve connector bindings
+    const timestamp = Date.now();
+    const idMap = new Map<string, string>();
 
+    newEls.forEach((el, idx) => {
+      const uniqueId = `ai-${idx}-${timestamp}-${Math.random().toString(36).substring(2, 6)}`;
+      idMap.set(el.id, uniqueId);
+    });
+
+    // Compute offset if canvas already has nodes to avoid overlapping
+    let offsetY = 0;
+    if (elements.length > 0) {
+      const maxY = elements.reduce((max, el) => {
+        if (el.type === 'connector' || el.type === 'stroke') return max;
+        const bottom = (el.y ?? 0) + (el.height ?? 70);
+        return bottom > max ? bottom : max;
+      }, 0);
+      offsetY = maxY > 0 ? maxY + 80 : 0;
+    }
+
+    const preparedElements: CanvasElement[] = newEls.map((el) => {
+      const remappedId = idMap.get(el.id) || el.id;
+      const remappedSource = el.sourceId ? (idMap.get(el.sourceId) || el.sourceId) : undefined;
+      const remappedTarget = el.targetId ? (idMap.get(el.targetId) || el.targetId) : undefined;
+
+      if (el.type === 'connector') {
+        return {
+          ...el,
+          id: remappedId,
+          x: 0,
+          y: 0,
+          sourceId: remappedSource,
+          targetId: remappedTarget,
+          strokeWidth: el.strokeWidth ?? 2,
+          strokeColor: el.strokeColor || '#388bfd',
+        };
+      }
+
+      return {
+        ...el,
+        id: remappedId,
+        x: typeof el.x === 'number' ? el.x : 100,
+        y: (typeof el.y === 'number' ? el.y : 100) + offsetY,
+        width: el.width ?? 160,
+        height: el.height ?? 70,
+        strokeWidth: el.strokeWidth ?? 2,
+        strokeColor: el.strokeColor || '#58a6ff',
+        fillColor: el.fillColor || (boardTheme === 'light' ? '#ffffff' : 'var(--surface)'),
+        text: el.text || el.label || 'Node',
+      };
+    });
+
+    const combined = [...elements, ...preparedElements];
+    commit(combined);
+
+    // Broadcast new elements to real-time collaborators via socket
+    if (socket) {
+      preparedElements.forEach((el) => {
+        socket.emit('whiteboard:element_update', { boardId, element: el });
+      });
+    }
+
+    // Select the newly inserted elements
+    const newIds = preparedElements.map((e) => e.id);
+    setSelectedIds(newIds);
+
+    // Focus and frame canvas viewport on the new diagram
+    setTimeout(() => {
+      if (!canvasRef.current) return;
+      const bb = computeBoundingBox(preparedElements);
+      if (bb.width > 0 && bb.height > 0) {
+        const { clientWidth: cw, clientHeight: ch } = canvasRef.current;
+        const pad = 80;
+        const targetZoom = Math.min(
+          Math.max((cw - pad * 2) / Math.max(bb.width, 1), 0.4),
+          Math.max((ch - pad * 2) / Math.max(bb.height, 1), 0.4),
+          1.1
+        );
+        setViewport({
+          zoom: targetZoom,
+          x: cw / 2 - bb.centerX * targetZoom,
+          y: ch / 2 - bb.centerY * targetZoom,
+        });
+      }
+    }, 60);
+  }, [elements, commit, socket, boardId, boardTheme]);
   const handleGenerateTasks = useCallback(async () => {
     const selected = elements.filter(e => selectedIds.includes(e.id));
     const tasks = await generateTaskProposals(selected.length > 0 ? selected : elements);
@@ -1162,7 +1227,7 @@ export function IntelligentWhiteboard({
         onCleanLayout={readOnly ? () => {} : handleCleanLayout}
         onExport={handleExport}
         onOpenCommandPalette={() => { if (!readOnly) setShowCommandPalette(true); }}
-        onOpenTextToDiagram={() => { if (!readOnly) setShowTextToDiagram(true); }}
+        // onOpenTextToDiagram
         onOpenAiHub={() => { if (!readOnly) setShowAiHub(true); }}
         onOpenValidation={() => setShowValidation(true)}
         selectedCount={selectedIds.length}
@@ -1261,13 +1326,6 @@ export function IntelligentWhiteboard({
         />
       )}
 
-      {showTextToDiagram && (
-        <TextToDiagramModal
-          existingElements={elements}
-          onClose={() => setShowTextToDiagram(false)}
-          onConfirm={handleTextToDiagramConfirm}
-        />
-      )}
 
       {showAiHub && (
         <AiDiagramHubModal
