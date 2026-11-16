@@ -247,37 +247,40 @@ export function WebPreviewPanel({
       </div>
 
       {/* ── Main Browser Viewport ── */}
-      <div className="flex-1 w-full h-full relative overflow-hidden flex justify-center items-center bg-[#0d1117]">
+      <div className="flex-1 w-full h-full relative overflow-hidden flex justify-center items-center bg-[var(--bg)] bg-schematic-grid">
         {!port ? (
           /* Empty / Waiting state */
-          <div className="max-w-md p-6 text-center select-text">
-            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto mb-4">
-              <Globe size={28} />
+          <div className="max-w-md p-6 text-center select-text skeuo-card m-4">
+            <div
+              className="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4 border"
+              style={{ background: 'var(--accent-subtle)', borderColor: 'var(--accent-border)', color: 'var(--accent)' }}
+            >
+              <Globe size={26} />
             </div>
-            <h3 className="text-base font-bold text-[var(--text,#f0f6fc)] mb-2">
+            <h3 className="text-base font-extrabold text-[var(--text)] mb-2 tracking-tight">
               Live Web Output
             </h3>
-            <p className="text-xs text-[var(--muted,#8b949e)] leading-relaxed mb-4">
-              When you run a web server (like <code className="text-amber-300">npm run dev</code> or <code className="text-amber-300">node index.js</code>) in the terminal, CodeSync captures its HTTP port and displays the output here.
+            <p className="text-xs text-[var(--muted)] leading-relaxed mb-4">
+              When you run a web server (like <code className="text-[var(--accent)] font-mono font-bold">npm run dev</code> or <code className="text-[var(--accent)] font-mono font-bold">node index.js</code>) in the terminal, CodeSync captures its HTTP port and displays the output here.
             </p>
 
-            <div className="p-3 rounded-lg bg-[var(--surface-2,#161b22)] border border-[var(--border,#30363d)] text-left mb-4">
-              <div className="text-[11px] font-semibold text-[var(--text,#f0f6fc)] mb-1 flex items-center gap-1.5">
-                <AlertCircle size={12} className="text-blue-400" />
-                <span>How sandboxing works in deployment:</span>
+            <div className="p-3.5 rounded-lg border text-left mb-4 skeuo-card" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+              <div className="text-[11px] font-bold text-[var(--text)] mb-1 flex items-center gap-1.5">
+                <AlertCircle size={12} style={{ color: 'var(--accent)' }} />
+                <span>Sandboxed Reverse Proxy</span>
               </div>
-              <p className="text-[11px] text-[var(--muted,#8b949e)] leading-relaxed">
-                Even when deployed on a remote server, CodeSync reverse-proxies the internal port through an isolated subpath (<code className="text-xs text-blue-300">/api/preview/...</code>) inside a secure sandboxed iframe so you can view, test, and interact with your app right here.
+              <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                CodeSync reverse-proxies the internal port through an isolated subpath (<code className="text-xs font-mono font-semibold" style={{ color: 'var(--accent)' }}>/api/preview/...</code>) inside a secure sandboxed iframe so you can view, test, and interact with your app right here.
               </p>
             </div>
 
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2.5">
               <button
                 onClick={() => {
                   setPort(3000);
                   setPortInput('3000');
                 }}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold bg-[var(--accent,#2f81f7)] text-white hover:opacity-90 transition-opacity cursor-pointer"
+                className="btn-physical-primary text-xs"
               >
                 Use Port 3000
               </button>
@@ -286,7 +289,7 @@ export function WebPreviewPanel({
                   setPort(5173);
                   setPortInput('5173');
                 }}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold bg-[var(--surface-2,#21262d)] text-[var(--text,#c9d1d9)] border border-[var(--border,#30363d)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                className="btn-physical-surface text-xs"
               >
                 Use Port 5173 (Vite)
               </button>

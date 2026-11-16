@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Plus, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, LayoutGrid, UserPlus, Link2,
-  GraduationCap, Briefcase, Trophy, Check, Crown, Terminal, Sparkles, Eye,
-  Shield, X, GitPullRequest
+  Plus, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, UserPlus, Link2,
+  GraduationCap, Briefcase, Trophy, Check, Sparkles, Eye, EyeOff,
+  Shield, X, GitPullRequest, AlertCircle, Search, ArrowRight
 } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
@@ -38,41 +38,41 @@ const typeDetails: Record<WorkspaceType, {
     label: 'Educational',
     icon: GraduationCap,
     color: '#a855f7',
-    bgColor: 'rgba(168, 85, 247, 0.12)',
+    bgColor: 'rgba(168, 85, 247, 0.10)',
     borderColor: 'rgba(168, 85, 247, 0.35)',
-    roles: 'Teacher (Host) & Students',
-    desc: 'Live classroom instruction with WebRTC voice lectures, student editor locking, focus mode, and hand raising.',
-    features: ['Live Voice Lecture Broadcast', 'Editor Lock & Focus Follow Mode', 'Hand Raising & Help Requests'],
+    roles: 'Teacher & Students',
+    desc: 'Live classroom with WebRTC broadcast, student editor locking, and hand raising.',
+    features: ['Live Voice Lecture Broadcast', 'Editor Lock & Follow Mode', 'Hand Raising System'],
   },
   professional: {
     label: 'Professional',
     icon: Briefcase,
     color: '#3b82f6',
-    bgColor: 'rgba(59, 130, 246, 0.12)',
+    bgColor: 'rgba(59, 130, 246, 0.10)',
     borderColor: 'rgba(59, 130, 246, 0.35)',
-    roles: 'Admin, Developer & Tester',
-    desc: 'Production team environment with peer code collaboration, granular file/line locking, and collaborative code reviews.',
-    features: ['Multi-Cursor Real-Time Sync', 'Granular File & Line Locking', 'Kanban Tasks & Code Reviews'],
+    roles: 'Admin, Dev & Tester',
+    desc: 'Production team environment with peer collaboration, line locking, and reviews.',
+    features: ['Multi-Cursor Real-Time Sync', 'Granular File Locking', 'Kanban Sprints & Reviews'],
   },
   competitive: {
     label: 'Competitive',
     icon: Trophy,
     color: '#f59e0b',
-    bgColor: 'rgba(245, 158, 11, 0.12)',
+    bgColor: 'rgba(245, 158, 11, 0.10)',
     borderColor: 'rgba(245, 158, 11, 0.35)',
-    roles: 'Admin (View & Comment) & Team Members (Edit)',
-    desc: 'Hackathon team workspaces. Admin can view and comment only across teams. Only allowlisted team members can enter (Gmail scoped) with full edit access.',
-    features: ['Admin View & Inline Line Comments', 'Allowed Emails Scoped Team Access', 'Hackathon Real-Time Environment'],
+    roles: 'Admin & Team Members',
+    desc: 'Hackathon team workspaces with allowlisted email access and real-time coding.',
+    features: ['Admin View & Line Comments', 'Allowed Emails Scoped Access', 'Real-Time Hackathon Mode'],
   },
 };
 
 const PROJECT_TEMPLATES_LIST = [
-  { id: 'blank', label: 'Blank Project', desc: 'Clean workspace with README.md', badge: 'Empty' },
-  { id: 'node-express', label: 'Node.js Express', desc: 'REST server with Express & package.json', badge: 'Node.js' },
-  { id: 'python-flask', label: 'Python Flask', desc: 'Flask web app with requirements.txt', badge: 'Flask' },
-  { id: 'python-script', label: 'Python Script', desc: 'Starter main.py script runner', badge: 'Python' },
-  { id: 'java-maven', label: 'Java Maven', desc: 'Java 21 project with pom.xml', badge: 'Java' },
-  { id: 'react-vite', label: 'React + Vite', desc: 'React 19 single-page app structure', badge: 'React' },
+  { id: 'blank', label: 'Blank Project', desc: 'Empty workspace with README.md', badge: 'Empty', icon: '📄' },
+  { id: 'node-express', label: 'Node.js Express', desc: 'REST server with Express & package.json', badge: 'Node.js', icon: '🟢' },
+  { id: 'python-flask', label: 'Python Flask', desc: 'Flask web app with requirements.txt', badge: 'Flask', icon: '🐍' },
+  { id: 'python-script', label: 'Python Script', desc: 'Starter main.py script runner', badge: 'Python', icon: '⚡' },
+  { id: 'java-maven', label: 'Java Maven', desc: 'Java 21 project with pom.xml', badge: 'Java', icon: '☕' },
+  { id: 'react-vite', label: 'React + Vite', desc: 'React 19 single-page app', badge: 'React', icon: '⚛️' },
 ];
 
 interface Props { onOpen: (ws: Workspace, role: WorkspaceRole) => void; }
@@ -101,6 +101,11 @@ export function Dashboard({ onOpen }: Props) {
   const [createError, setCreateError] = useState('');
   const newNameRef = useRef<HTMLInputElement>(null);
 
+  // UX Enhancements: Search & Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
@@ -127,7 +132,6 @@ export function Dashboard({ onOpen }: Props) {
 
   useEffect(() => { fetchWorkspaces(); }, [token]);
 
-  // Search registered CodeSync users as admin types
   useEffect(() => {
     const q = memberSearchQuery.trim();
     if (!q) {
@@ -170,7 +174,6 @@ export function Dashboard({ onOpen }: Props) {
       return;
     }
 
-    // Verify user exists on CodeSync
     try {
       setIsSearchingMembers(true);
       const res = await collabService.searchUsers(email, token);
@@ -253,10 +256,10 @@ export function Dashboard({ onOpen }: Props) {
   };
 
   const handleSelectAll = () => {
-    if (selectedWorkspaceIds.length === workspaces.length) {
+    if (selectedWorkspaceIds.length === filteredWorkspaces.length) {
       setSelectedWorkspaceIds([]);
     } else {
-      setSelectedWorkspaceIds(workspaces.map(w => w.id));
+      setSelectedWorkspaceIds(filteredWorkspaces.map(w => w.id));
     }
   };
 
@@ -342,7 +345,8 @@ export function Dashboard({ onOpen }: Props) {
       if (res.success && res.invite) {
         const url = res.invite.inviteUrl || `${window.location.origin}/?join=${res.invite.id}`;
         navigator.clipboard.writeText(url);
-        alert('Invite link copied to clipboard!');
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
       } else {
         alert('Failed to generate invite');
       }
@@ -351,9 +355,13 @@ export function Dashboard({ onOpen }: Props) {
     }
   };
 
-  const openNewForm = () => {
+  const openNewForm = (presetTemplate?: string) => {
     setShowNew(true);
     setShowJoin(false);
+    if (presetTemplate) {
+      setSelectedTemplate(presetTemplate);
+      setCloneFromGit(false);
+    }
     if (selectedType === 'competitive' && user?.email) {
       const email = user.email.toLowerCase().trim();
       setAllowedEmailsList(prev => prev.includes(email) ? prev : [email, ...prev]);
@@ -421,577 +429,238 @@ export function Dashboard({ onOpen }: Props) {
     }
   };
 
+  // Instant developer filtering
+  const filteredWorkspaces = workspaces.filter(ws => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q ||
+      ws.name.toLowerCase().includes(q) ||
+      ws.id.toLowerCase().includes(q) ||
+      (ws.description && ws.description.toLowerCase().includes(q));
+    const matchesType = filterType === 'all' || ws.type === filterType;
+    return matchesSearch && matchesType;
+  });
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
-      {/* ΓöÇΓöÇ Header ΓöÇΓöÇ */}
-      <header style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 30 }}>
-        <div className="max-w-7xl mx-auto px-6 sm:px-10 flex items-center justify-between" style={{ height: 68 }}>
+      {/* ── Technical Skeuomorphic Header ── */}
+      <header
+        style={{
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--surface)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 30,
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-6 sm:px-10 flex items-center justify-between" style={{ height: 60 }}>
 
-          {/* Logo */}
-          <div className="flex items-center gap-3.5">
+          {/* Left: Logo & IDE Tag */}
+          <div className="flex items-center gap-3">
             <img
               src={logoImg}
               alt="CodeSync"
-              className="w-10 h-10 rounded-xl object-contain shrink-0 shadow-sm transition-transform hover:scale-105"
+              className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-sm"
             />
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-xl tracking-tight" style={{ color: 'var(--text)' }}>CodeSync</span>
-              <span className="hidden sm:inline-flex text-[11px] font-semibold px-2.5 py-0.5 rounded-full items-center gap-1"
-                style={{ background: 'rgba(47,129,247,0.12)', color: 'var(--accent)', border: '1px solid rgba(47,129,247,0.25)' }}>
-                Cloud IDE
+              <span className="font-extrabold text-lg tracking-tight" style={{ color: 'var(--text)' }}>CodeSync</span>
+              <span className="schematic-tag hidden sm:inline-flex">
+                <span className="anchor-dot-live" style={{ width: 6, height: 6 }} /> WORKSPACE_HUB
               </span>
             </div>
           </div>
 
-          {/* Right controls */}
-          <div className="flex items-center gap-3 sm:gap-4">
+          {/* Right Controls */}
+          <div className="flex items-center gap-3">
             {user && (
-              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #a855f7 100%)' }}>
+              <div
+                className="flex items-center gap-2.5 px-3 py-1 rounded-xl border"
+                style={{
+                  background: 'var(--surface-2)',
+                  borderColor: 'var(--border)',
+                  boxShadow: 'var(--inset-shadow)',
+                }}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white uppercase shadow-sm"
+                  style={{ background: 'var(--accent)' }}
+                >
                   {user.username.charAt(0)}
                 </div>
-                <span className="text-sm font-semibold hidden sm:inline" style={{ color: 'var(--text)' }}>
+                <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>
                   {user.username}
                 </span>
               </div>
             )}
 
-            {/* Theme toggle */}
-            <button onClick={toggleTheme}
-              className="flex items-center justify-center w-10 h-10 rounded-xl transition-all hover:bg-[var(--surface-2)]"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
-              title="Toggle theme">
-              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="flex items-center justify-center w-8 h-8 rounded-xl cursor-pointer btn-physical-surface"
+              title="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
             </button>
 
-            {/* Logout */}
-            <button onClick={logout}
-              className="flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-semibold transition-all hover:bg-[var(--error-bg)]"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
-              title="Sign out">
-              <LogOut size={16} />
+            {/* Sign Out */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-xl text-xs font-semibold cursor-pointer btn-physical-surface"
+              title="Sign out"
+            >
+              <LogOut size={13} />
               <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* ΓöÇΓöÇ Main Container ΓöÇΓöÇ */}
-      <main className="max-w-7xl mx-auto px-6 sm:px-10 py-10 sm:py-14">
+      {/* ── Main Container ── */}
+      <main className="max-w-7xl mx-auto px-6 sm:px-10 py-7">
 
-        {/* ΓöÇΓöÇ Hero / Page Title Row ΓöÇΓöÇ */}
-        <div className="flex items-start sm:items-center justify-between mb-8 flex-col sm:flex-row gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm"
-                style={{ background: 'rgba(47,129,247,0.15)', color: 'var(--accent)', border: '1px solid rgba(47,129,247,0.3)' }}>
-                <LayoutGrid size={20} />
-              </div>
-              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight" style={{ color: 'var(--text)' }}>
-                My Workspaces
-              </h1>
+        {/* ── ACTION HUB / WORKSPACE LAUNCHER ── */}
+        <div
+          className="skeuo-card mb-7"
+          style={{
+            padding: 0,
+            backgroundImage: 'radial-gradient(circle, rgba(180,184,196,0.18) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        >
+          <div className="card-header-tab">
+            <div className="flex items-center gap-2">
+              <span className="anchor-dot-live" />
+              <span>DEVELOPER // WORKSPACE_LAUNCHER</span>
             </div>
-            <p className="text-base sm:text-lg max-w-2xl" style={{ color: 'var(--muted)' }}>
-              Create isolated Docker development environments, collaborate with remote cursors, or launch intelligent whiteboard sessions.
-            </p>
+            <span className="text-[10px] font-mono text-[var(--muted)]">
+              {workspaces.length} ACTIVE {workspaces.length === 1 ? 'ENV' : 'ENVS'}
+            </span>
           </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-3.5 w-full sm:w-auto">
-            <button
-              onClick={openJoinForm}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 h-11 rounded-xl text-base font-medium transition-all"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-            >
-              <Link2 size={18} />
-              <span>Join Workspace</span>
-            </button>
+          <div className="p-6 sm:p-7 flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="max-w-xl">
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight mb-1.5" style={{ color: 'var(--text)' }}>
+                {user ? `Welcome back, ${user.username}` : 'Your Collaborative IDE'}
+              </h1>
+              <p className="text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+                Launch isolated Docker environments with remote cursors, WebRTC voice streaming, and integrated Git collaboration.
+              </p>
+            </div>
 
-            <button
-              onClick={openNewForm}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 h-11 rounded-xl text-base font-semibold shadow-lg transition-all"
-              style={{ background: 'var(--accent)', color: 'white', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; (e.currentTarget as HTMLButtonElement).style.transform = 'none'; }}
-            >
-              <Plus size={18} strokeWidth={2.5} />
-              <span>New Workspace</span>
-            </button>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+              <button
+                onClick={() => openNewForm()}
+                className="flex items-center gap-2 px-4 h-10 rounded-xl text-xs sm:text-sm font-bold cursor-pointer btn-physical-primary"
+              >
+                <Plus size={15} strokeWidth={2.5} />
+                <span>New Workspace</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowNew(true);
+                  setCloneFromGit(true);
+                  setTimeout(() => newNameRef.current?.focus(), 50);
+                }}
+                className="flex items-center gap-2 px-3.5 h-10 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer btn-physical-surface"
+              >
+                <GitPullRequest size={14} className="text-orange-500" />
+                <span>Clone Git Repo</span>
+              </button>
+
+              <button
+                onClick={openJoinForm}
+                className="flex items-center gap-2 px-3.5 h-10 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer btn-physical-surface"
+              >
+                <Link2 size={14} />
+                <span>Join Session</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* ΓöÇΓöÇ Join workspace inline form ΓöÇΓöÇ */}
+        {/* ── Join Workspace Inline Panel ── */}
         {showJoin && (
-          <div className="rounded-2xl p-7 sm:p-8 mb-10 shadow-2xl animate-fade-in"
-            style={{ background: 'var(--surface)', border: '1.5px solid var(--accent)' }}>
-            <div className="flex items-center gap-3 mb-2">
-              <Link2 size={20} style={{ color: 'var(--accent)' }} />
-              <p className="font-bold text-lg" style={{ color: 'var(--text)' }}>Join Workspace with Link or Code</p>
-            </div>
-            <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>
-              Paste an invite link (e.g. <code>http://localhost:5173/?join=51b55f9f-...</code>) or the invite code shared by your teammate.
-            </p>
-
-            {joinError && (
-              <div className="p-3.5 rounded-xl text-sm mb-4 flex items-center gap-2"
-                style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
-                <span>{joinError}</span>
+          <div
+            className="mb-7 skeuo-card animate-fade-in"
+            style={{
+              borderColor: 'var(--accent)',
+              boxShadow: '0 4px 20px rgba(232,66,12,0.12)',
+            }}
+          >
+            <div className="card-header-tab" style={{ background: 'var(--accent-subtle)', borderColor: 'var(--accent-border)' }}>
+              <div className="flex items-center gap-2 font-bold" style={{ color: 'var(--accent)' }}>
+                <Link2 size={14} />
+                <span>CONNECT // JOIN_EXISTING_WORKSPACE</span>
               </div>
-            )}
-
-            <div className="flex gap-3.5 flex-wrap items-center">
-              <input
-                ref={joinInputRef}
-                value={joinInput}
-                onChange={e => { setJoinInput(e.target.value); setJoinError(''); }}
-                placeholder="Paste invite link or code (e.g. http://localhost:5173/?join=... or 51b55f9f-...)"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleJoinWorkspace();
-                  if (e.key === 'Escape') { setShowJoin(false); setJoinInput(''); setJoinError(''); }
-                }}
-                className="flex-1 h-12 px-5 rounded-xl text-base focus:outline-none min-w-0 shadow-inner"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 280 }}
-              />
-              <button
-                onClick={handleJoinWorkspace}
-                disabled={joining}
-                className="flex items-center gap-2 px-6 h-12 rounded-xl text-base font-semibold shadow-md transition-all"
-                style={{ background: 'var(--accent)', color: 'white', border: 'none', cursor: joining ? 'not-allowed' : 'pointer' }}
-              >
-                {joining ? <Spinner size={16} /> : <Link2 size={16} />}
-                <span>Join Workspace</span>
-              </button>
               <button
                 onClick={() => { setShowJoin(false); setJoinInput(''); setJoinError(''); }}
-                className="px-5 h-12 rounded-xl text-base font-medium transition-all"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+                className="cursor-pointer bg-transparent border-none text-[var(--muted)] hover:text-[var(--text)]"
               >
-                Cancel
+                <X size={15} />
               </button>
+            </div>
+
+            <div className="p-6">
+              <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>
+                Paste the invite URL (e.g. <code>http://localhost:5173/?join=...</code>) or the invitation token provided by your team lead.
+              </p>
+
+              {joinError && (
+                <div className="p-3 rounded-lg text-xs mb-4 flex items-center gap-2 font-medium bg-[var(--error-bg)] text-[var(--error)] border border-[var(--error)]">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>{joinError}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3 flex-wrap items-center">
+                <input
+                  ref={joinInputRef}
+                  value={joinInput}
+                  onChange={e => { setJoinInput(e.target.value); setJoinError(''); }}
+                  placeholder="Paste invite link or code…"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleJoinWorkspace();
+                    if (e.key === 'Escape') { setShowJoin(false); setJoinInput(''); setJoinError(''); }
+                  }}
+                  className="flex-1 h-10 px-4 rounded-xl text-xs sm:text-sm input-well focus:outline-none"
+                  style={{ minWidth: 260 }}
+                />
+                <button
+                  onClick={handleJoinWorkspace}
+                  disabled={joining}
+                  className="flex items-center gap-2 px-5 h-10 rounded-xl text-xs sm:text-sm font-bold cursor-pointer btn-physical-primary disabled:opacity-50"
+                >
+                  {joining ? <Spinner size={13} /> : <Link2 size={14} />}
+                  <span>Join Session</span>
+                </button>
+                <button
+                  onClick={() => { setShowJoin(false); setJoinInput(''); setJoinError(''); }}
+                  className="px-4 h-10 rounded-xl text-xs sm:text-sm font-medium cursor-pointer btn-physical-surface"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ΓöÇΓöÇ New workspace inline form ΓöÇΓöÇ */}
+        {/* ── New Workspace Provisioning Panel ── */}
         {showNew && (
-          <div className="rounded-2xl p-7 sm:p-8 mb-10 shadow-2xl animate-fade-in"
-            style={{ background: 'var(--surface)', border: '1.5px solid var(--accent)' }}>
-            <div className="mb-6">
-              <div className="flex items-center gap-2.5 mb-1.5">
-                <Sparkles size={20} style={{ color: 'var(--accent)' }} />
-                <p className="font-extrabold text-xl" style={{ color: 'var(--text)' }}>Create a New Workspace</p>
+          <div
+            className="mb-7 skeuo-card animate-fade-in"
+            style={{
+              borderColor: 'var(--accent)',
+              boxShadow: '0 8px 32px rgba(232,66,12,0.15)',
+            }}
+          >
+            <div className="card-header-tab" style={{ background: 'var(--accent-subtle)', borderColor: 'var(--accent-border)' }}>
+              <div className="flex items-center gap-2 font-bold" style={{ color: 'var(--accent)' }}>
+                <Sparkles size={14} />
+                <span>PROVISION // NEW_SANDBOX_WORKSPACE</span>
               </div>
-              <p className="text-sm sm:text-base" style={{ color: 'var(--muted)' }}>
-                Select the workspace workflow type that fits your goals:
-              </p>
-            </div>
-
-            {createError && (
-              <div className="p-3.5 rounded-xl text-sm mb-5 flex items-center gap-2"
-                style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
-                <span>{createError}</span>
-              </div>
-            )}
-
-            {/* 3 Workspace Type Selectable Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 mb-6">
-              {(['educational', 'professional', 'competitive'] as WorkspaceType[]).map(typeKey => {
-                const item = typeDetails[typeKey];
-                const ItemIcon = item.icon;
-                const isSelected = selectedType === typeKey;
-                return (
-                  <div
-                    key={typeKey}
-                    onClick={() => {
-                      setSelectedType(typeKey);
-                      if (typeKey === 'competitive' && user?.email) {
-                        const email = user.email.toLowerCase().trim();
-                        setAllowedEmailsList(prev => prev.includes(email) ? prev : [email, ...prev]);
-                      }
-                    }}
-                    className="p-5 sm:p-6 rounded-2xl cursor-pointer transition-all duration-200 flex flex-col justify-between relative shadow-sm"
-                    style={{
-                      background: isSelected ? item.bgColor : 'var(--surface-2)',
-                      border: `2px solid ${isSelected ? item.color : 'var(--border)'}`,
-                      boxShadow: isSelected ? `0 0 20px ${item.bgColor}` : 'none',
-                      transform: isSelected ? 'scale(1.01)' : 'none',
-                    }}
-                  >
-                    {isSelected && (
-                      <div className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-white shadow-md"
-                        style={{ background: item.color }}>
-                        <Check size={14} strokeWidth={3} />
-                      </div>
-                    )}
-                    <div>
-                      <div className="flex items-center gap-3.5 mb-3">
-                        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-                          style={{ background: item.bgColor, color: item.color, border: `1px solid ${item.borderColor}` }}>
-                          <ItemIcon size={22} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-base sm:text-lg" style={{ color: 'var(--text)' }}>{item.label}</p>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-0.5"
-                            style={{ background: item.bgColor, color: item.color, border: `1px solid ${item.borderColor}` }}>
-                            {item.roles}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--muted)' }}>
-                        {item.desc}
-                      </p>
-
-                      <div className="space-y-1.5 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-                        {item.features.map((feat, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text)' }}>
-                            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color }} />
-                            <span>{feat}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Competitive Workspace: Allowed Emails Input with Registered Account Autocomplete */}
-            {selectedType === 'competitive' && (
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold" style={{ color: 'var(--text)' }}>
-                    Add Registered Team Members (Gmail / email scoped):
-                  </label>
-                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded"
-                    style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}>
-                    {allowedEmailsList.length} member{allowedEmailsList.length === 1 ? '' : 's'} added
-                  </span>
-                </div>
-
-                {/* Added Members Chips */}
-                {allowedEmailsList.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2.5 p-2 rounded-xl border"
-                    style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
-                    {allowedEmailsList.map(email => {
-                      const isMe = user?.email && email.toLowerCase() === user.email.toLowerCase();
-                      return (
-                        <span
-                          key={email}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium"
-                          style={{
-                            background: isMe ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                            color: isMe ? '#3b82f6' : '#f59e0b',
-                            border: `1px solid ${isMe ? 'rgba(59, 130, 246, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
-                          }}
-                        >
-                          <Shield size={11} />
-                          <span>{email}</span>
-                          {isMe ? (
-                            <span
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                              style={{ background: 'rgba(59, 130, 246, 0.25)', color: '#60a5fa' }}
-                            >
-                              Admin (You)
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveAllowedEmail(email)}
-                              className="hover:text-red-400 p-0.5 ml-0.5 rounded cursor-pointer border-none bg-transparent"
-                              title="Remove email"
-                            >
-                              <X size={11} />
-                            </button>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Autocomplete Search Input */}
-                <div className="relative">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={memberSearchQuery}
-                        onChange={e => {
-                          setMemberSearchQuery(e.target.value);
-                          setMemberSearchError('');
-                        }}
-                        onFocus={() => {
-                          if (memberSuggestions.length > 0) setShowMemberDropdown(true);
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddAllowedEmail();
-                          }
-                          if (e.key === 'Escape') {
-                            setShowMemberDropdown(false);
-                          }
-                        }}
-                        placeholder="Type registered user's email or username to searchΓÇª"
-                        className="w-full h-11 px-4 text-sm rounded-xl focus:outline-none shadow-inner"
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                      />
-                      {isSearchingMembers && (
-                        <span className="absolute right-3.5 top-3.5">
-                          <Spinner size={14} />
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!memberSearchQuery.trim() || isSearchingMembers}
-                      onClick={() => handleAddAllowedEmail()}
-                      className="px-4 h-11 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-opacity disabled:opacity-50 cursor-pointer shadow-sm"
-                      style={{ background: '#f59e0b', color: '#000', border: 'none' }}
-                    >
-                      <Plus size={14} />
-                      <span>Add</span>
-                    </button>
-                  </div>
-
-                  {/* Dropdown of matching registered users */}
-                  {showMemberDropdown && (
-                    <div
-                      className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border shadow-2xl overflow-hidden animate-fade-in"
-                      style={{
-                        background: 'var(--surface)',
-                        borderColor: 'var(--border)',
-                        maxHeight: 220,
-                        overflowY: 'auto',
-                      }}
-                    >
-                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border-b"
-                        style={{ background: 'var(--surface-2)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
-                        Registered CodeSync Users
-                      </div>
-                      {memberSuggestions.length === 0 ? (
-                        <div className="p-3 text-center text-xs" style={{ color: 'var(--error)' }}>
-                          No registered user found for &quot;{memberSearchQuery}&quot;. Team members must have an account on CodeSync.
-                        </div>
-                      ) : (
-                        memberSuggestions.map(u => (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => {
-                              handleAddAllowedEmail(u.email);
-                            }}
-                            className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-[var(--surface-2)] transition-colors border-b last:border-b-0"
-                            style={{
-                              borderColor: 'var(--border)',
-                              background: 'transparent',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div
-                                className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0"
-                                style={{ background: 'var(--accent)', color: '#fff' }}
-                              >
-                                {u.username[0] || 'U'}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-semibold truncate" style={{ color: 'var(--text)' }}>
-                                  {u.username}
-                                </div>
-                                <div className="text-[11px] font-mono truncate" style={{ color: 'var(--muted)' }}>
-                                  {u.email}
-                                </div>
-                              </div>
-                            </div>
-                            <span
-                              className="text-xs px-2 py-0.5 rounded font-medium shrink-0"
-                              style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' }}
-                            >
-                              + Select
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {memberSearchError && (
-                  <p className="text-xs mt-1.5 text-red-400 font-medium">{memberSearchError}</p>
-                )}
-
-                <p className="text-[11px] mt-1.5" style={{ color: 'var(--muted)' }}>
-                  Only users logged in with these registered emails will be permitted into this hackathon workspace. The workspace creator is Admin (can view & comment only).
-                </p>
-              </div>
-            )}
-
-            {/* Clone from GitHub Section */}
-            <div className="mb-5 p-3.5 rounded-xl border" style={{ background: 'var(--surface-2)', borderColor: cloneFromGit ? 'var(--accent)' : 'var(--border)' }}>
-              <div className="flex items-center justify-between cursor-pointer" onClick={() => setCloneFromGit(p => !p)}>
-                <div className="flex items-center gap-2">
-                  <GitPullRequest size={15} className="text-orange-400" />
-                  <span className="text-xs font-semibold text-[var(--text)]">Clone from GitHub Repository</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 font-mono">Git</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={cloneFromGit}
-                  onChange={(e) => setCloneFromGit(e.target.checked)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded text-blue-600 cursor-pointer"
-                />
-              </div>
-
-              {cloneFromGit && (
-                <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-3 animate-fade-in">
-                  <div>
-                    <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
-                      GitHub Repository URL <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={gitRepoUrl}
-                      onChange={e => setGitRepoUrl(e.target.value)}
-                      placeholder="https://github.com/owner/repository.git"
-                      className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500 font-mono"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
-                        Branch (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={gitBranch}
-                        onChange={e => setGitBranch(e.target.value)}
-                        placeholder="main"
-                        className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-medium text-[var(--muted)]">
-                          GitHub Token (For private repos)
-                        </label>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type={showGitToken ? 'text' : 'password'}
-                          value={gitToken}
-                          onChange={e => setGitToken(e.target.value)}
-                          placeholder="ghp_••••••••••••"
-                          className="w-full text-xs p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] outline-none focus:border-blue-500 font-mono pr-7"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowGitToken(p => !p)}
-                          className="absolute right-2 top-2 text-[var(--muted)] hover:text-[var(--text)]"
-                        >
-                          <Eye size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Starter Project Template Selector */}
-            <div className="mb-5">
-              <label className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>
-                Starter Project Template:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
-                {PROJECT_TEMPLATES_LIST.map(tmpl => {
-                  const isSelected = selectedTemplate === tmpl.id;
-                  return (
-                    <button
-                      key={tmpl.id}
-                      type="button"
-                      onClick={() => setSelectedTemplate(tmpl.id)}
-                      className="p-3 rounded-xl text-left transition-all flex flex-col justify-between border"
-                      style={{
-                        background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg)',
-                        borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
-                        boxShadow: isSelected ? '0 0 12px rgba(59, 130, 246, 0.2)' : 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-1 mb-1.5">
-                        <span
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase"
-                          style={{
-                            background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
-                            color: isSelected ? '#fff' : 'var(--muted)',
-                          }}
-                        >
-                          {tmpl.badge}
-                        </span>
-                        {isSelected && <Check size={12} style={{ color: 'var(--accent)' }} />}
-                      </div>
-                      <div className="text-xs font-semibold truncate" style={{ color: isSelected ? 'var(--accent)' : 'var(--text)' }}>
-                        {tmpl.label}
-                      </div>
-                      <div className="text-[10px] leading-tight mt-1 line-clamp-2" style={{ color: 'var(--muted)' }}>
-                        {tmpl.desc}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Input + Action row */}
-            <div className="flex gap-3.5 flex-wrap items-center">
-              <input
-                ref={newNameRef}
-                value={newName}
-                onChange={e => { setNewName(e.target.value); setCreateError(''); }}
-                placeholder={
-                  selectedType === 'educational'
-                    ? 'e.g. CS101: Web & Algorithms Classroom'
-                    : selectedType === 'professional'
-                    ? 'e.g. Microservices Production Suite'
-                    : 'e.g. Hackathon Team ByteSpeed'
-                }
-                onKeyDown={e => {
-                  if (e.key === 'Enter') createWorkspace();
-                  if (e.key === 'Escape') {
-                    setShowNew(false);
-                    setNewName('');
-                    setAllowedEmailsList([]);
-                    setMemberSearchQuery('');
-                    setMemberSuggestions([]);
-                    setMemberSearchError('');
-                    setCreateError('');
-                  }
-                }}
-                className="flex-1 h-12 px-5 rounded-xl text-base focus:outline-none min-w-0 shadow-inner"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 280 }}
-              />
-              <button
-                onClick={createWorkspace}
-                disabled={creating}
-                className="flex items-center gap-2 px-7 h-12 rounded-xl text-base font-semibold shadow-lg transition-all"
-                style={{ background: 'var(--accent)', color: 'white', border: 'none', cursor: creating ? 'not-allowed' : 'pointer' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
-              >
-                {creating ? <Spinner size={16} /> : <Plus size={18} strokeWidth={2.5} />}
-                <span>Create {typeDetails[selectedType].label} Workspace</span>
-              </button>
               <button
                 onClick={() => {
                   setShowNew(false);
@@ -1002,331 +671,592 @@ export function Dashboard({ onOpen }: Props) {
                   setMemberSearchError('');
                   setCreateError('');
                 }}
-                className="px-5 h-12 rounded-xl text-base font-medium transition-all"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+                className="cursor-pointer bg-transparent border-none text-[var(--muted)] hover:text-[var(--text)]"
               >
-                Cancel
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="p-6 sm:p-7">
+              <div className="mb-4">
+                <span className="section-label">STEP 1: SELECT WORKFLOW TOPOLOGY</span>
+              </div>
+
+              {createError && (
+                <div className="p-3 rounded-xl text-xs mb-4 flex items-center gap-2 bg-[var(--error-bg)] text-[var(--error)] border border-[var(--error)]">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>{createError}</span>
+                </div>
+              )}
+
+              {/* 3 Selectable Workflow Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
+                {(['educational', 'professional', 'competitive'] as WorkspaceType[]).map(typeKey => {
+                  const item = typeDetails[typeKey];
+                  const ItemIcon = item.icon;
+                  const isSelected = selectedType === typeKey;
+
+                  return (
+                    <div
+                      key={typeKey}
+                      onClick={() => {
+                        setSelectedType(typeKey);
+                        if (typeKey === 'competitive' && user?.email) {
+                          const email = user.email.toLowerCase().trim();
+                          setAllowedEmailsList(prev => prev.includes(email) ? prev : [email, ...prev]);
+                        }
+                      }}
+                      className="p-4 rounded-xl cursor-pointer transition-all flex flex-col justify-between relative skeuo-card"
+                      style={{
+                        background: isSelected ? item.bgColor : 'var(--surface)',
+                        borderColor: isSelected ? item.color : 'var(--border)',
+                        borderWidth: isSelected ? '2px' : '1px',
+                      }}
+                    >
+                      {isSelected && (
+                        <div
+                          className="absolute top-3.5 right-3.5 w-4 h-4 rounded-full flex items-center justify-center text-white"
+                          style={{ background: item.color }}
+                        >
+                          <Check size={10} strokeWidth={3} />
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="flex items-center gap-2.5 mb-2.5">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                            style={{ background: item.bgColor, color: item.color, border: `1px solid ${item.borderColor}` }}
+                          >
+                            <ItemIcon size={16} />
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>{item.label}</p>
+                            <span className="text-[10px] font-mono text-[var(--muted)]">
+                              {item.roles}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] leading-relaxed mb-3" style={{ color: 'var(--muted)' }}>
+                          {item.desc}
+                        </p>
+
+                        <div className="space-y-1 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                          {item.features.map((feat, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text)' }}>
+                              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color }} />
+                              <span>{feat}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Competitive Allowed Members */}
+              {selectedType === 'competitive' && (
+                <div className="mb-5 p-3.5 rounded-xl border bg-[var(--surface-2)]" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold font-mono" style={{ color: 'var(--text)' }}>
+                      SCOPED TEAM MEMBERS (ALLOWLIST):
+                    </label>
+                    <span className="schematic-tag">
+                      {allowedEmailsList.length} members
+                    </span>
+                  </div>
+
+                  {allowedEmailsList.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2.5 p-2 rounded-lg bg-[var(--surface)] border" style={{ borderColor: 'var(--border)' }}>
+                      {allowedEmailsList.map(email => {
+                        const isMe = user?.email && email.toLowerCase() === user.email.toLowerCase();
+                        return (
+                          <span
+                            key={email}
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium"
+                            style={{
+                              background: isMe ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                              color: isMe ? '#3b82f6' : '#f59e0b',
+                              border: `1px solid ${isMe ? 'rgba(59, 130, 246, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                            }}
+                          >
+                            <Shield size={11} />
+                            <span>{email}</span>
+                            {isMe ? (
+                              <span className="text-[9px] font-bold px-1 rounded bg-blue-500/20 text-blue-500">Host</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAllowedEmail(email)}
+                                className="cursor-pointer bg-transparent border-none p-0 text-[var(--muted)] hover:text-red-500"
+                              >
+                                <X size={11} />
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={memberSearchQuery}
+                        onChange={e => { setMemberSearchQuery(e.target.value); setMemberSearchError(''); }}
+                        onFocus={() => { if (memberSuggestions.length > 0) setShowMemberDropdown(true); }}
+                        placeholder="Search registered user's email to add to team…"
+                        className="flex-1 h-9 px-3 text-xs rounded-lg input-well focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddAllowedEmail()}
+                        disabled={!memberSearchQuery.trim() || isSearchingMembers}
+                        className="px-3.5 h-9 rounded-lg text-xs font-bold btn-physical-primary cursor-pointer disabled:opacity-50"
+                      >
+                        <Plus size={13} /> Add
+                      </button>
+                    </div>
+
+                    {showMemberDropdown && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border shadow-xl overflow-hidden bg-[var(--surface)]"
+                        style={{ borderColor: 'var(--border)', maxHeight: 180, overflowY: 'auto' }}
+                      >
+                        {memberSuggestions.map(u => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => { handleAddAllowedEmail(u.email); setShowMemberDropdown(false); }}
+                            className="w-full flex items-center gap-3 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-2)] border-b last:border-none"
+                            style={{ borderColor: 'var(--border)' }}
+                          >
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-white uppercase text-[9px] bg-amber-500">
+                              {u.username.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-bold text-[var(--text)]">{u.username}</div>
+                              <div className="text-[10px] text-[var(--muted)]">{u.email}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {memberSearchError && (
+                    <div className="mt-1 text-xs text-red-500 font-medium">{memberSearchError}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Starter Project Templates */}
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="section-label">STEP 2: RUNTIME TEMPLATE</span>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+                    <input
+                      type="checkbox"
+                      checked={cloneFromGit}
+                      onChange={e => setCloneFromGit(e.target.checked)}
+                      className="rounded"
+                    />
+                    <GitPullRequest size={13} className="text-[var(--accent)]" />
+                    <span>Clone from Git instead</span>
+                  </label>
+                </div>
+
+                {!cloneFromGit ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                    {PROJECT_TEMPLATES_LIST.map(tmpl => {
+                      const isSelected = selectedTemplate === tmpl.id;
+                      return (
+                        <button
+                          key={tmpl.id}
+                          type="button"
+                          onClick={() => setSelectedTemplate(tmpl.id)}
+                          className="p-2.5 rounded-xl text-left transition-all flex flex-col justify-between border cursor-pointer"
+                          style={{
+                            background: isSelected ? 'var(--accent-subtle)' : 'var(--surface)',
+                            borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                            borderWidth: isSelected ? '1.5px' : '1px',
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono uppercase"
+                              style={{
+                                background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
+                                color: isSelected ? '#fff' : 'var(--muted)',
+                              }}
+                            >
+                              {tmpl.badge}
+                            </span>
+                            {isSelected && <Check size={11} style={{ color: 'var(--accent)' }} />}
+                          </div>
+                          <div className="text-xs font-bold truncate" style={{ color: isSelected ? 'var(--accent)' : 'var(--text)' }}>
+                            {tmpl.label}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl border bg-[var(--surface-2)] grid grid-cols-1 sm:grid-cols-3 gap-3" style={{ borderColor: 'var(--border)' }}>
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-mono font-medium block mb-1" style={{ color: 'var(--muted)' }}>
+                        GIT REPO URL
+                      </label>
+                      <input
+                        type="text"
+                        value={gitRepoUrl}
+                        onChange={e => setGitRepoUrl(e.target.value)}
+                        placeholder="https://github.com/organization/repository.git"
+                        className="w-full h-9 px-3 text-xs rounded-lg input-well font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono font-medium block mb-1" style={{ color: 'var(--muted)' }}>
+                        BRANCH (OPTIONAL)
+                      </label>
+                      <input
+                        type="text"
+                        value={gitBranch}
+                        onChange={e => setGitBranch(e.target.value)}
+                        placeholder="main"
+                        className="w-full h-9 px-3 text-xs rounded-lg input-well font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <label className="text-[10px] font-mono font-medium block mb-1" style={{ color: 'var(--muted)' }}>
+                        GITHUB TOKEN (FOR PRIVATE REPOSITORIES)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showGitToken ? 'text' : 'password'}
+                          value={gitToken}
+                          onChange={e => setGitToken(e.target.value)}
+                          placeholder="ghp_••••••••••••"
+                          className="w-full h-9 pl-3 pr-10 text-xs rounded-lg input-well font-mono focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowGitToken(p => !p)}
+                          className="absolute right-3 top-2 text-[var(--muted)] hover:text-[var(--text)] cursor-pointer bg-transparent border-none"
+                        >
+                          {showGitToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Workspace Name & Provision Action */}
+              <div className="pt-3.5 border-t" style={{ borderColor: 'var(--border)' }}>
+                <span className="section-label block mb-1.5">STEP 3: WORKSPACE NAME &amp; LAUNCH</span>
+                <div className="flex gap-2.5 flex-wrap items-center">
+                  <input
+                    ref={newNameRef}
+                    value={newName}
+                    onChange={e => { setNewName(e.target.value); setCreateError(''); }}
+                    placeholder="e.g. Distributed-Cluster-CS101 or API-Engine"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') createWorkspace();
+                      if (e.key === 'Escape') {
+                        setShowNew(false);
+                        setNewName('');
+                      }
+                    }}
+                    className="flex-1 h-10 px-3.5 rounded-xl text-xs sm:text-sm input-well focus:outline-none"
+                    style={{ minWidth: 240 }}
+                  />
+                  <button
+                    onClick={createWorkspace}
+                    disabled={creating || !newName.trim()}
+                    className="flex items-center gap-2 px-5 h-10 rounded-xl text-xs sm:text-sm font-bold cursor-pointer btn-physical-primary disabled:opacity-50"
+                  >
+                    {creating ? <Spinner size={14} /> : <Plus size={15} strokeWidth={2.5} />}
+                    <span>Create &amp; Launch</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNew(false);
+                      setNewName('');
+                    }}
+                    className="px-3.5 h-10 rounded-xl text-xs sm:text-sm font-medium cursor-pointer btn-physical-surface"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── UNIFIED FILTER & SEARCH TABLET ── */}
+        <div
+          className="skeuo-card p-1.5 flex flex-col md:flex-row items-center gap-2 mb-6"
+          style={{ background: 'var(--surface)' }}
+        >
+          {/* Search Input (By ID / Name) */}
+          <div className="relative flex-1 w-full flex items-center">
+            <Search size={14} className="absolute left-3 text-[var(--muted)] pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search workspace by ID or name…"
+              className="w-full h-9 pl-9 pr-8 text-xs rounded-lg input-well focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 text-[var(--muted)] hover:text-[var(--text)] bg-transparent border-none cursor-pointer p-1"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Subtle Vertical Divider on Desktop */}
+          <div className="hidden md:block w-px h-6 bg-[var(--border)] shrink-0 mx-1" />
+
+          {/* Filter Category Segmented Control */}
+          <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto p-0.5 rounded-lg bg-[var(--surface-2)] shrink-0">
+            {[
+              { id: 'all', label: `All (${workspaces.length})` },
+              { id: 'educational', label: 'Educational' },
+              { id: 'professional', label: 'Professional' },
+              { id: 'competitive', label: 'Competitive' },
+            ].map(tab => {
+              const isActive = filterType === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilterType(tab.id)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap"
+                  style={{
+                    background: isActive ? 'var(--surface)' : 'transparent',
+                    color: isActive ? 'var(--accent)' : 'var(--muted)',
+                    boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
+                    fontWeight: isActive ? 700 : 500,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Bulk Actions Bar (When Items Selected) ── */}
+        {selectedWorkspaceIds.length > 0 && (
+          <div
+            className="flex items-center justify-between p-3 rounded-xl border mb-5 skeuo-card animate-fade-in"
+            style={{ borderColor: 'var(--accent)', background: 'var(--surface)' }}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold btn-physical-surface cursor-pointer"
+              >
+                <Check size={12} strokeWidth={3} className="text-[var(--accent)]" />
+                <span>Select All ({filteredWorkspaces.length})</span>
+              </button>
+              <span className="schematic-tag">
+                <span className="anchor-dot" /> {selectedWorkspaceIds.length} SELECTED
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDeselectAll}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold btn-physical-surface cursor-pointer"
+              >
+                Deselect
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[var(--error)] text-white border-none cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {isBulkDeleting ? <Spinner size={12} /> : <Trash2 size={13} />}
+                <span>Delete Selected ({selectedWorkspaceIds.length})</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* ΓöÇΓöÇ Workspace grid / Empty State ΓöÇΓöÇ */}
+        {/* ── WORKSPACE CARDS GRID ── */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <Spinner size={32} />
-            <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>Loading workspacesΓÇª</p>
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Spinner size={30} color="var(--accent)" />
+            <p className="text-xs font-mono font-medium" style={{ color: 'var(--muted)' }}>
+              LOADING WORKSPACES…
+            </p>
           </div>
         ) : workspaces.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in" style={{ color: 'var(--muted)' }}>
-            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 shadow-sm"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <FolderOpen size={40} className="opacity-40" style={{ color: 'var(--accent)' }} />
+          /* Initial empty state when user has zero workspaces */
+          <div className="py-16 text-center animate-fade-in flex flex-col items-center">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 border bg-[var(--surface-2)]" style={{ borderColor: 'var(--border)' }}>
+              <FolderOpen size={24} className="text-[var(--muted)]" />
             </div>
-            <h2 className="text-2xl font-bold mb-2.5" style={{ color: 'var(--text)' }}>No workspaces yet</h2>
-            <p className="text-base max-w-md mb-8 leading-relaxed">
-              Create your first workspace or join an existing one with an invite link to get started.
+            <h2 className="text-base font-extrabold mb-1" style={{ color: 'var(--text)' }}>
+              No workspaces yet
+            </h2>
+            <p className="text-xs leading-relaxed mb-4" style={{ color: 'var(--muted)' }}>
+              Get started by creating your first workspace or joining an existing one.
             </p>
-            <div className="flex items-center gap-3.5">
-              <button
-                onClick={openNewForm}
-                className="flex items-center gap-2 px-6 h-11 rounded-xl text-base font-semibold shadow-md transition-all"
-                style={{ background: 'var(--accent)', color: 'white', border: 'none', cursor: 'pointer' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
-              >
-                <Plus size={18} strokeWidth={2.5} />
-                <span>Create Workspace</span>
-              </button>
-              <button
-                onClick={openJoinForm}
-                className="flex items-center gap-2 px-5 h-11 rounded-xl text-base font-medium transition-all"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer' }}
-              >
-                <Link2 size={16} />
-                <span>Join Workspace</span>
-              </button>
+            <button
+              onClick={() => openNewForm()}
+              className="flex items-center gap-1.5 px-4 h-9 rounded-lg text-xs font-bold btn-physical-primary cursor-pointer"
+            >
+              <Plus size={14} /> Create Workspace
+            </button>
+          </div>
+        ) : filteredWorkspaces.length === 0 ? (
+          /* Filter zero-match state: Displays inline directly in the UI instead of a modal box */
+          <div
+            className="p-8 rounded-xl border border-dashed text-center animate-fade-in my-4"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-3 border"
+              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
+              <Search size={18} className="text-[var(--muted)]" />
             </div>
+            <h3 className="text-sm font-bold mb-1" style={{ color: 'var(--text)' }}>
+              No workspaces match your search or filter
+            </h3>
+            <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>
+              No workspaces found {searchQuery ? <span>for &ldquo;<strong className="text-[var(--accent)]">{searchQuery}</strong>&rdquo;</span> : null}
+              {filterType !== 'all' ? <span> under <strong className="capitalize text-[var(--accent)]">{filterType}</strong></span> : null}.
+            </p>
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); setFilterType('all'); }}
+              className="btn-physical-surface text-xs py-1.5 px-4 cursor-pointer inline-flex items-center gap-1.5 font-bold"
+            >
+              <X size={12} />
+              <span>Clear Filter &amp; Show All ({workspaces.length})</span>
+            </button>
           </div>
         ) : (
-          /* ΓöÇΓöÇ Workspaces Section (when workspaces exist) ΓöÇΓöÇ */
-          <div>
-            {/* Workspace Controls & Bulk Selection Bar */}
-            <div
-              className="flex flex-wrap items-center justify-between gap-3 mb-5 p-3 sm:p-3.5 rounded-2xl border transition-all"
-              style={{
-                background: 'var(--surface)',
-                borderColor: selectedWorkspaceIds.length > 0 ? 'var(--accent)' : 'var(--border)',
-              }}
-            >
-              <div className="flex items-center gap-3">
-                {/* Select All Checkbox Button */}
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all border"
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredWorkspaces.map(ws => {
+              const wsType = (ws.type || 'educational') as WorkspaceType;
+              const meta = typeDetails[wsType] || typeDetails.educational;
+              const TypeIcon = meta.icon;
+              const isSelected = selectedWorkspaceIds.includes(ws.id);
+              const isDeletingThis = deletingWorkspaceId === ws.id;
+
+              return (
+                <div
+                  key={ws.id}
+                  onClick={() => handleOpen(ws)}
+                  className={`skeuo-card group cursor-pointer flex flex-col justify-between transition-all ${isSelected ? 'border-[var(--accent)] ring-2 ring-[var(--accent-subtle)]' : ''}`}
                   style={{
-                    background: selectedWorkspaceIds.length === workspaces.length ? 'var(--accent)' : 'var(--surface-2)',
-                    borderColor: selectedWorkspaceIds.length === workspaces.length ? 'var(--accent)' : 'var(--border)',
-                    color: selectedWorkspaceIds.length === workspaces.length ? '#ffffff' : 'var(--text)',
+                    opacity: isDeletingThis ? 0.4 : 1,
+                    minHeight: 210,
                   }}
-                  title={selectedWorkspaceIds.length === workspaces.length ? 'Deselect all' : 'Select all workspaces'}
                 >
-                  <div
-                    className="w-4 h-4 rounded flex items-center justify-center transition-all"
-                    style={{
-                      background: selectedWorkspaceIds.length > 0 ? (selectedWorkspaceIds.length === workspaces.length ? '#ffffff' : 'var(--accent)') : 'transparent',
-                      border: `1.5px solid ${selectedWorkspaceIds.length === workspaces.length ? '#ffffff' : 'var(--border)'}`,
-                      color: selectedWorkspaceIds.length === workspaces.length ? 'var(--accent)' : '#ffffff',
-                    }}
-                  >
-                    {selectedWorkspaceIds.length === workspaces.length && <Check size={11} strokeWidth={3} />}
-                    {selectedWorkspaceIds.length > 0 && selectedWorkspaceIds.length < workspaces.length && (
-                      <div className="w-2 h-0.5 rounded-full" style={{ background: '#ffffff' }} />
-                    )}
-                  </div>
-                  <span>Select All ({workspaces.length})</span>
-                </button>
+                  {/* Card Header Strip */}
+                  <div className="card-header-tab">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={e => toggleSelectWorkspace(ws.id, e)}
+                        className="w-4 h-4 rounded flex items-center justify-center border transition-all cursor-pointer"
+                        style={{
+                          background: isSelected ? 'var(--accent)' : 'var(--surface)',
+                          borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                          color: '#ffffff',
+                        }}
+                      >
+                        {isSelected && <Check size={10} strokeWidth={3} />}
+                      </button>
 
-                {/* Selected Counter Pill */}
-                {selectedWorkspaceIds.length > 0 && (
-                  <span
-                    className="text-xs px-2.5 py-1 rounded-lg font-mono font-medium animate-fade-in"
-                    style={{
-                      background: 'rgba(47, 129, 247, 0.15)',
-                      color: 'var(--accent)',
-                      border: '1px solid rgba(47, 129, 247, 0.3)',
-                    }}
-                  >
-                    {selectedWorkspaceIds.length} of {workspaces.length} selected
-                  </span>
-                )}
-              </div>
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 font-mono uppercase"
+                        style={{ background: meta.bgColor, color: meta.color, border: `1px solid ${meta.borderColor}` }}
+                      >
+                        <TypeIcon size={10} />
+                        <span>{meta.label}</span>
+                      </span>
+                    </div>
 
-              {/* Bulk Actions */}
-              {selectedWorkspaceIds.length > 0 && (
-                <div className="flex items-center gap-2.5 animate-fade-in">
-                  <button
-                    type="button"
-                    onClick={handleDeselectAll}
-                    className="px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-all border"
-                    style={{
-                      background: 'var(--surface-2)',
-                      borderColor: 'var(--border)',
-                      color: 'var(--muted)',
-                    }}
-                  >
-                    Deselect All
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleBulkDelete}
-                    disabled={isBulkDeleting}
-                    className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-sm"
-                    style={{
-                      background: 'var(--error)',
-                      color: '#ffffff',
-                      border: 'none',
-                      opacity: isBulkDeleting ? 0.7 : 1,
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
-                  >
-                    {isBulkDeleting ? <Spinner size={13} /> : <Trash2 size={13} />}
-                    <span>Delete Selected ({selectedWorkspaceIds.length})</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* ΓöÇΓöÇ Workspaces Grid ΓöÇΓöÇ */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {workspaces.map(ws => {
-                const wsType = (ws.type || 'educational') as WorkspaceType;
-                const meta = typeDetails[wsType] || typeDetails.educational;
-                const TypeIcon = meta.icon;
-                const isSelected = selectedWorkspaceIds.includes(ws.id);
-                const isDeletingThis = deletingWorkspaceId === ws.id;
-
-                return (
-                  <div
-                    key={ws.id}
-                    onClick={() => handleOpen(ws)}
-                    className="group rounded-2xl cursor-pointer transition-all duration-200 relative flex flex-col justify-between shadow-md"
-                    style={{
-                      background: isSelected ? 'var(--surface-2)' : 'var(--surface)',
-                      border: isSelected ? '2px solid var(--accent)' : '1.5px solid var(--border)',
-                      boxShadow: isSelected ? '0 0 16px rgba(47, 129, 247, 0.25)' : 'none',
-                      padding: 26,
-                      minHeight: 210,
-                      opacity: isDeletingThis ? 0.5 : 1,
-                    }}
-                    onMouseEnter={e => {
-                      if (!isSelected) (e.currentTarget as HTMLDivElement).style.borderColor = meta.color;
-                      (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)';
-                      (e.currentTarget as HTMLDivElement).style.boxShadow = `0 10px 25px rgba(0,0,0,0.35)`;
-                    }}
-                    onMouseLeave={e => {
-                      if (!isSelected) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
-                      (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-                      (e.currentTarget as HTMLDivElement).style.boxShadow = isSelected ? '0 0 16px rgba(47, 129, 247, 0.25)' : 'none';
-                    }}
-                  >
-                    {/* Actions (hover) */}
-                    <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-all z-10">
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={e => generateQuickInvite(ws.id, e)}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg transition-all shadow-sm"
-                        style={{ color: 'var(--muted)', cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = meta.color; (e.currentTarget as HTMLButtonElement).style.borderColor = meta.color; e.stopPropagation(); }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-                        title="Copy invite link"
+                        className="w-7 h-7 rounded flex items-center justify-center text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer bg-transparent border-none"
+                        title={copiedId === ws.id ? 'Invite Link Copied!' : 'Copy Invite Link'}
                       >
-                        <UserPlus size={15} />
+                        {copiedId === ws.id ? <Check size={13} className="text-emerald-500" /> : <UserPlus size={13} />}
                       </button>
                       <button
                         onClick={e => deleteWorkspace(ws.id, e)}
                         disabled={isDeletingThis}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg transition-all shadow-sm"
-                        style={{ color: 'var(--muted)', cursor: isDeletingThis ? 'not-allowed' : 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--error)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--error)'; e.stopPropagation(); }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-                        title="Delete workspace"
+                        className="w-7 h-7 rounded flex items-center justify-center text-[var(--muted)] hover:text-red-500 transition-colors cursor-pointer bg-transparent border-none"
+                        title="Delete Workspace"
                       >
-                        {isDeletingThis ? <Spinner size={14} /> : <Trash2 size={15} />}
+                        {isDeletingThis ? <Spinner size={12} /> : <Trash2 size={13} />}
                       </button>
+                      <span className="anchor-dot ml-0.5" style={{ width: 6, height: 6 }} />
                     </div>
-
-                    <div>
-                      {/* Top Row: Type Badge + Selection Checkbox + Icon */}
-                      <div className="flex items-center justify-between mb-4 pr-16">
-                        <div className="flex items-center gap-2.5">
-                          {/* Checkbox button */}
-                          <button
-                            type="button"
-                            onClick={e => toggleSelectWorkspace(ws.id, e)}
-                            className="w-5 h-5 rounded flex items-center justify-center transition-all cursor-pointer shadow-sm"
-                            style={{
-                              background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
-                              border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
-                              color: '#ffffff',
-                            }}
-                            title={isSelected ? 'Deselect workspace' : 'Select workspace'}
-                          >
-                            {isSelected && <Check size={12} strokeWidth={3} />}
-                          </button>
-
-                          <div className="flex items-center justify-center w-11 h-11 rounded-xl shadow-sm"
-                            style={{ background: meta.bgColor, border: `1px solid ${meta.borderColor}`, color: meta.color }}>
-                            <TypeIcon size={20} />
-                          </div>
-                        </div>
-
-                        <span className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1.5"
-                          style={{ background: meta.bgColor, border: `1px solid ${meta.borderColor}`, color: meta.color }}>
-                          <TypeIcon size={13} />
-                          {meta.label}
-                        </span>
-                      </div>
-
-                    {/* Name */}
-                    <h3 className="font-extrabold mb-1.5 truncate text-lg sm:text-xl group-hover:text-[var(--accent)] transition-colors"
-                      style={{ color: 'var(--text)' }}>
-                      {ws.name}
-                    </h3>
-
-                    {/* Description / Roles hint */}
-                    <p className="text-xs sm:text-sm truncate mb-4" style={{ color: 'var(--muted)' }}>
-                      {ws.description || `${meta.roles}`}
-                    </p>
                   </div>
 
-                  {/* ID + timestamp + role */}
-                  <div className="flex items-center justify-between mt-auto pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs font-mono truncate" style={{ color: 'var(--muted)', maxWidth: 120 }}>{ws.id}</span>
-                      {ws.myRole && (
-                        <span className="text-xs px-2 py-0.5 rounded font-mono font-medium truncate"
-                          style={{
-                            background:
-                              wsType === 'competitive'
-                                ? ws.myRole === 'team_member'
-                                  ? 'rgba(16, 185, 129, 0.15)'
-                                  : ws.myRole === 'team_leader'
-                                  ? 'rgba(99, 102, 241, 0.15)'
-                                  : 'rgba(234, 179, 8, 0.15)'
-                                : ws.myRole === 'teacher'
-                                ? 'rgba(168, 85, 247, 0.15)'
-                                : ws.myRole === 'student'
-                                ? 'rgba(56, 189, 248, 0.15)'
-                                : ws.myRole === 'developer'
-                                ? 'rgba(16, 185, 129, 0.15)'
-                                : ws.myRole === 'tester'
-                                ? 'rgba(244, 63, 94, 0.15)'
-                                : ws.myRole === 'team_leader' || ws.myRole === 'owner' || ws.myRole === 'admin'
-                                ? 'rgba(88, 166, 255, 0.15)'
-                                : 'var(--surface-2)',
-                            color:
-                              wsType === 'competitive'
-                                ? ws.myRole === 'team_member'
-                                  ? '#10b981'
-                                  : ws.myRole === 'team_leader'
-                                  ? '#818cf8'
-                                  : '#eab308'
-                                : ws.myRole === 'teacher'
-                                ? '#c084fc'
-                                : ws.myRole === 'student'
-                                ? '#38bdf8'
-                                : ws.myRole === 'developer'
-                                ? '#10b981'
-                                : ws.myRole === 'tester'
-                                ? '#f43f5e'
-                                : ws.myRole === 'team_leader' || ws.myRole === 'owner' || ws.myRole === 'admin'
-                                ? '#58a6ff'
-                                : 'var(--text)',
-                            border: '1px solid var(--border)',
-                          }}>
-                          {wsType === 'competitive' && (ws.myRole === 'admin' || ws.myRole === 'owner') ? (
-                            <span className="flex items-center gap-1"><Crown size={12} /> Admin (Comment)</span>
-                          ) : wsType === 'competitive' && ws.myRole === 'team_leader' ? (
-                            <span className="flex items-center gap-1"><Crown size={12} /> Team Leader</span>
-                          ) : ws.myRole === 'team_member' ? (
-                            <span className="flex items-center gap-1"><Terminal size={12} /> Team Member</span>
-                          ) : ws.myRole === 'teacher' ? (
-                            <span className="flex items-center gap-1"><GraduationCap size={12} /> Teacher</span>
-                          ) : ws.myRole === 'student' ? (
-                            <span className="flex items-center gap-1"><GraduationCap size={12} /> Student</span>
-                          ) : ws.myRole === 'team_leader' ? (
-                            <span className="flex items-center gap-1"><Crown size={12} /> Team Lead</span>
-                          ) : ws.myRole === 'developer' ? (
-                            <span className="flex items-center gap-1"><Terminal size={12} /> Developer</span>
-                          ) : ws.myRole === 'tester' ? (
-                            <span className="flex items-center gap-1"><Eye size={12} /> Tester</span>
-                          ) : ws.myRole === 'owner' || ws.myRole === 'admin' ? (
-                            <span className="flex items-center gap-1"><Crown size={12} /> Admin</span>
-                          ) : ws.myRole === 'editor' ? (
-                            <span className="flex items-center gap-1"><Terminal size={12} /> Edit</span>
-                          ) : ws.myRole === 'viewer' ? (
-                            <span className="flex items-center gap-1"><Eye size={12} /> View</span>
-                          ) : (
-                            ws.myRole
-                          )}
-                        </span>
-                      )}
+                  {/* Card Body */}
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3
+                        className="font-extrabold text-base tracking-tight group-hover:text-[var(--accent)] transition-colors line-clamp-1 mb-1.5"
+                        style={{ color: 'var(--text)' }}
+                      >
+                        {ws.name}
+                      </h3>
+
+                      <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: 'var(--muted)' }}>
+                        {ws.description || meta.desc}
+                      </p>
                     </div>
-                    {(ws.updatedAt ?? ws.createdAt) && (
-                      <span className="flex items-center gap-1.5 text-xs shrink-0" style={{ color: 'var(--muted)' }}>
-                        <Clock size={12} />{timeAgo(ws.updatedAt ?? ws.createdAt)}
-                      </span>
-                    )}
+
+                    {/* Bottom Metadata & Open IDE trigger */}
+                    <div className="mt-4 pt-3 border-t flex items-center justify-between text-[11px]" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex items-center gap-2 font-mono" style={{ color: 'var(--muted)' }}>
+                        <span className="truncate max-w-[80px]">{ws.id}</span>
+                        {ws.updatedAt && (
+                          <>
+                            <span>·</span>
+                            <span className="flex items-center gap-1">
+                              <Clock size={10} />
+                              {timeAgo(ws.updatedAt)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--accent)] group-hover:translate-x-0.5 transition-transform">
+                        <span>Open IDE</span>
+                        <ArrowRight size={13} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
       </main>
     </div>
   );

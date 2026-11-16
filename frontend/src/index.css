@@ -1,57 +1,454 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* ─────────────────────────────────────────────
+   DEFAULT (LIGHT) — Technical Line-Art & Skeuomorphic Minimalist
+   Soft cool neutral canvas · crisp 1px borders · distinct header tabs
+   High-contrast vibrant orange/red accent for primary focal points
+   ───────────────────────────────────────────── */
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface-2: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-secondary: #c9d1d9;
-  --muted: #7d8590;
-  --accent: #2f81f7;
-  --accent-hover: #1f6feb;
-  --accent-fg: #ffffff;
-  --error: #f85149;
-  --error-bg: rgba(248,81,73,0.1);
-  --success: #3fb950;
-  --success-bg: rgba(63,185,80,0.1);
-  --warning: #d29922;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  --bg: #F4F6F9;
+  --surface: #FFFFFF;
+  --surface-2: #EDF1F5;
+  --surface-3: #E2E7EE;
+  --border: #D1D8E2;
+  --border-subtle: #E3E8EF;
+  --text: #191E28;
+  --text-secondary: #475163;
+  --muted: #7E8A9C;
+  --accent: #E8420C;
+  --accent-hover: #D13807;
+  --accent-fg: #FFFFFF;
+  --accent-subtle: rgba(232, 66, 12, 0.08);
+  --accent-border: rgba(232, 66, 12, 0.28);
+  --error: #DC2626;
+  --error-bg: rgba(220, 38, 38, 0.08);
+  --success: #16A34A;
+  --success-bg: rgba(22, 163, 74, 0.08);
+  --warning: #D97706;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --radius: 6px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Skeuomorphic depth & card shadows */
+  --raised-shadow: 0 3px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --inset-shadow: inset 0 2px 4px rgba(15, 23, 42, 0.06), inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  --pressed-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.12), inset 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 32px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-stacked: 3px 3px 0 #D1D8E2, 6px 6px 0 #E3E8EF;
+
+  /* Technical line art & grids */
+  --connector-line: #B8C3D1;
+  --grid-pattern: radial-gradient(circle, #CBD4E0 1px, transparent 1px);
+
+  /* Code Editor Canvas Tokens (Light Mode: pristine white canvas with technical line numbers) */
+  --editor-bg: #FFFFFF;
+  --editor-fg: #191E28;
+  --editor-gutter-bg: #F4F6F9;
+  --editor-gutter-fg: #8A96A6;
+  --editor-gutter-border: #E2E8F0;
+  --terminal-bg: #1E232B;
+  --terminal-fg: #E6EDF3;
 }
 
-[data-theme="light"] {
-  --bg: #f6f8fa;
-  --surface: #ffffff;
-  --surface-2: #f0f2f4;
-  --border: #d0d7de;
-  --text: #1f2328;
-  --text-secondary: #24292f;
-  --muted: #656d76;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
-  --error: #cf222e;
-  --error-bg: rgba(207,34,46,0.08);
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
+/* ─────────────────────────────────────────────
+   DARK THEME — Technical Darkroom Line-Art
+   ───────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg: #0D1117;
+  --surface: #161B22;
+  --surface-2: #21262D;
+  --surface-3: #2A313C;
+  --border: #30363D;
+  --border-subtle: #21262D;
+  --text: #F0F6FC;
+  --text-secondary: #C9D1D9;
+  --muted: #8B949E;
+  --accent: #E8420C;
+  --accent-hover: #FF4E16;
+  --accent-fg: #FFFFFF;
+  --accent-subtle: rgba(232, 66, 12, 0.15);
+  --accent-border: rgba(232, 66, 12, 0.38);
+  --error: #F85149;
+  --error-bg: rgba(248, 81, 73, 0.12);
+  --success: #3FB950;
+  --success-bg: rgba(63, 185, 80, 0.12);
+  --warning: #D29922;
+
+  --raised-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+  --inset-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), inset 0 1px 2px rgba(0, 0, 0, 0.2);
+  --pressed-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.65);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-stacked: 3px 3px 0 #30363D, 6px 6px 0 #21262D;
+
+  --connector-line: #30363D;
+  --grid-pattern: radial-gradient(circle, #30363D 1px, transparent 1px);
+
+  /* Code Editor Canvas Tokens (Dark Mode) */
+  --editor-bg: #0D1117;
+  --editor-fg: #E6EDF3;
+  --editor-gutter-bg: #090D13;
+  --editor-gutter-fg: #505967;
+  --editor-gutter-border: #21262D;
+  --terminal-bg: #090D13;
+  --terminal-fg: #E6EDF3;
 }
 
-html { background-color: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-body { margin: 0; padding: 0; min-height: 100vh; background-color: var(--bg); color: var(--text); transition: background-color 0.2s ease, color 0.2s ease; }
-#root { min-height: 100vh; display: flex; flex-direction: column; }
-::selection { background-color: rgba(47,129,247,0.3); }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.animate-fade-in { animation: fadeIn 0.2s ease forwards; }
+/* ─────────────────────────────────────────────
+   BASE GLOBAL STYLES
+   ───────────────────────────────────────────── */
+html {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::selection {
+  background-color: rgba(232, 66, 12, 0.18);
+}
+
+/* ─────────────────────────────────────────────
+   SCROLLBARS
+   ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────
+   ANIMATIONS
+   ───────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-accent {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 66, 12, 0.45); }
+  50%       { box-shadow: 0 0 0 5px rgba(232, 66, 12, 0); }
+}
+
+.animate-fade-in  { animation: fadeIn  0.20s ease forwards; }
+.animate-slide-up { animation: slideUp 0.24s ease forwards; }
+
+/* ─────────────────────────────────────────────
+   BENTO GRID SYSTEM
+   ───────────────────────────────────────────── */
+.bento-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(12, 1fr);
+}
+
+.bento-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+}
+
+.bento-tile:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.bento-12 { grid-column: span 12; }
+.bento-8  { grid-column: span 8; }
+.bento-7  { grid-column: span 7; }
+.bento-6  { grid-column: span 6; }
+.bento-5  { grid-column: span 5; }
+.bento-4  { grid-column: span 4; }
+.bento-3  { grid-column: span 3; }
+.bento-2  { grid-column: span 2; }
+
+@media (max-width: 1024px) {
+  .bento-8, .bento-7, .bento-5 { grid-column: span 12; }
+  .bento-4, .bento-3, .bento-2 { grid-column: span 6; }
+}
+
+@media (max-width: 640px) {
+  .bento-grid { grid-template-columns: 1fr; }
+  .bento-12, .bento-8, .bento-7, .bento-6, .bento-5, .bento-4, .bento-3, .bento-2 {
+    grid-column: span 1;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   SKEUOMORPHIC MINIMALIST CARDS
+   (Matching Reference Image: crisp header tabs,
+   physical edge bevels, offset stacked layers)
+   ───────────────────────────────────────────── */
+.skeuo-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.skeuo-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Distinct card header strip as in the reference image (Invoice, Month, Scale, etc.) */
+.card-header-tab {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+/* Cascading / Stacked Card Wireframe effect */
+.stacked-card {
+  position: relative;
+}
+.stacked-card::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: -6px;
+  bottom: -6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+}
+.stacked-card::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: -12px;
+  bottom: -12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: inherit;
+  z-index: -2;
+  pointer-events: none;
+}
+
+/* Accent Card (like Plans, Currencies headers in reference image) */
+.accent-card-header {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-bottom: 2px solid #BA3307;
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ─────────────────────────────────────────────
+   TECHNICAL LINE ART & ANCHOR DOTS
+   ───────────────────────────────────────────── */
+.anchor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.anchor-dot-live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  flex-shrink: 0;
+  display: inline-block;
+  animation: pulse-accent 1.8s ease-in-out infinite;
+}
+
+.connector-line-h {
+  height: 1px;
+  background: var(--connector-line);
+  position: relative;
+}
+
+.connector-line-v {
+  width: 1px;
+  background: var(--connector-line);
+  position: relative;
+}
+
+/* Blueprint / Schematic Dot Grid */
+.bg-schematic-grid {
+  background-image: var(--grid-pattern);
+  background-size: 24px 24px;
+}
+
+/* ─────────────────────────────────────────────
+   PHYSICAL BUTTONS & INPUT WELLS
+   ───────────────────────────────────────────── */
+.btn-physical-primary {
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+  box-shadow: 0 2px 4px rgba(232, 66, 12, 0.25), 0 1px 2px rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+  transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-physical-primary:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(232, 66, 12, 0.3), 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+.btn-physical-primary:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.btn-physical-surface {
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  font-weight: 500;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-physical-surface:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+.btn-physical-surface:active {
+  transform: translateY(1px);
+  box-shadow: var(--inset-shadow);
+}
+
+.input-well {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--inset-shadow);
+  border-radius: var(--radius);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-well:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--inset-shadow), 0 0 0 2px var(--accent-subtle);
+}
+
+/* ─────────────────────────────────────────────
+   PILL BADGES
+   ───────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.pill-accent {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+/* ─────────────────────────────────────────────
+   SCHEMATIC MONOSPACE TAGS
+   ───────────────────────────────────────────── */
+.schematic-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}

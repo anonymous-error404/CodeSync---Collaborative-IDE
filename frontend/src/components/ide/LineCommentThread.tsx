@@ -69,7 +69,7 @@ export const LineCommentThread: React.FC<LineCommentThreadProps> = ({
             <span
               className="px-1.5 py-0.5 rounded text-[10px] font-medium"
               style={{
-                background: comment.resolved ? 'rgba(34, 197, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                background: comment.resolved ? 'rgba(34, 197, 94, 0.15)' : 'var(--accent-subtle)',
                 color: comment.resolved ? '#22c55e' : 'var(--accent)',
               }}
             >

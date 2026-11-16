@@ -1240,10 +1240,9 @@ export function IntelligentWhiteboard({
           <div
             className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-full text-xs font-semibold shadow flex items-center gap-2 pointer-events-none"
             style={{
-              background: 'rgba(210, 153, 34, 0.9)',
+              background: '#d29922',
               color: '#0d1117',
-              border: '1px solid rgba(210, 153, 34, 0.4)',
-              backdropFilter: 'blur(8px)',
+              border: '1px solid #b0801a',
             }}
           >
             <Lock size={14} /><span>Whiteboard is in Read-Only Mode</span>

@@ -484,22 +484,17 @@ export function MembersPanel({
       style={{ width: 340, background: 'var(--surface)', borderLeft: '1px solid var(--border)' }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="card-header-tab">
         <div className="flex items-center gap-2">
-          <Users size={18} style={{ color: 'var(--text)' }} />
-          <div>
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
-              {workspaceType === 'educational' ? 'Classroom Roster & Access' : 'Members & RBAC'}
-            </h2>
-            <span className="text-[10px] uppercase tracking-wider font-semibold"
-              style={{ color: workspaceType === 'educational' ? '#a855f7' : workspaceType === 'professional' ? '#3b82f6' : '#f59e0b' }}>
-              {workspaceType} Mode
-            </span>
-          </div>
+          <span className="anchor-dot" />
+          <Users size={15} className="text-[var(--accent)]" />
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+            ROSTER // {workspaceType.toUpperCase()}
+          </span>
         </div>
         <button onClick={onClose} className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
           style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
-          <X size={18} />
+          <X size={15} />
         </button>
       </div>
 
@@ -1361,8 +1356,7 @@ export function MembersPanel({
                       )}
                     </select>
                     <button onClick={handleGenerateInvite} disabled={generatingInvite}
-                      className="flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
-                      style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: generatingInvite ? 'not-allowed' : 'pointer', opacity: generatingInvite ? 0.7 : 1 }}>
+                      className="btn-physical-primary flex items-center gap-1 text-xs px-3 py-1 cursor-pointer disabled:opacity-50">
                       <UserPlus size={12} /> {generatingInvite ? '...' : 'Invite'}
                     </button>
                   </div>
@@ -1375,7 +1369,7 @@ export function MembersPanel({
                     {invites.filter(i => i.active).map(invite => {
                       const url = invite.inviteUrl || `${window.location.origin}/?join=${invite.id}`;
                       return (
-                        <div key={invite.id} className="flex flex-col p-2.5 rounded-lg gap-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                        <div key={invite.id} className="flex flex-col p-2.5 rounded-xl gap-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--muted)]">
                               Role: <strong style={{ color: roleColor(invite.role) }}>{invite.role === 'editor' ? 'Edit' : invite.role === 'viewer' ? 'View' : invite.role}</strong>
@@ -1388,9 +1382,9 @@ export function MembersPanel({
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <input readOnly value={url} className="flex-1 text-xs p-1.5 rounded outline-none" style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }} />
-                            <button onClick={() => handleCopyInvite(url, invite.id)} className="p-1.5 rounded transition-colors"
-                              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: copiedInviteId === invite.id ? 'var(--success)' : 'var(--text)', cursor: 'pointer' }}>
+                            <input readOnly value={url} className="flex-1 text-xs p-1.5 rounded-lg outline-none input-well" style={{ color: 'var(--text)' }} />
+                            <button onClick={() => handleCopyInvite(url, invite.id)} className="p-1.5 rounded-lg btn-physical-surface cursor-pointer"
+                              style={{ color: copiedInviteId === invite.id ? 'var(--success)' : 'var(--text)' }}>
                               {copiedInviteId === invite.id ? <Check size={14} /> : <Copy size={14} />}
                             </button>
                           </div>
@@ -1407,8 +1401,8 @@ export function MembersPanel({
       
       {/* Footer */}
       <div className="p-4 mt-auto" style={{ borderTop: '1px solid var(--border)' }}>
-        <button onClick={handleLeave} className="w-full py-2 rounded-lg text-sm font-semibold transition-colors"
-          style={{ background: 'transparent', border: '1px solid var(--error)', color: 'var(--error)', cursor: 'pointer' }}>
+        <button onClick={handleLeave} className="w-full py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+          style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--error)' }}>
           Leave Workspace
         </button>
       </div>

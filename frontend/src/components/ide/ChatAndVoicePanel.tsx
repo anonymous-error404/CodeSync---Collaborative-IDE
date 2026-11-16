@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
-import { Mic, MicOff, Send, X, MessageSquare, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Send, X, MessageSquare, Sparkles, Phone, PhoneOff, Headphones } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
   sender: string;
   text: string;
   timestamp: string;
+}
+
+interface VoiceState {
+  joined: boolean;
+  muted: boolean;
+  callActive: boolean;
+  teacherName?: string;
+  startCall: () => void;
+  endCall: () => void;
+  joinCall: () => void;
+  leaveCall: () => void;
+  toggleMute: () => void;
 }
 
 interface ChatAndVoicePanelProps {
@@ -16,6 +28,8 @@ interface ChatAndVoicePanelProps {
   messages?: ChatMessage[];
   onSendMessage?: (text: string) => void;
   onClose?: () => void;
+  voice?: VoiceState;
+  isBroadcaster?: boolean;
 }
 
 export default function ChatAndVoicePanel({
@@ -25,6 +39,8 @@ export default function ChatAndVoicePanel({
   messages: propMessages,
   onSendMessage,
   onClose,
+  voice,
+  isBroadcaster = false,
 }: ChatAndVoicePanelProps) {
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const messages = propMessages ?? localMessages;
@@ -108,12 +124,16 @@ export default function ChatAndVoicePanel({
   }, []);
 
   const toggleListening = () => {
-    if (!recognitionRef.current) return;
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
-      baseTextRef.current = inputMessage ? inputMessage.trimEnd() + ' ' : '';
+      baseTextRef.current = inputMessage ? inputMessage + ' ' : '';
       try {
         recognitionRef.current.start();
         setIsListening(true);
@@ -158,38 +178,137 @@ export default function ChatAndVoicePanel({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 w-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+    <div
+      className="flex flex-col h-full w-full"
+      style={{ background: 'var(--surface)', color: 'var(--text)' }}
+    >
+      {/* Skeuomorphic Header Tab */}
+      <div className="card-header-tab">
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-gray-300" />
-          <h2 className="text-sm font-semibold text-white tracking-tight">Workspace Chat</h2>
-          <span className="flex items-center gap-1.5 ml-2">
+          <MessageSquare className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+          <span>COLLAB // CHAT_STREAM</span>
+          <span className="flex items-center gap-1 ml-1.5 font-mono text-[10px]">
             <span
-              className={`h-2 w-2 rounded-full ${
+              className={`h-1.5 w-1.5 rounded-full ${
                 isConnected ? 'bg-emerald-500' : 'bg-red-500'
               }`}
             />
+            <span style={{ color: 'var(--muted)' }}>{isConnected ? 'ONLINE' : 'CONNECTING'}</span>
           </span>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-white rounded-md hover:bg-gray-800 transition-colors"
+            className="p-1 rounded cursor-pointer transition-colors text-[var(--muted)] hover:text-[var(--text)] bg-transparent border-none"
+            title="Close Panel"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
 
+      {/* ── Voice Call Section (always at top) ── */}
+      {voice && (
+        <div
+          className="shrink-0 px-3 py-2.5 border-b flex flex-col gap-2"
+          style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Phone size={12} className="text-emerald-500" />
+              <span className="text-[11px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>
+                Voice Call
+              </span>
+            </div>
+            {voice.joined ? (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono"
+                style={{ background: 'rgba(63,185,80,0.15)', color: '#3fb950', border: '1px solid rgba(63,185,80,0.3)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Connected
+              </span>
+            ) : voice.callActive ? (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono"
+                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Live
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono" style={{ color: 'var(--muted)' }}>Standby</span>
+            )}
+          </div>
+
+          <div className="flex gap-1.5">
+            {isBroadcaster ? (
+              voice.joined ? (
+                <>
+                  <button
+                    onClick={voice.toggleMute}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-semibold btn-physical-surface cursor-pointer"
+                    title={voice.muted ? 'Unmute' : 'Mute'}
+                  >
+                    {voice.muted ? <MicOff size={12} className="text-red-400" /> : <Mic size={12} />}
+                    <span>{voice.muted ? 'Unmute' : 'Mute'}</span>
+                  </button>
+                  <button
+                    onClick={voice.endCall}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-semibold cursor-pointer"
+                    style={{ background: 'var(--error)', color: 'white', border: 'none' }}
+                  >
+                    <PhoneOff size={12} />
+                    <span>End Call</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={voice.startCall}
+                  className="w-full flex items-center justify-center gap-1.5 py-1 rounded-lg text-[11px] font-semibold btn-physical-primary cursor-pointer"
+                  style={{ background: 'var(--success)', borderColor: 'var(--success)' }}
+                >
+                  <Phone size={12} />
+                  <span>Start Voice Call</span>
+                </button>
+              )
+            ) : voice.callActive ? (
+              voice.joined ? (
+                <button
+                  onClick={voice.leaveCall}
+                  className="w-full flex items-center justify-center gap-1.5 py-1 rounded-lg text-[11px] font-semibold btn-physical-surface cursor-pointer"
+                  style={{ color: 'var(--error)' }}
+                >
+                  <PhoneOff size={12} />
+                  <span>Leave Call</span>
+                </button>
+              ) : (
+                <button
+                  onClick={voice.joinCall}
+                  className="w-full flex items-center justify-center gap-1.5 py-1 rounded-lg text-[11px] font-semibold btn-physical-primary animate-pulse cursor-pointer"
+                  style={{ background: 'var(--success)', borderColor: 'var(--success)' }}
+                  title={`${voice.teacherName || 'Broadcaster'} is speaking`}
+                >
+                  <Headphones size={12} />
+                  <span>Join Call</span>
+                </button>
+              )
+            ) : (
+              <p className="text-[10px] w-full text-center py-0.5" style={{ color: 'var(--muted)' }}>
+                No active voice session in this workspace.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div
+        className="flex-1 overflow-y-auto p-4 space-y-3"
+        style={{ background: 'var(--bg)' }}
+      >
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-gray-500">
-            <Sparkles className="w-7 h-7 mb-2 text-gray-600" />
-            <p className="text-xs font-medium text-gray-400">No messages yet.</p>
-            <p className="text-[11px] text-gray-600 mt-1">
-              Start typing or use mic for voice-to-text.
+          <div className="h-full flex flex-col items-center justify-center text-center p-4">
+            <Sparkles className="w-7 h-7 mb-2 text-[var(--muted)] opacity-60" />
+            <p className="text-xs font-bold" style={{ color: 'var(--text)' }}>No messages yet.</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
+              Type a message or press the microphone for voice-to-text.
             </p>
           </div>
         ) : (
@@ -197,16 +316,22 @@ export default function ChatAndVoicePanel({
             const isMe = msg.sender === username;
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-medium text-gray-400">{msg.sender}</span>
-                  <span className="text-[10px] text-gray-600">{msg.timestamp}</span>
+                <div className="flex items-center gap-1.5 mb-1 font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
+                  <span className="font-semibold">{msg.sender}</span>
+                  <span>·</span>
+                  <span>{msg.timestamp}</span>
                 </div>
                 <div
-                  className={`max-w-[90%] px-3 py-2 rounded-xl text-xs break-words ${
+                  className={`max-w-[85%] px-3 py-2 rounded-xl text-xs break-words shadow-xs ${
                     isMe
-                      ? 'bg-blue-600 text-white rounded-br-none'
-                      : 'bg-[#161b22] text-gray-200 border border-gray-800 rounded-bl-none'
+                      ? 'rounded-br-none text-white'
+                      : 'rounded-bl-none border'
                   }`}
+                  style={{
+                    background: isMe ? 'var(--accent)' : 'var(--surface)',
+                    borderColor: isMe ? 'transparent' : 'var(--border)',
+                    color: isMe ? '#ffffff' : 'var(--text)',
+                  }}
                 >
                   {msg.text}
                 </div>
@@ -218,23 +343,31 @@ export default function ChatAndVoicePanel({
       </div>
 
       {/* Input Field */}
-      <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-800 bg-[#090d11]">
-        <div className="relative flex items-center bg-[#161b22] border border-gray-800 rounded-xl px-2 py-1.5 focus-within:border-blue-500 transition-colors">
+      <form
+        onSubmit={handleSendMessage}
+        className="p-3 border-t"
+        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+      >
+        <div
+          className="relative flex items-center px-2 py-1.5 rounded-xl border input-well"
+          style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+        >
           <input
             type="text"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={isListening ? 'Listening...' : 'Type or speak...'}
-            className="w-full bg-transparent text-xs text-white placeholder-gray-500 outline-none px-2"
+            placeholder={isListening ? 'Listening via microphone…' : 'Type a message…'}
+            className="w-full bg-transparent text-xs outline-none px-2 focus:outline-none"
+            style={{ color: 'var(--text)' }}
           />
 
           <button
             type="button"
             onClick={toggleListening}
-            className={`p-1.5 rounded-lg transition-colors mr-1 ${
+            className={`p-1.5 rounded-lg transition-colors mr-1 cursor-pointer border-none ${
               isListening
-                ? 'bg-red-500/20 text-red-400 animate-pulse'
-                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                ? 'bg-red-500/20 text-red-500 animate-pulse'
+                : 'text-[var(--muted)] hover:text-[var(--text)] bg-transparent'
             }`}
             title={isListening ? 'Stop mic' : 'Voice input'}
           >
@@ -244,7 +377,7 @@ export default function ChatAndVoicePanel({
           <button
             type="submit"
             disabled={!inputMessage.trim()}
-            className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
+            className="p-1.5 btn-physical-primary rounded-lg cursor-pointer disabled:opacity-40"
           >
             <Send className="w-3.5 h-3.5" />
           </button>

@@ -79,7 +79,7 @@ export function LockManagerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in">
       <div
         className="w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
         style={{
@@ -90,32 +90,20 @@ export function LockManagerModal({
         }}
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 border-b shrink-0"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Lock size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-bold flex items-center gap-2">
-                Resource Access Locks
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  {locks.length} Active
-                </span>
-              </h2>
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Control file, folder, and code block edit restrictions
-              </p>
-            </div>
+        <div className="card-header-tab">
+          <div className="flex items-center gap-2">
+            <span className="anchor-dot" />
+            <Lock size={15} className="text-[var(--accent)]" />
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+              NODE: RESOURCE_LOCKS // CONCURRENCY_GUARD
+            </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
             style={{ color: 'var(--muted)' }}
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
 
@@ -133,7 +121,7 @@ export function LockManagerModal({
                 setTargetPath(activeFilePath || '');
                 setShowCreateForm(true);
               }}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1.5 transition-colors"
+              className="btn-physical-surface text-xs py-1 px-2.5 flex items-center gap-1.5"
             >
               <Plus size={13} /> Lock New Resource
             </button>
@@ -143,7 +131,7 @@ export function LockManagerModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {error && (
-            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
               <AlertCircle size={14} /> {error}
             </div>
           )}
@@ -152,17 +140,18 @@ export function LockManagerModal({
           {showCreateForm && (
             <form
               onSubmit={handleCreateLock}
-              className="p-4 rounded-xl border space-y-3"
-              style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+              className="p-4 rounded-xl border space-y-3 skeuo-card"
+              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Shield size={13} className="text-amber-400" /> Create Resource Lock
+                <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+                  <Shield size={13} className="text-amber-500" /> Create Resource Lock
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowCreateForm(false)}
-                  className="text-xs text-gray-400 hover:text-white"
+                  className="text-xs hover:underline"
+                  style={{ color: 'var(--muted)' }}
                 >
                   Cancel
                 </button>
@@ -176,8 +165,8 @@ export function LockManagerModal({
                     onClick={() => setLockType(type)}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold capitalize border transition-colors flex items-center justify-center gap-1.5 ${
                       lockType === type
-                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-500'
+                        : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]'
                     }`}
                   >
                     {type === 'file' && <FileCode size={12} />}
@@ -189,7 +178,7 @@ export function LockManagerModal({
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-gray-400 block mb-1">
+                <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text)' }}>
                   Target Path (e.g. src/App.tsx or src/components)
                 </label>
                 <input
@@ -197,8 +186,7 @@ export function LockManagerModal({
                   value={targetPath}
                   onChange={e => setTargetPath(e.target.value)}
                   placeholder="Relative path in workspace"
-                  className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs input-well"
                   required
                 />
               </div>
@@ -206,7 +194,7 @@ export function LockManagerModal({
               {lockType === 'code_block' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-400 block mb-1">
+                    <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text)' }}>
                       Start Line
                     </label>
                     <input
@@ -215,13 +203,12 @@ export function LockManagerModal({
                       value={startLine}
                       onChange={e => setStartLine(e.target.value)}
                       placeholder="e.g. 15"
-                      className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
-                      style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                      className="w-full px-3 py-1.5 rounded-lg text-xs input-well"
                       required
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-400 block mb-1">
+                    <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text)' }}>
                       End Line
                     </label>
                     <input
@@ -230,8 +217,7 @@ export function LockManagerModal({
                       value={endLine}
                       onChange={e => setEndLine(e.target.value)}
                       placeholder="e.g. 45"
-                      className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
-                      style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                      className="w-full px-3 py-1.5 rounded-lg text-xs input-well"
                       required
                     />
                   </div>
@@ -239,7 +225,7 @@ export function LockManagerModal({
               )}
 
               <div>
-                <label className="text-[11px] font-semibold text-gray-400 block mb-1">
+                <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text)' }}>
                   Reason (Optional note for teammates)
                 </label>
                 <input
@@ -247,14 +233,13 @@ export function LockManagerModal({
                   value={reason}
                   onChange={e => setReason(e.target.value)}
                   placeholder="e.g. Refactoring component architecture"
-                  className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs input-well"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-lg shadow-amber-600/20"
+                className="btn-physical-primary w-full text-xs py-2 mt-2"
               >
                 Apply Lock
               </button>
@@ -264,7 +249,7 @@ export function LockManagerModal({
           {/* List of active locks */}
           {locks.length === 0 ? (
             <div
-              className="p-8 rounded-xl border text-center text-xs space-y-1"
+              className="p-8 rounded-xl border text-center text-xs space-y-1 skeuo-card"
               style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--muted)' }}
             >
               <Lock size={24} className="mx-auto opacity-30 mb-2" />
@@ -280,19 +265,19 @@ export function LockManagerModal({
                 return (
                   <div
                     key={lk.id}
-                    className="p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs"
+                    className="p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs skeuo-card"
                     style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
                   >
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {lk.lockType === 'folder' ? (
-                          <Folder size={13} className="text-amber-400 shrink-0" />
+                          <Folder size={13} className="text-amber-500 shrink-0" />
                         ) : lk.lockType === 'code_block' ? (
-                          <Code size={13} className="text-purple-400 shrink-0" />
+                          <Code size={13} className="text-purple-500 shrink-0" />
                         ) : (
-                          <FileCode size={13} className="text-blue-400 shrink-0" />
+                          <FileCode size={13} className="text-blue-500 shrink-0" />
                         )}
-                        <span className="font-mono font-bold truncate text-white">
+                        <span className="font-mono font-bold truncate" style={{ color: 'var(--text)' }}>
                           {lk.targetPath}
                         </span>
                         {lk.lockType === 'code_block' && lk.startLine && lk.endLine && (

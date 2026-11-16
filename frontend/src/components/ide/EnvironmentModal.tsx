@@ -104,7 +104,7 @@ export function EnvironmentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in">
       <div
         className="w-full max-w-2xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
         style={{
@@ -115,46 +115,34 @@ export function EnvironmentModal({
         }}
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 border-b shrink-0"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <Cpu size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-bold flex items-center gap-2">
-                Execution Environments
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  Isolated Docker Sandbox
-                </span>
-              </h2>
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Per-member containerized sandbox with zero interference
-              </p>
-            </div>
+        <div className="card-header-tab">
+          <div className="flex items-center gap-2">
+            <span className="anchor-dot" />
+            <Cpu size={15} className="text-[var(--accent)]" />
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+              NODE: EXEC_ENVIRONMENT // ISOLATED_DOCKER
+            </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
             style={{ color: 'var(--muted)' }}
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
 
         {/* Tab Navigation */}
         <div
-          className="flex items-center gap-1 px-6 pt-3 border-b shrink-0"
-          style={{ borderColor: 'var(--border)' }}
+          className="flex items-center gap-1.5 px-6 pt-3 pb-2 border-b shrink-0"
+          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
         >
           <button
             onClick={() => setActiveTab('my_env')}
-            className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'my_env'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                ? 'btn-physical-primary'
+                : 'btn-physical-surface'
             }`}
           >
             <User size={13} /> My Environment
@@ -165,10 +153,10 @@ export function EnvironmentModal({
 
           <button
             onClick={() => setActiveTab('supported')}
-            className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'supported'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                ? 'btn-physical-primary'
+                : 'btn-physical-surface'
             }`}
           >
             <Server size={13} /> Supported Runtimes ({supportedEnvs.length})
@@ -177,15 +165,15 @@ export function EnvironmentModal({
           {isAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
-              className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'admin'
-                  ? 'border-purple-500 text-purple-400'
-                  : 'border-transparent text-gray-400 hover:text-gray-200'
+                  ? 'btn-physical-primary'
+                  : 'btn-physical-surface'
               }`}
             >
-              <Globe size={13} /> Admin Controls & Management
+              <Globe size={13} /> Admin Controls
               {activeEnvs.length > 0 && (
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-purple-500/20 text-purple-300">
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-white/20 text-white font-mono">
                   {activeEnvs.length}
                 </span>
               )}
@@ -196,8 +184,7 @@ export function EnvironmentModal({
             <button
               onClick={fetchStatus}
               title="Refresh status"
-              className="p-1 rounded hover:bg-white/5 transition-colors text-xs flex items-center gap-1"
-              style={{ color: 'var(--muted)' }}
+              className="p-1.5 rounded-lg btn-physical-surface transition-colors text-xs flex items-center gap-1 cursor-pointer"
             >
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </button>

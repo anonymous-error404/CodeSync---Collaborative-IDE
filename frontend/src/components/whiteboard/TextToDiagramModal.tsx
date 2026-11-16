@@ -52,7 +52,7 @@ export function TextToDiagramModal({ existingElements, onClose, onConfirm }: Pro
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 animate-fade-in"
       onClick={onClose}
     >
       <div

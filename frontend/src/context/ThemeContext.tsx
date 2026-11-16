@@ -2,13 +2,13 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 type Theme = 'dark' | 'light';
 interface ThemeCtx { theme: Theme; toggleTheme: () => void; }
-const ThemeContext = createContext<ThemeCtx>({ theme: 'dark', toggleTheme: () => {} });
+const ThemeContext = createContext<ThemeCtx>({ theme: 'light', toggleTheme: () => {} });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     const s = localStorage.getItem('codesync_theme') as Theme | null;
     if (s === 'dark' || s === 'light') return s;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'light';
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);

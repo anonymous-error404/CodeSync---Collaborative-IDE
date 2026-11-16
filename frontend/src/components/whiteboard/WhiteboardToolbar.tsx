@@ -69,7 +69,7 @@ function Divider({ isLight }: { isLight?: boolean }) {
 // ─── Tool button ──────────────────────────────────────────────────────────────
 
 function ToolButton({
-  tool, activeTool, onSelectTool, color, isLight, disabled,
+  tool, activeTool, onSelectTool, color, disabled,
 }: {
   tool: { id: ToolType; icon: any; label: string };
   activeTool: ToolType;
@@ -80,8 +80,8 @@ function ToolButton({
 }) {
   const Icon = tool.icon;
   const isActive = activeTool === tool.id;
-  const activeBg = color ?? (isLight ? '#0969da' : 'var(--accent)');
-  const inactiveColor = color ?? (isLight ? '#57606a' : 'var(--muted)');
+  const activeBg = color ?? 'var(--accent)';
+  const inactiveColor = color ?? 'var(--muted)';
   return (
     <button
       key={tool.id}
@@ -123,7 +123,6 @@ export function WhiteboardToolbar({ activeTool, onSelectTool, boardTheme = 'dark
       style={{
         background: isLight ? '#ffffff' : 'var(--surface)',
         borderColor: isLight ? '#d0d7de' : 'var(--border)',
-        backdropFilter: 'blur(16px)',
         width: 74,
         maxHeight: 'calc(100vh - 90px)',
         overflowY: 'auto',

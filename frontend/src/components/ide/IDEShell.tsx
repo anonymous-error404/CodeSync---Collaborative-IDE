@@ -4,10 +4,10 @@ import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder, FolderPlus,
   X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
-  Phone, PhoneOff, Mic, MicOff, Headphones,
+  Phone, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
-  Eye, Send, EyeOff, Briefcase, Trophy, Edit3,
-  Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest, Crown,
+  Eye, Send, EyeOff, Briefcase, Trophy,
+  Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest,
   Cpu, GitBranch, FolderOpen, ChevronRight, Globe
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
@@ -129,6 +129,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [socketConnected, setSocketConnected] = useState(false);
   const [liveSocket, setLiveSocket] = useState<Socket | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [isManagementTreeExpanded, setIsManagementTreeExpanded] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const showChatRef = useRef<boolean>(false);
@@ -1737,7 +1738,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     style={{
                       paddingLeft: 12 + depth * 14,
                       paddingRight: 12,
-                      background: isTargetFolder ? 'rgba(47, 129, 247, 0.2)' : 'transparent',
+                      background: isTargetFolder ? 'var(--accent-subtle)' : 'transparent',
                       outline: isTargetFolder ? '1px dashed var(--accent)' : 'none',
                       borderRadius: isTargetFolder ? 4 : 0,
                       border: 'none',
@@ -1881,178 +1882,105 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {/* ── Topbar ── */}
       <header
         className="flex items-center justify-between px-5 shrink-0"
-        style={{ height: 52, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
+        style={{
+          height: 52,
+          background: 'var(--surface)',
+          borderBottom: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)',
+        }}
       >
         {/* Left Section: Back, Workspace Title, Type & Role */}
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg transition-colors"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg cursor-pointer btn-physical-surface shrink-0"
             title="Back to Workspaces"
           >
-            <ChevronLeft size={14} />Workspaces
+            <ChevronLeft size={14} /> Workspaces
           </button>
 
-          <div className="w-px h-5" style={{ background: 'var(--border)' }} />
+          <div className="w-px h-6 shrink-0" style={{ background: 'var(--border)' }} />
 
-          <div className="flex items-center gap-2 min-w-0">
-            <img src={logoImg} alt="CodeSync" className="w-5 h-5 rounded object-contain shrink-0" />
-            <span className="font-semibold truncate max-w-48" style={{ color: 'var(--text)', fontSize: 14 }}>
-              {workspace.name}
-            </span>
-          </div>
-
-          {/* Workspace Type Badge */}
-          <span
-            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5 shrink-0"
-            style={{
-              background: workspaceType === 'educational' ? 'rgba(168, 85, 247, 0.15)' : workspaceType === 'professional' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-              color: workspaceType === 'educational' ? '#c084fc' : workspaceType === 'professional' ? '#60a5fa' : '#fbbf24',
-              border: `1px solid ${workspaceType === 'educational' ? 'rgba(168, 85, 247, 0.35)' : workspaceType === 'professional' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
-            }}
-          >
-            {workspaceType === 'educational' ? <GraduationCap size={12} /> : workspaceType === 'professional' ? <Briefcase size={12} /> : <Trophy size={12} />}
-            <span className="capitalize">{workspaceType}</span>
-          </span>
-
-          {/* Role / Access Level Badge */}
-          <span
-            className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1 shrink-0"
-            style={{
-              background: workspaceType === 'educational'
-                ? isTeacher
-                  ? 'rgba(168, 85, 247, 0.18)'
-                  : isAccessComment
-                  ? 'rgba(59, 130, 246, 0.18)'
-                  : isAccessView
-                  ? 'rgba(56, 189, 248, 0.15)'
-                  : 'rgba(63, 185, 80, 0.15)'
-                : workspaceType === 'professional'
-                ? (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin')
-                  ? 'rgba(88, 166, 255, 0.18)'
-                  : isDeveloper
-                  ? 'rgba(16, 185, 129, 0.18)'
-                  : isTester
-                  ? 'rgba(244, 63, 94, 0.18)'
-                  : 'var(--surface-2)'
-                : workspaceType === 'competitive'
-                ? isCompetitiveAdmin
-                  ? 'rgba(245, 158, 11, 0.18)'
-                  : isCompetitiveLeader
-                  ? 'rgba(99, 102, 241, 0.18)'
-                  : 'rgba(16, 185, 129, 0.18)'
-                : 'var(--surface-2)',
-              color: workspaceType === 'educational'
-                ? isTeacher
-                  ? '#c084fc'
-                  : isAccessComment
-                  ? '#60a5fa'
-                  : isAccessView
-                  ? '#38bdf8'
-                  : '#3fb950'
-                : workspaceType === 'professional'
-                ? (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin')
-                  ? '#58a6ff'
-                  : isDeveloper
-                  ? '#10b981'
-                  : isTester
-                  ? '#f43f5e'
-                  : 'var(--text)'
-                : workspaceType === 'competitive'
-                ? isCompetitiveAdmin
-                  ? '#fbbf24'
-                  : isCompetitiveLeader
-                  ? '#818cf8'
-                  : '#10b981'
-                : 'var(--text)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            {workspaceType === 'competitive' ? (
-              isCompetitiveAdmin ? (
-                <span className="flex items-center gap-1"><Crown size={11} /> Admin (View & Comment)</span>
-              ) : isCompetitiveLeader ? (
-                <span className="flex items-center gap-1"><Trophy size={11} /> Team Leader (All Access + Kanban)</span>
-              ) : (
-                <span className="flex items-center gap-1"><Trophy size={11} /> Team Member (Edit)</span>
-              )
-            ) : workspaceType === 'educational' ? (
-              isTeacher ? (
-                <span className="flex items-center gap-1"><GraduationCap size={11} /> {currentRole === 'owner' ? 'Admin' : 'Teacher'}</span>
-              ) : (
-                <span className="flex items-center gap-1">
-                  {isAccessComment ? <MessageSquare size={11} /> : isAccessView ? <Eye size={11} /> : <Edit3 size={11} />}
-                  Student: {isAccessComment ? 'comment' : isAccessView ? 'view' : 'edit'}
-                </span>
-              )
-            ) : workspaceType === 'professional' ? (
-              (currentRole === 'team_leader' || currentRole === 'owner' || currentRole === 'admin') ? (
-                <span className="flex items-center gap-1"><Crown size={11} /> {currentRole === 'team_leader' ? 'Team Lead' : 'Admin'}</span>
-              ) : isDeveloper ? (
-                <span className="flex items-center gap-1"><Code2 size={11} /> Developer ({isAccessComment ? 'Comment' : isAccessView ? 'View' : 'Edit'})</span>
-              ) : isTester ? (
-                <span className="flex items-center gap-1"><Eye size={11} /> Tester ({isAccessEdit ? 'Edit' : isAccessComment ? 'Comment' : 'View'})</span>
-              ) : (
-                <span className="flex items-center gap-1">{currentRole}</span>
-              )
-            ) : (
-              <span className="flex items-center gap-1">
-                {currentRole === 'owner' || currentRole === 'admin' ? (
-                  <><Crown size={11} /> {currentRole}</>
-                ) : currentRole === 'editor' ? (
-                  <><Edit3 size={11} /> Edit</>
-                ) : (
-                  <><Eye size={11} /> View</>
-                )}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img src={logoImg} alt="CodeSync" className="w-7 h-7 rounded-md object-contain shrink-0 border" style={{ borderColor: 'var(--border)' }} />
+            <div className="flex flex-col min-w-0 justify-center">
+              <span className="font-extrabold truncate max-w-[140px] sm:max-w-[180px] md:max-w-[220px] text-xs leading-tight tracking-tight" style={{ color: 'var(--text)' }}>
+                {workspace.name}
               </span>
-            )}
-          </span>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none mt-0.5 truncate">
+                <span className="capitalize font-bold flex items-center gap-1" style={{
+                  color: workspaceType === 'educational' ? '#9333ea' : workspaceType === 'professional' ? '#2563eb' : '#d97706'
+                }}>
+                  {workspaceType === 'educational' ? <GraduationCap size={10} /> : workspaceType === 'professional' ? <Briefcase size={10} /> : <Trophy size={10} />}
+                  {workspaceType}
+                </span>
+                <span style={{ color: 'var(--border)' }}>/</span>
+                <span className="truncate font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  {workspaceType === 'competitive' ? (
+                    isCompetitiveAdmin ? 'Admin' : isCompetitiveLeader ? 'Team Leader' : 'Team Member'
+                  ) : workspaceType === 'educational' ? (
+                    isTeacher ? (currentRole === 'owner' ? 'Admin' : 'Teacher') : `Student (${isAccessComment ? 'comment' : isAccessView ? 'view' : 'edit'})`
+                  ) : workspaceType === 'professional' ? (
+                    currentRole === 'team_leader' ? 'Team Lead' : (currentRole === 'owner' || currentRole === 'admin') ? 'Admin' : isDeveloper ? `Developer (${isAccessComment ? 'comment' : isAccessView ? 'view' : 'edit'})` : isTester ? `Tester (${isAccessEdit ? 'edit' : isAccessComment ? 'comment' : 'view'})` : currentRole
+                  ) : (
+                    currentRole
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Center Section: View Mode Switcher & Run / Stop */}
-        <div className="flex items-center gap-2">
-          {/* View Mode Toggle: Code Editor vs Whiteboard */}
+        <div className="flex items-center gap-2.5">
+          {/* View Mode Toggle: Code Editor vs Whiteboard vs Web Preview */}
           <div
-            className="flex items-center p-0.5 rounded-lg border"
-            style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+            className="flex items-center p-1 rounded-xl border"
+            style={{
+              background: 'var(--surface-2)',
+              borderColor: 'var(--border)',
+              boxShadow: 'var(--inset-shadow)',
+              gap: 2,
+            }}
           >
             <button
               onClick={() => setActiveView('editor')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
               style={{
-                background: activeView === 'editor' ? 'var(--surface-2)' : 'transparent',
+                background: activeView === 'editor' ? 'var(--surface)' : 'transparent',
                 color: activeView === 'editor' ? 'var(--accent)' : 'var(--muted)',
-                border: 'none',
-                cursor: 'pointer',
+                border: activeView === 'editor' ? '1px solid var(--border)' : '1px solid transparent',
+                boxShadow: activeView === 'editor' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               }}
             >
-              <Code2 size={13} /> Code Editor
+              <Code2 size={13} />
+              <span>Code Editor</span>
             </button>
 
             <button
               onClick={() => setActiveView('whiteboard')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
               style={{
-                background: activeView === 'whiteboard' ? 'var(--surface-2)' : 'transparent',
+                background: activeView === 'whiteboard' ? 'var(--surface)' : 'transparent',
                 color: activeView === 'whiteboard' ? 'var(--accent)' : 'var(--muted)',
-                border: 'none',
-                cursor: 'pointer',
+                border: activeView === 'whiteboard' ? '1px solid var(--border)' : '1px solid transparent',
+                boxShadow: activeView === 'whiteboard' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               }}
             >
-              <Layers size={13} /> Whiteboard
+              <Layers size={13} />
+              <span>Whiteboard</span>
             </button>
 
             <button
               onClick={() => setActiveView('preview')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all relative"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer relative"
               style={{
-                background: activeView === 'preview' ? 'var(--surface-2)' : 'transparent',
+                background: activeView === 'preview' ? 'var(--surface)' : 'transparent',
                 color: activeView === 'preview' ? 'var(--accent)' : 'var(--muted)',
-                border: 'none',
-                cursor: 'pointer',
+                border: activeView === 'preview' ? '1px solid var(--border)' : '1px solid transparent',
+                boxShadow: activeView === 'preview' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               }}
-              title="Full-screen Sandboxed Web Application Preview"
+              title="Sandboxed Web Application Preview"
             >
               <Globe size={13} />
               <span>Web Preview</span>
@@ -2067,26 +1995,20 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             running ? (
               <button
                 onClick={stopExecution}
-                className="flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold transition-all"
-                style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}
+                className="flex items-center gap-1.5 px-3.5 h-8 rounded-xl text-xs font-bold cursor-pointer bg-[var(--error)] text-white border-none shadow-sm transition-all"
               >
-                <Square size={12} /> Stop
+                <Square size={12} />
+                <span>Stop</span>
               </button>
             ) : (
               <button
                 onClick={runFile}
                 disabled={!activeTab || !socketConnected}
-                className="flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shadow-sm"
-                style={{
-                  background: globalExecutionMode && canAdmin ? '#8b5cf6' : 'var(--accent)',
-                  color: 'white',
-                  border: 'none',
-                  cursor: activeTab && socketConnected ? 'pointer' : 'not-allowed',
-                }}
+                className="flex items-center gap-1.5 px-4 h-8 rounded-xl text-xs font-bold cursor-pointer btn-physical-primary disabled:opacity-40"
                 title={globalExecutionMode && canAdmin ? 'Run in Global Environment (Broadcasts to all members)' : 'Run in Isolated Private Member Environment'}
               >
-                <Play size={12} />
-                {globalExecutionMode && canAdmin ? 'Global Run' : 'Run'}
+                <Play size={12} fill="currentColor" />
+                <span>{globalExecutionMode && canAdmin ? 'Global Run' : 'Run'}</span>
               </button>
             )
           )}
@@ -2135,16 +2057,12 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {(workspaceType === 'professional' || workspaceType === 'competitive') && (
             <button
               onClick={() => setShowKanbanHub(v => !v)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
-              style={{
-                background: showKanbanHub ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
-                color: showKanbanHub ? '#60a5fa' : 'var(--text)',
-                border: `1px solid ${showKanbanHub ? '#3b82f6' : 'var(--border)'}`,
-                cursor: 'pointer',
-              }}
+              className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
+                showKanbanHub ? 'btn-physical-primary' : 'btn-physical-surface'
+              }`}
               title="Open Kanban Sprint Hub"
             >
-              <Briefcase size={13} className="text-blue-400" />
+              <Briefcase size={13} className={showKanbanHub ? 'text-white' : 'text-blue-500'} />
               <span>Sprint Hub</span>
             </button>
           )}
@@ -2153,103 +2071,47 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {workspaceType === 'professional' && (
             <button
               onClick={() => setShowProfessionalPanel(v => !v)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
-              style={{
-                background: showProfessionalPanel ? 'rgba(168, 85, 247, 0.2)' : 'var(--surface-2)',
-                color: showProfessionalPanel ? '#c084fc' : 'var(--text)',
-                border: `1px solid ${showProfessionalPanel ? '#a855f7' : 'var(--border)'}`,
-                cursor: 'pointer',
-              }}
+              className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
+                showProfessionalPanel ? 'btn-physical-primary' : 'btn-physical-surface'
+              }`}
               title="Open Code Reviews"
             >
-              <GitPullRequest size={13} className="text-purple-400" />
+              <GitPullRequest size={13} className={showProfessionalPanel ? 'text-white' : 'text-purple-500'} />
               <span>Reviews</span>
               {openReviewsCount > 0 && (
-                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black">
+                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black font-mono">
                   {openReviewsCount}
                 </span>
               )}
             </button>
           )}
 
-          {/* Professional: Request Review button for active file */}
-          {workspaceType === 'professional' && activeTab && !isEffectiveReadOnly && (
-            <button
-              onClick={() => setShowProfessionalPanel(true)}
-              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors"
-              style={{
-                background: 'rgba(168, 85, 247, 0.15)',
-                color: '#c084fc',
-                border: '1px solid rgba(168, 85, 247, 0.35)',
-                cursor: 'pointer',
-              }}
-              title="Request code review for current file"
-            >
-              <GitPullRequest size={12} />
-              <span className="hidden lg:inline">Review File</span>
-            </button>
-          )}
-
-          {/* Voice call controls */}
-          {isBroadcaster ? (
-            voice.joined ? (
-              <div className="flex items-center gap-1.5">
-                <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success)' }}>
-                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
-                  LIVE
-                </span>
-                <button onClick={voice.toggleMute} title={voice.muted ? 'Unmute' : 'Mute'}
-                  className="flex items-center justify-center w-7 h-7 rounded-lg"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: voice.muted ? 'var(--error)' : 'var(--text)', cursor: 'pointer' }}>
-                  {voice.muted ? <MicOff size={13} /> : <Mic size={13} />}
-                </button>
-                <button onClick={voice.endCall}
-                  className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs font-semibold"
-                  style={{ background: 'var(--error)', color: 'white', border: 'none', cursor: 'pointer' }}>
-                  <PhoneOff size={12} /> End
-                </button>
-              </div>
-            ) : (
-              <button onClick={voice.startCall}
-                className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold"
-                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}>
-                <Phone size={12} /> Call
-              </button>
-            )
-          ) : voice.callActive ? (
-            voice.joined ? (
-              <button onClick={voice.leaveCall}
-                className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold"
-                style={{ background: 'var(--surface-2)', color: 'var(--error)', border: '1px solid var(--error)', cursor: 'pointer' }}>
-                <PhoneOff size={12} /> Leave
-              </button>
-            ) : (
-              <button onClick={voice.joinCall}
-                className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold animate-pulse"
-                style={{ background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
-                title={`${voice.teacherName || 'Broadcaster'} is speaking`}>
-                <Headphones size={12} /> Join Call
-              </button>
-            )
-          ) : null}
-
-          {/* Workspace Chat toggle button (beside Call button) */}
+          {/* Consolidated Comms (Call & Chat) Drawer Toggle */}
           <button
             onClick={() => setShowChat(v => !v)}
-            className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all shadow-sm"
-            style={{
-              background: showChat ? 'var(--accent)' : 'var(--surface-2)',
-              color: showChat ? '#ffffff' : 'var(--text)',
-              border: `1px solid ${showChat ? 'var(--accent)' : 'var(--border)'}`,
-              cursor: 'pointer',
-            }}
-            title={showChat ? 'Close Workspace Chat' : 'Open Workspace Chat'}
+            className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
+              showChat || voice.joined || (voice.callActive && !voice.joined)
+                ? 'btn-physical-primary'
+                : 'btn-physical-surface'
+            }`}
+            title={showChat ? 'Close Comms Drawer' : 'Open Comms Drawer'}
           >
-            <MessageSquare size={13} style={{ color: showChat ? '#ffffff' : 'var(--accent)' }} />
-            <span>Chat</span>
+            {voice.joined ? (
+              <span className="flex items-center gap-1 text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <Headphones size={13} />
+              </span>
+            ) : voice.callActive ? (
+              <span className="flex items-center gap-1 text-amber-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <Phone size={13} />
+              </span>
+            ) : (
+              <MessageSquare size={13} className={showChat ? 'text-white' : 'text-[var(--accent)]'} />
+            )}
+            <span>Comms</span>
             {unreadChatCount > 0 && !showChat && (
-              <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold bg-rose-500 text-white rounded-full leading-none">
+              <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold bg-rose-500 text-white rounded-full leading-none font-mono">
                 {unreadChatCount}
               </span>
             )}
@@ -2258,8 +2120,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
-            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            className="flex items-center justify-center w-8 h-8 btn-physical-surface cursor-pointer"
             title="Toggle Theme"
           >
             {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
@@ -2268,8 +2129,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           {/* Logout */}
           <button
             onClick={logout}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
-            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            className="flex items-center justify-center w-8 h-8 btn-physical-surface cursor-pointer"
             title="Sign out"
           >
             <LogOut size={13} />
@@ -2280,16 +2140,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {/* ── Project / Sprint Notification Toast ── */}
       {projectToast && (
         <div
-          className="flex items-center justify-between px-5 py-2 shrink-0 animate-fade-in z-40"
-          style={{ background: '#2563eb', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+          className="flex items-center justify-between px-5 py-2.5 shrink-0 animate-fade-in z-40 border-b"
+          style={{ background: 'var(--surface)', color: 'var(--text)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-sm)' }}
         >
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <Briefcase size={14} />
+          <div className="flex items-center gap-2.5 text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent)' }} />
+            <Briefcase size={14} style={{ color: 'var(--accent)' }} />
             <span>{projectToast}</span>
           </div>
           <button
             onClick={() => setProjectToast(null)}
-            className="text-[11px] px-2 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+            className="text-[11px] px-2.5 py-1 rounded-md cursor-pointer transition-colors border"
+            style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--muted)' }}
           >
             Dismiss
           </button>
@@ -2299,8 +2161,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {/* ── Ping Alert Banner ── */}
       {pingAlert && (
         <div
-          className="flex items-center justify-between px-5 py-2.5 shrink-0 animate-bounce-once z-40"
-          style={{ background: '#f85149', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+          className="flex items-center justify-between px-5 py-2.5 shrink-0 animate-bounce-once z-40 border-b"
+          style={{ background: 'var(--error-bg)', color: 'var(--error)', borderColor: 'var(--error)' }}
         >
           <div className="flex items-center gap-2 text-sm font-bold">
             <Radio size={16} />
@@ -2308,7 +2170,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
           <button
             onClick={() => setPingAlert(null)}
-            className="text-xs px-2.5 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+            className="text-xs px-2.5 py-1 rounded-md cursor-pointer font-semibold border"
+            style={{ background: 'var(--surface)', borderColor: 'var(--error)', color: 'var(--error)' }}
           >
             Dismiss
           </button>
@@ -2318,16 +2181,18 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {/* ── Help Request Toast for Teacher ── */}
       {isTeacher && helpNotification && (
         <div
-          className="flex items-center justify-between px-5 py-2 shrink-0 animate-fade-in z-40"
-          style={{ background: '#2f81f7', color: '#fff', borderBottom: '1px solid rgba(0,0,0,0.2)' }}
+          className="flex items-center justify-between px-5 py-2.5 shrink-0 animate-fade-in z-40 border-b"
+          style={{ background: 'var(--surface)', color: 'var(--text)', borderColor: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}
         >
           <div className="flex items-center gap-2 text-xs font-semibold">
-            <HelpCircle size={14} />
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
+            <HelpCircle size={14} style={{ color: 'var(--accent)' }} />
             <span>Help Request from <b>{helpNotification.username}</b>: &quot;{helpNotification.message}&quot;</span>
           </div>
           <button
             onClick={() => setHelpNotification(null)}
-            className="text-[11px] px-2 py-0.5 rounded bg-black/20 hover:bg-black/30 cursor-pointer border-none text-white font-semibold"
+            className="text-[11px] px-2.5 py-1 rounded-md cursor-pointer border font-semibold"
+            style={{ background: 'var(--accent-subtle)', borderColor: 'var(--accent-border)', color: 'var(--accent)' }}
           >
             Dismiss
           </button>
@@ -2337,20 +2202,20 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       {/* ── Classroom Session Strip ── */}
       {workspaceType === 'educational' && sessionActive && (
         <div
-          className="flex items-center justify-between px-5 py-1.5 shrink-0 select-none text-xs z-30"
+          className="flex items-center justify-between px-5 py-2 shrink-0 select-none text-xs z-30"
           style={{
-            background: isTeacher ? 'linear-gradient(90deg, #1f293d 0%, #161b22 100%)' : 'linear-gradient(90deg, #1c2826 0%, #161b22 100%)',
+            background: 'var(--surface-2)',
             borderBottom: '1px solid var(--border)',
           }}
         >
           {/* Left badge */}
           <div className="flex items-center gap-3">
             <span
-              className="flex items-center gap-1.5 font-bold px-2.5 py-0.5 rounded-full text-[11px]"
+              className="flex items-center gap-1.5 font-bold px-2.5 py-0.5 rounded-full text-[11px] font-mono"
               style={{
-                background: isTeacher ? 'rgba(88, 166, 255, 0.2)' : 'rgba(63, 185, 80, 0.2)',
-                color: isTeacher ? '#58a6ff' : '#3fb950',
-                border: `1px solid ${isTeacher ? '#58a6ff55' : '#3fb95055'}`,
+                background: isTeacher ? 'rgba(168, 85, 247, 0.15)' : 'rgba(63, 185, 80, 0.15)',
+                color: isTeacher ? '#a855f7' : '#16a34a',
+                border: `1px solid ${isTeacher ? 'rgba(168, 85, 247, 0.3)' : 'rgba(63, 185, 80, 0.3)'}`,
               }}
             >
               <GraduationCap size={13} />
@@ -2358,19 +2223,19 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </span>
 
             {isFocusMode && (
-              <span className="flex items-center gap-1 font-semibold text-[11px]" style={{ color: 'var(--accent)' }}>
+              <span className="flex items-center gap-1 font-semibold text-[11px] font-mono" style={{ color: 'var(--accent)' }}>
                 <Eye size={12} />
-                Focus Mode Active {focusedFilePath ? `(${focusedFilePath.split('/').pop()})` : ''}
+                Focus Active {focusedFilePath ? `(${focusedFilePath.split('/').pop()})` : ''}
               </span>
             )}
 
             {isStudent && (
               <span
-                className="flex items-center gap-1 font-semibold text-[11px] px-2 py-0.5 rounded-full"
+                className="flex items-center gap-1 font-semibold text-[11px] px-2 py-0.5 rounded-full font-mono"
                 style={{
-                  background: isEditorLocked ? 'rgba(210, 153, 34, 0.2)' : 'rgba(63, 185, 80, 0.15)',
-                  color: isEditorLocked ? '#d29922' : '#3fb950',
-                  border: `1px solid ${isEditorLocked ? '#d2992255' : '#3fb95055'}`,
+                  background: isEditorLocked ? 'rgba(210, 153, 34, 0.15)' : 'rgba(63, 185, 80, 0.15)',
+                  color: isEditorLocked ? '#d97706' : '#16a34a',
+                  border: `1px solid ${isEditorLocked ? 'rgba(210, 153, 34, 0.3)' : 'rgba(63, 185, 80, 0.3)'}`,
                 }}
               >
                 {isEditorLocked ? <Lock size={11} /> : <Unlock size={11} />}
@@ -2386,63 +2251,47 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 {/* Focus Mode toggle */}
                 <button
                   onClick={handleToggleFocusMode}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
-                  style={{
-                    background: isFocusMode ? 'var(--accent)' : 'var(--surface-2)',
-                    color: isFocusMode ? '#fff' : 'var(--text)',
-                    border: '1px solid var(--border)',
-                    cursor: 'pointer',
-                  }}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold cursor-pointer ${
+                    isFocusMode ? 'btn-physical-primary' : 'btn-physical-surface'
+                  }`}
                   title="Students will automatically follow whatever file you open"
                 >
                   {isFocusMode ? <Eye size={12} /> : <EyeOff size={12} />}
-                  {isFocusMode ? 'Focus Mode ON' : 'Focus Mode OFF'}
+                  {isFocusMode ? 'Focus ON' : 'Focus OFF'}
                 </button>
 
                 {/* Lock All / Unlock All */}
                 <button
                   onClick={handleLockAll}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
-                  style={{ background: 'var(--surface-2)', color: 'var(--warning)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  className="btn-physical-surface flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold cursor-pointer text-amber-500"
                   title="Lock all student editors"
                 >
-                  <Lock size={12} />
-                  Lock All
+                  <Lock size={12} /> Lock All
                 </button>
                 <button
                   onClick={handleUnlockAll}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
-                  style={{ background: 'var(--surface-2)', color: 'var(--success)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  className="btn-physical-surface flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold cursor-pointer text-emerald-600"
                   title="Unlock all student editors"
                 >
-                  <Unlock size={12} />
-                  Unlock All
+                  <Unlock size={12} /> Unlock All
                 </button>
 
                 {/* Ping Class */}
                 <button
                   onClick={handlePingStudents}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
-                  style={{ background: 'var(--surface-2)', color: 'var(--accent)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                  className="btn-physical-surface flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
                   title="Alert students to look at the screen"
                 >
-                  <Bell size={12} />
-                  Ping Class
+                  <Bell size={12} /> Ping
                 </button>
 
                 {/* Raised Hands Dropdown */}
                 <div className="relative">
                   <button
                     onClick={() => setShowHandsDropdown(v => !v)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
-                    style={{
-                      background: raisedHands.length > 0 ? 'var(--warning)' : 'var(--surface-2)',
-                      color: raisedHands.length > 0 ? '#0d1117' : 'var(--muted)',
-                      border: '1px solid var(--border)',
-                      cursor: 'pointer',
-                    }}
+                    className="btn-physical-surface flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
                   >
-                    <Hand size={12} />
+                    <Hand size={12} className={raisedHands.length > 0 ? 'text-amber-500' : ''} />
                     Hands ({raisedHands.length})
                   </button>
 
@@ -2634,7 +2483,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               }
             }}
             style={{
-              background: dragOverTarget === '__root__' ? 'rgba(47, 129, 247, 0.05)' : 'transparent',
+              background: dragOverTarget === '__root__' ? 'var(--accent-subtle)' : 'transparent',
             }}
           >
             {isClassWaiting ? (
@@ -2656,7 +2505,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     style={{
                       border: '1px dashed var(--accent)',
                       color: 'var(--accent)',
-                      background: 'rgba(47, 129, 247, 0.1)',
+                      background: 'var(--accent-subtle)',
                     }}
                   >
                     Drop here to move to root
@@ -2666,99 +2515,145 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             )}
           </div>
 
-          {/* Sidebar Footer: Management Hub (Bottom Left Corner) */}
+          {/* Sidebar Footer: Management Option Tree (Bottom Left Corner) */}
           <div
-            className="p-2 shrink-0 flex flex-col gap-1 border-t select-none"
+            className="p-2 shrink-0 flex flex-col gap-1 border-t select-none transition-all"
             style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
           >
-            {/* Git Source Control Button */}
+            {/* Super Option: Toggle Tree */}
             <button
-              onClick={() => setShowSourceControl(v => { const n = !v; if (n) { setShowMembersPanel(false); setShowChat(false); } return n; })}
-              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
-              style={{
-                color: showSourceControl ? '#fb923c' : 'var(--text)',
-                border: 'none',
-                background: showSourceControl ? 'var(--surface)' : 'transparent',
-                cursor: 'pointer',
-              }}
-              title="Git Source Control & Version History (Ctrl+Shift+G)"
+              onClick={() => setIsManagementTreeExpanded(v => !v)}
+              className={`flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                isManagementTreeExpanded ? 'btn-physical-primary' : 'btn-physical-surface'
+              }`}
+              title={isManagementTreeExpanded ? 'Collapse Workspace Tools' : 'Expand Workspace Tools (4 options)'}
             >
               <div className="flex items-center gap-2">
-                <GitPullRequest size={13} className="text-orange-400" />
-                <span>Source Control</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: '#fb923c' }}>
-                Git
-              </span>
-            </button>
-
-            {/* Team Members Button */}
-            <button
-              onClick={() => setShowMembersPanel(v => { const n = !v; if (n) { setShowSourceControl(false); setShowChat(false); } return n; })}
-              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
-              style={{
-                color: showMembersPanel ? 'var(--accent)' : 'var(--text)',
-                border: 'none',
-                background: showMembersPanel ? 'var(--surface)' : 'transparent',
-                cursor: 'pointer',
-              }}
-              title="Workspace Members & Permissions"
-            >
-              <div className="flex items-center gap-2">
-                <Users size={13} className="text-purple-400" />
-                <span>Members</span>
+                <Layers size={13} className={isManagementTreeExpanded ? 'text-white' : 'text-[var(--accent)]'} />
+                <span>Workspace Tools</span>
               </div>
               <div className="flex items-center gap-1.5">
-                {activeUsers.length > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                )}
-                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
-                  {activeUsers.length}
+                <span
+                  className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold"
+                  style={{
+                    background: isManagementTreeExpanded ? 'rgba(0,0,0,0.25)' : 'var(--bg)',
+                    color: isManagementTreeExpanded ? '#ffffff' : 'var(--muted)',
+                  }}
+                >
+                  4
                 </span>
+                <ChevronRight
+                  size={12}
+                  className="transition-transform duration-200"
+                  style={{ transform: isManagementTreeExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                />
               </div>
             </button>
 
-            {/* Environment Manager Button */}
-            <button
-              onClick={() => setShowEnvironmentModal(true)}
-              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+            {/* Expanded Option Tree — smooth CSS max-height animation */}
+            <div
               style={{
-                color: showEnvironmentModal ? 'var(--accent)' : 'var(--text)',
-                border: 'none',
-                background: showEnvironmentModal ? 'var(--surface)' : 'transparent',
-                cursor: 'pointer',
+                overflow: 'hidden',
+                maxHeight: isManagementTreeExpanded ? '180px' : '0px',
+                opacity: isManagementTreeExpanded ? 1 : 0,
+                transition: 'max-height 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
               }}
-              title="Execution Environment Status & Runtimes"
             >
-              <div className="flex items-center gap-2">
-                <Cpu size={13} className="text-blue-400" />
-                <span>Environment</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
-                {globalExecutionMode && canAdmin ? 'Global' : 'Private'}
-              </span>
-            </button>
+              <div className="flex flex-col pl-2 border-l ml-2 my-1 gap-0.5" style={{ borderColor: 'var(--border)' }}>
+                {/* 1. Git Source Control */}
+                <button
+                  onClick={() => setShowSourceControl(v => { const n = !v; if (n) { setShowMembersPanel(false); setShowChat(false); } return n; })}
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+                  style={{
+                    color: showSourceControl ? '#fb923c' : 'var(--text)',
+                    border: 'none',
+                    background: showSourceControl ? 'var(--surface)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  title="Git Source Control & Version History (Ctrl+Shift+G)"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[var(--muted)] font-mono text-[10px]">├─</span>
+                    <GitPullRequest size={12} className="text-orange-400" />
+                    <span>Source Control</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: '#fb923c' }}>
+                    Git
+                  </span>
+                </button>
 
-            {/* Lock Manager Button */}
-            <button
-              onClick={() => setShowLockManager(true)}
-              className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
-              style={{
-                color: showLockManager ? '#d29922' : 'var(--text)',
-                border: 'none',
-                background: showLockManager ? 'var(--surface)' : 'transparent',
-                cursor: 'pointer',
-              }}
-              title="Manage File & Folder Locks"
-            >
-              <div className="flex items-center gap-2">
-                <Lock size={13} className={workspaceLocks.length > 0 ? 'text-amber-400' : 'text-gray-400'} />
-                <span>Locks</span>
+                {/* 2. Team Members */}
+                <button
+                  onClick={() => setShowMembersPanel(v => { const n = !v; if (n) { setShowSourceControl(false); setShowChat(false); } return n; })}
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+                  style={{
+                    color: showMembersPanel ? 'var(--accent)' : 'var(--text)',
+                    border: 'none',
+                    background: showMembersPanel ? 'var(--surface)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  title="Workspace Members & Permissions"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[var(--muted)] font-mono text-[10px]">├─</span>
+                    <Users size={12} className="text-purple-400" />
+                    <span>Members</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {activeUsers.length > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
+                    <span className="text-[9px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
+                      {activeUsers.length}
+                    </span>
+                  </div>
+                </button>
+
+                {/* 3. Environment Manager */}
+                <button
+                  onClick={() => setShowEnvironmentModal(true)}
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+                  style={{
+                    color: showEnvironmentModal ? 'var(--accent)' : 'var(--text)',
+                    border: 'none',
+                    background: showEnvironmentModal ? 'var(--surface)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  title="Execution Environment Status & Runtimes"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[var(--muted)] font-mono text-[10px]">├─</span>
+                    <Cpu size={12} className="text-blue-400" />
+                    <span>Environment</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: 'var(--muted)' }}>
+                    {globalExecutionMode && canAdmin ? 'Global' : 'Private'}
+                  </span>
+                </button>
+
+                {/* 4. Lock Manager */}
+                <button
+                  onClick={() => setShowLockManager(true)}
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-[var(--surface)]"
+                  style={{
+                    color: showLockManager ? '#d29922' : 'var(--text)',
+                    border: 'none',
+                    background: showLockManager ? 'var(--surface)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  title="Manage File & Folder Locks"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[var(--muted)] font-mono text-[10px]">└─</span>
+                    <Lock size={12} className={workspaceLocks.length > 0 ? 'text-amber-400' : 'text-gray-400'} />
+                    <span>Locks</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: workspaceLocks.length > 0 ? '#d29922' : 'var(--muted)' }}>
+                    {workspaceLocks.length}
+                  </span>
+                </button>
               </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono" style={{ background: 'var(--bg)', color: workspaceLocks.length > 0 ? '#d29922' : 'var(--muted)' }}>
-                {workspaceLocks.length}
-              </span>
-            </button>
+            </div>
           </div>
         </aside>
 
@@ -2771,7 +2666,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         />
 
         {/* ── Main Pane ── */}
-        <main className="flex-1 flex flex-col overflow-hidden" style={{ background: '#0d1117' }}>
+        <main className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
           {/* Whiteboard view - kept mounted to preserve in-memory drawing state across tab shifts */}
           <div
             className="w-full h-full flex flex-col"
@@ -2818,21 +2713,21 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               {/* Tab bar */}
               <div
                 className="flex items-center justify-between shrink-0"
-                style={{ height: 40, background: 'var(--surface)', borderBottom: '1px solid var(--border)', minHeight: 40 }}
+                style={{ height: 38, background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', minHeight: 38 }}
               >
                 <div className="flex items-end overflow-x-auto h-full flex-1">
                   {tabs.map(tab => (
                     <div
                       key={tab.id}
                       onClick={() => setActiveTabId(tab.id)}
-                      className="flex items-center gap-2 px-4 h-full text-sm cursor-pointer transition-colors shrink-0 select-none"
+                      className="flex items-center gap-2 px-3.5 h-full text-xs font-mono cursor-pointer transition-all shrink-0 select-none border-r"
                       style={{
-                        borderRight: '1px solid var(--border)',
+                        borderColor: 'var(--border)',
                         borderTop: activeTabId === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
-                        background: activeTabId === tab.id ? '#0d1117' : 'var(--surface)',
+                        background: activeTabId === tab.id ? 'var(--surface)' : 'transparent',
                         color: activeTabId === tab.id ? 'var(--text)' : 'var(--muted)',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 13,
+                        boxShadow: 'none',
+                        fontWeight: activeTabId === tab.id ? 600 : 500,
                       }}
                     >
                       <FileCode size={12} style={{ color: extColor(tab.name), flexShrink: 0 }} />
@@ -2840,13 +2735,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                       {tab.dirty && <span style={{ color: 'var(--accent)', fontSize: 10 }}>●</span>}
                       <button
                         onClick={e => closeTab(tab.id, e)}
-                        className="ml-1 flex items-center justify-center w-4 h-4 rounded opacity-60 hover:opacity-100 transition-opacity"
-                        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                        className="ml-1 flex items-center justify-center w-3.5 h-3.5 rounded opacity-50 hover:opacity-100 transition-opacity bg-transparent border-none cursor-pointer text-inherit"
+                        title="Close Tab"
                       >
                         <X size={10} />
                       </button>
                     </div>
                   ))}
+                  {!isEffectiveReadOnly && (
+                    <button
+                      onClick={() => { setShowNewFile(true); }}
+                      className="flex items-center justify-center w-7 h-7 my-auto ml-1 rounded hover:bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer bg-transparent border-none"
+                      title="New File"
+                    >
+                      <Plus size={13} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Right side of tab bar: Split Live Preview button */}
@@ -2899,106 +2803,73 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   className="flex-1 overflow-hidden relative flex flex-col"
                   style={{ display: isTerminalMaximized ? 'none' : 'flex' }}
                 >
-                  {/* View Access Banner */}
-                  {isViewer && !isEditorLocked && (
+                  {/* Unified Status Ribbon (replaces 5 stacked warning banners) */}
+                  {(isViewer || activeFileLock || isEditorLocked || Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0) && (
                     <div
-                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
-                      style={{ background: 'rgba(56, 189, 248, 0.12)', borderBottom: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                      className="flex items-center justify-between px-3.5 py-1 text-xs shrink-0 select-none border-b font-mono"
+                      style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
                     >
-                      <span className="flex items-center gap-2">
-                        <Eye size={13} />
-                        {isStudent
-                          ? 'View Access: You are observing live classroom code in read-only mode.'
-                          : 'View Mode: Read-only access to this workspace.'}
-                      </span>
-                      <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
-                        {isStudent ? 'Assigned by Teacher' : 'Read Only'}
-                      </span>
-                    </div>
-                  )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isViewer && !isEditorLocked && (
+                          <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(56, 189, 248, 0.12)', color: '#0284c7', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                            <Eye size={11} /> {isStudent ? 'Live Class Observation' : 'Read Only'}
+                          </span>
+                        )}
+                        {isFileLockedByOther && activeFileLock && (
+                          <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(210, 153, 34, 0.12)', color: '#d97706', border: '1px solid rgba(210, 153, 34, 0.3)' }}>
+                            <Lock size={11} /> Locked by {activeFileLock.lockedByName}
+                          </span>
+                        )}
+                        {activeFileLock && activeFileLock.lockedBy === user?.id && (
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full"
+                              style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid var(--accent-border)' }}>
+                              <Lock size={11} /> Locked by You
+                            </span>
+                            <button
+                              onClick={() => socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id })}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-bold btn-physical-surface cursor-pointer"
+                            >
+                              Release
+                            </button>
+                          </div>
+                        )}
+                        {isEditorLocked && (
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full"
+                              style={{ background: 'rgba(220, 38, 38, 0.12)', color: 'var(--error)', border: '1px solid rgba(220, 38, 38, 0.3)' }}>
+                              <Lock size={11} /> Editor Locked
+                            </span>
+                            {isStudent && (
+                              <button
+                                onClick={handleToggleHand}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold btn-physical-surface cursor-pointer flex items-center gap-1"
+                              >
+                                <Hand size={11} className={myHandRaised ? 'text-amber-500' : ''} />
+                                {myHandRaised ? 'Lower Hand' : 'Raise Hand'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
 
-                  {/* Resource Lock Banner */}
-                  {isFileLockedByOther && activeFileLock && (
-                    <div
-                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
-                      style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Lock size={13} />
-                        Locked by {activeFileLock.lockedByName} ({activeFileLock.lockType.replace('_', ' ')}): Read-only access
-                        {activeFileLock.reason ? ` · "${activeFileLock.reason}"` : ''}
-                      </span>
-                      <span className="text-[10px] font-mono opacity-80 uppercase tracking-wider">
-                        Locked Resource
-                      </span>
-                    </div>
-                  )}
-
-                  {activeFileLock && activeFileLock.lockedBy === user?.id && (
-                    <div
-                      className="flex items-center justify-between px-4 py-1.5 text-xs font-semibold shrink-0"
-                      style={{ background: 'rgba(47, 129, 247, 0.12)', borderBottom: '1px solid rgba(47, 129, 247, 0.3)', color: '#58a6ff' }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Lock size={12} />
-                        You have locked this {activeFileLock.lockType.replace('_', ' ')}. Collaborators cannot edit it.
-                      </span>
-                      <button
-                        onClick={() => socketRef.current?.emit('lock:release', { workspaceId: workspace.id, lockId: activeFileLock.id })}
-                        className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-colors"
-                      >
-                        Release Lock
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Locked banner */}
-                  {isEditorLocked && (
-                    <div
-                      className="flex items-center justify-between px-4 py-2 text-xs font-semibold shrink-0"
-                      style={{ background: 'rgba(210, 153, 34, 0.15)', borderBottom: '1px solid rgba(210, 153, 34, 0.4)', color: '#d29922' }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Lock size={13} />
-                        Your editor is currently locked by the teacher. Editing and code execution are paused.
-                      </span>
-                      {isStudent && (
-                        <button
-                          onClick={handleToggleHand}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-colors"
-                          style={{
-                            background: myHandRaised ? 'var(--warning)' : 'var(--surface-2)',
-                            color: myHandRaised ? '#0d1117' : 'var(--text)',
-                            border: '1px solid var(--border)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <Hand size={12} />
-                          {myHandRaised ? 'Lower Hand' : 'Raise Hand'}
-                        </button>
+                      {/* Collaborators List */}
+                      {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0 && (
+                        <div className="flex items-center gap-1.5 ml-auto text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span style={{ color: 'var(--muted)' }}>Peers:</span>
+                          {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).map(c => (
+                            <span key={c.socketId} className="px-1.5 py-0.2 rounded font-semibold text-[10px]"
+                              style={{ background: c.color + '18', color: c.color, border: `1px solid ${c.color}44` }}>
+                              {c.username}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
-                {/* Active file collaborators bar */}
-                {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).length > 0 && (
-                  <div className="flex items-center gap-2 px-4 py-1 text-xs shrink-0" style={{ background: '#161b22', borderBottom: '1px solid var(--border)' }}>
-                    <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--muted)' }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--success)' }} />
-                      Collaborating in {activeTab.name}:
-                    </span>
-                    {Object.values(remoteCursors).filter(c => c.filePath === activeTab.path).map(c => {
-                      const isTyping = (Date.now() - c.lastActive) < 3000 && c.cursor.isTyping;
-                      return (
-                        <span key={c.socketId} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                          style={{ background: c.color + '22', color: c.color, border: `1px solid ${c.color}66` }}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
-                          {c.username}
-                          {isTyping && <span className="text-[10px] italic animate-pulse">(typing...)</span>}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
 
                 <div className="flex-1 flex relative overflow-hidden">
                   {/* Remote cursors overlay */}
@@ -3009,7 +2880,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                         ...c,
                         username: c.username === user?.username ? `${c.username} (collab)` : c.username,
                       }))}
-                    localCursor={localCursor ? { line: localCursor.line, col: localCursor.col, username: user?.username ?? 'You', color: '#2f81f7' } : null}
+                    localCursor={localCursor ? { line: localCursor.line, col: localCursor.col, username: user?.username ?? 'You', color: 'var(--accent)' } : null}
                     scrollTop={editorScroll.top}
                     scrollLeft={editorScroll.left}
                   />
@@ -3019,8 +2890,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     ref={gutterRef}
                     className="py-4 text-right select-none shrink-0 overflow-hidden"
                     style={{
-                      width: 58,
-                      background: '#0d1117',
+                      width: 56,
+                      background: 'var(--editor-gutter-bg)',
+                      borderRight: '1px solid var(--editor-gutter-border)',
                       fontFamily: 'var(--font-mono)',
                       fontSize: 13,
                       lineHeight: '23.8px',
@@ -3040,7 +2912,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                           className="flex items-center justify-between px-1 relative transition-colors"
                           style={{
                             height: 23.8,
-                            background: isActive ? 'rgba(47, 129, 247, 0.18)' : isHovered ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                            background: isActive ? 'var(--accent-subtle)' : isHovered ? 'var(--surface-3)' : 'transparent',
                           }}
                           onMouseEnter={() => setHoveredLine(lineNum)}
                           onMouseLeave={() => setHoveredLine(null)}
@@ -3049,9 +2921,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                             {hasComments ? (
                               <button
                                 onClick={() => setActiveCommentLine(prev => prev === lineNum ? null : lineNum)}
-                                className="flex items-center justify-center w-4 h-4 rounded hover:bg-white/10 transition-colors"
+                                className="flex items-center justify-center w-4 h-4 rounded hover:bg-black/10 transition-colors"
                                 style={{
-                                  color: hasUnresolved ? '#60a5fa' : '#34d399',
+                                  color: hasUnresolved ? 'var(--accent)' : 'var(--success)',
                                   background: 'none',
                                   border: 'none',
                                   cursor: 'pointer',
@@ -3064,8 +2936,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                             ) : canComment && isHovered ? (
                               <button
                                 onClick={() => setActiveCommentLine(lineNum)}
-                                className="flex items-center justify-center w-4 h-4 rounded bg-blue-600/30 text-blue-400 hover:bg-blue-600 hover:text-white transition-colors"
-                                style={{ border: 'none', cursor: 'pointer', padding: 0 }}
+                                className="flex items-center justify-center w-4 h-4 rounded text-white transition-colors"
+                                style={{ background: 'var(--accent)', border: 'none', cursor: 'pointer', padding: 0 }}
                                 title={`Add comment on line ${lineNum}`}
                               >
                                 <Plus size={11} />
@@ -3074,9 +2946,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                           </div>
 
                           <span
-                            className="text-xs transition-colors"
+                            className="text-xs transition-colors font-mono"
                             style={{
-                              color: isActive ? '#58a6ff' : hasComments ? '#e6edf3' : isHovered ? '#8b949e' : '#484f58',
+                              color: isActive ? 'var(--accent)' : hasComments ? 'var(--text)' : isHovered ? 'var(--text-secondary)' : 'var(--editor-gutter-fg)',
                             }}
                           >
                             {lineNum}
@@ -3107,16 +2979,16 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     wrap="off"
                     className="flex-1 py-4 px-3 resize-none focus:outline-none"
                     style={{
-                      background: '#0d1117',
-                      color: '#e6edf3',
+                      background: 'var(--editor-bg)',
+                      color: 'var(--editor-fg)',
                       fontFamily: 'var(--font-mono)',
-                      fontSize: 14,
-                      lineHeight: '1.7',
+                      fontSize: 13.5,
+                      lineHeight: '23.8px',
                       border: 'none',
                       tabSize: 2,
                       whiteSpace: 'pre',
                       overflowX: 'auto',
-                      opacity: isEffectiveReadOnly ? 0.8 : 1,
+                      opacity: isEffectiveReadOnly ? 0.85 : 1,
                     }}
                   />
 
@@ -3146,7 +3018,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   )}
 
                   {isEffectiveReadOnly && (
-                    <div className="absolute top-4 right-6 pointer-events-none px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider z-20 flex items-center gap-1.5"
+                    <div className="absolute top-4 right-6 pointer-events-none px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider z-20 flex items-center gap-1.5"
                       style={{
                         background: 'var(--surface-2)',
                         color: isEditorLocked ? 'var(--warning)' : 'var(--muted)',
@@ -3210,15 +3082,16 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     </span>
                     {running ? (
                       <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1.5 text-xs text-amber-400 font-mono">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="flex items-center gap-1.5 text-xs text-amber-500 font-mono">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                           <span className="truncate max-w-[140px] sm:max-w-[220px]">
                             {runningCommand || 'Running…'}
                           </span>
                         </span>
                         <button
                           onClick={killTerminalProcess}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors cursor-pointer"
+                          className="btn-physical-primary flex items-center gap-1 px-2.5 py-0.5 text-[11px] cursor-pointer"
+                          style={{ background: 'var(--error)', borderColor: 'var(--error)' }}
                           title="Stop process (Ctrl+C)"
                         >
                           <Square size={10} fill="currentColor" />
@@ -3226,7 +3099,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-[11px] text-emerald-400/80 font-mono hidden md:inline">
+                      <span className="text-[11px] text-emerald-600 font-mono hidden md:inline">
                         ● Ready
                       </span>
                     )}
@@ -3235,38 +3108,34 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setOutput('')}
-                      className="text-xs px-2 py-0.5 rounded transition-colors hover:bg-[var(--surface-2)]"
-                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      className="btn-physical-surface text-xs px-2 py-0.5 cursor-pointer"
                       title="Clear terminal"
                     >
                       Clear
                     </button>
                     <button
                       onClick={() => setIsTerminalCollapsed(prev => !prev)}
-                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
-                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      className="btn-physical-surface p-1 cursor-pointer"
                       title={isTerminalCollapsed ? "Expand terminal" : "Collapse terminal"}
                     >
-                      {isTerminalCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      {isTerminalCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                     </button>
                     <button
                       onClick={() => {
                         setIsTerminalMaximized(prev => !prev);
                         if (isTerminalCollapsed) setIsTerminalCollapsed(false);
                       }}
-                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
-                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      className="btn-physical-surface p-1 cursor-pointer"
                       title={isTerminalMaximized ? "Restore panel size" : "Maximize terminal panel"}
                     >
-                      {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                      {isTerminalMaximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                     </button>
                     <button
                       onClick={() => setIsTerminalOpen(false)}
-                      className="p-1 rounded transition-colors hover:bg-[var(--surface-2)]"
-                      style={{ color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      className="btn-physical-surface p-1 cursor-pointer"
                       title="Close terminal (Ctrl + `)"
                     >
-                      <X size={13} />
+                      <X size={12} />
                     </button>
                   </div>
                 </div>
@@ -3281,8 +3150,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     }}
                     className="p-4 text-xs sm:text-sm font-mono leading-relaxed overflow-auto flex-1 select-text cursor-text flex flex-col"
                     style={{
-                      background: '#0a0c10',
-                      color: '#e6edf3',
+                      background: 'var(--terminal-bg)',
+                      color: 'var(--terminal-fg)',
                     }}
                   >
                     {/* Rendered output text */}
@@ -3294,7 +3163,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
                     {/* Inline Active Command Prompt */}
                     <div className="flex items-center gap-1.5 select-none w-full">
-                      <span className="font-bold select-none shrink-0" style={{ color: running ? '#f59e0b' : '#34d399' }}>
+                      <span className="font-bold select-none shrink-0 font-mono" style={{ color: running ? '#f59e0b' : '#10b981' }}>
                         {running ? '>' : `${terminalCwd}$`}
                       </span>
                       <input
@@ -3306,8 +3175,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                         placeholder=""
                         className="flex-1 bg-transparent font-mono text-xs sm:text-sm border-none outline-none shadow-none focus:outline-none focus:ring-0 focus:border-none focus:shadow-none p-0 m-0 select-text"
                         style={{
-                          color: '#f0f6fc',
-                          caretColor: '#38bdf8',
+                          color: 'var(--terminal-fg)',
+                          caretColor: 'var(--accent)',
                           outline: 'none',
                           boxShadow: 'none',
                           border: 'none',
@@ -3420,48 +3289,27 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Terminal Toggle Button */}
           <button
             type="button"
             onClick={toggleTerminal}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
-            style={{ color: isTerminalOpen && !isTerminalCollapsed ? 'var(--accent)' : 'var(--muted)' }}
+            className={`btn-physical-surface flex items-center gap-1 px-2 py-0.5 text-[10px] cursor-pointer ${
+              isTerminalOpen && !isTerminalCollapsed ? 'text-[var(--accent)] font-semibold' : 'text-[var(--muted)]'
+            }`}
             title="Toggle Terminal (Ctrl + `)"
           >
             <Terminal size={11} />
             <span>Terminal</span>
           </button>
 
-          {/* Chat Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setShowChat(prev => !prev)}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
-            style={{ color: showChat ? 'var(--accent)' : 'var(--muted)' }}
-            title="Toggle Collaboration Chat & Voice"
-          >
-            <MessageSquare size={11} />
-            <span>Chat</span>
-          </button>
-
-          {/* Environment Status pill */}
-          <button
-            onClick={() => setShowEnvironmentModal(true)}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:text-[var(--text)] hover:bg-black/10 cursor-pointer border-none bg-transparent"
-            title="Execution Environment Settings"
-          >
-            <Cpu size={11} className="text-blue-400" />
-            <span>Env: {globalExecutionMode && canAdmin ? 'Global' : 'Isolated'}</span>
-          </button>
-
           {/* Online connection status dot */}
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 font-mono text-[10px] pl-1">
             <span
               className="w-1.5 h-1.5 rounded-full"
               style={{ background: socketConnected ? '#10b981' : '#ef4444' }}
             />
-            <span className="font-mono text-[10px]">{socketConnected ? 'Online' : 'Offline'}</span>
+            <span>{socketConnected ? 'Online' : 'Offline'}</span>
           </span>
         </div>
       </footer>
@@ -3553,27 +3401,28 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           }}
         />
       )}
-      {/* Right Chat & Voice Panel */}
-      {showChat && (
-        <div
-          className="fixed right-0 top-[52px] bottom-0 w-80 flex flex-col z-30"
-          style={{
-            background: 'var(--surface)',
-            borderLeft: '1px solid var(--border)',
-            outline: 'none',
-            boxShadow: 'none',
-          }}
-        >
-          <ChatAndVoicePanel
-            username={user?.username ?? 'Anonymous'}
-            socket={liveSocket}
-            workspaceId={workspace.id}
-            messages={chatMessages}
-            onSendMessage={handleSendChatMessage}
-            onClose={() => setShowChat(false)}
-          />
-        </div>
-      )}
+      {/* Right Chat & Voice Panel — always mounted, slides in/out */}
+      <div
+        className="fixed right-0 top-[52px] bottom-0 w-80 flex flex-col z-30 transition-transform duration-300 ease-in-out"
+        style={{
+          background: 'var(--surface)',
+          borderLeft: '1px solid var(--border)',
+          transform: showChat ? 'translateX(0)' : 'translateX(100%)',
+          pointerEvents: showChat ? 'auto' : 'none',
+          boxShadow: showChat ? '-4px 0 24px rgba(0, 0, 0, 0.15)' : 'none',
+        }}
+      >
+        <ChatAndVoicePanel
+          username={user?.username ?? 'Anonymous'}
+          socket={liveSocket}
+          workspaceId={workspace.id}
+          messages={chatMessages}
+          onSendMessage={handleSendChatMessage}
+          onClose={() => setShowChat(false)}
+          voice={voice}
+          isBroadcaster={isBroadcaster}
+        />
+      </div>
 
       {/* Ask for Help Modal (Student) */}
       {showHelpModal && (

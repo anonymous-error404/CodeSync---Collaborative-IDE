@@ -18,7 +18,7 @@ export function SmartRecognitionBanner({ candidate, onAccept, onReject, onKeepBo
         background: 'var(--surface)',
         borderColor: 'var(--accent)',
         color: 'var(--text)',
-        backdropFilter: 'blur(8px)',
+        boxShadow: 'var(--raised-shadow)',
       }}
     >
       <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--accent)' }}>

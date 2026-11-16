@@ -322,20 +322,13 @@ export function SourceControlPanel({
       }}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-between p-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
+      <div className="card-header-tab">
         <div className="flex items-center gap-2">
-          <GitPullRequest size={18} className="text-orange-400" />
-          <div>
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
-              Source Control {status?.isGitRepo && totalChanges > 0 && `(${totalChanges})`}
-            </h2>
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-orange-400">
-              Git & GitHub Sync
-            </span>
-          </div>
+          <span className="anchor-dot" />
+          <GitPullRequest size={15} className="text-[var(--accent)]" />
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+            GIT // SOURCE CONTROL {status?.isGitRepo && totalChanges > 0 && `[${totalChanges}]`}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -346,7 +339,7 @@ export function SourceControlPanel({
             style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="Refresh Git status"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
           <button
@@ -355,7 +348,7 @@ export function SourceControlPanel({
             style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="GitHub Credentials & Author Settings"
           >
-            <Key size={16} />
+            <Key size={14} />
           </button>
 
           <button
@@ -364,7 +357,7 @@ export function SourceControlPanel({
             style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
             title="Close Source Control"
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
       </div>
@@ -419,7 +412,7 @@ export function SourceControlPanel({
               <button
                 onClick={handleInitRepo}
                 disabled={initializing}
-                className="w-full py-2 px-3 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                className="btn-physical-primary w-full py-2 px-3 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {initializing ? <Spinner size={14} /> : <Plus className="w-3.5 h-3.5" />}
                 <span>Initialize Git Repository</span>
@@ -427,7 +420,7 @@ export function SourceControlPanel({
 
               <button
                 onClick={() => setShowCloneForm((prev) => !prev)}
-                className="w-full py-2 px-3 rounded-lg text-xs font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                className="btn-physical-surface w-full py-2 px-3 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <DownloadCloud className="w-3.5 h-3.5 text-blue-400" />
                 <span>{showCloneForm ? 'Cancel Clone' : 'Clone from GitHub'}</span>
@@ -480,7 +473,7 @@ export function SourceControlPanel({
                 <button
                   type="submit"
                   disabled={cloning}
-                  className="w-full py-2 rounded text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="btn-physical-primary w-full py-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {cloning ? <Spinner size={14} /> : <DownloadCloud className="w-3.5 h-3.5" />}
                   <span>{cloning ? 'Cloning repository...' : 'Clone Repository'}</span>
@@ -509,20 +502,21 @@ export function SourceControlPanel({
                   {/* Branch Menu Popup */}
                   {showBranchMenu && (
                     <div
-                      className="absolute left-0 top-full mt-1 w-64 rounded-xl shadow-2xl bg-[#0f172a] border border-gray-700 p-2 z-50 animate-fade-in"
+                      className="absolute left-0 top-full mt-1 w-64 rounded-xl shadow-2xl skeuo-card p-2 z-50 animate-fade-in"
+                      style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
                     >
-                      <div className="text-[10px] uppercase font-bold text-gray-400 px-2 py-1 border-b border-gray-800 flex items-center justify-between">
+                      <div className="text-[10px] uppercase font-bold text-[var(--muted)] px-2 py-1 border-b border-[var(--border)] flex items-center justify-between">
                         <span>Branches</span>
                         <button
                           onClick={() => setCreatingBranch(true)}
-                          className="text-blue-400 hover:underline flex items-center gap-0.5"
+                          className="text-[var(--accent)] hover:underline flex items-center gap-0.5"
                         >
                           <Plus className="w-3 h-3" /> New
                         </button>
                       </div>
 
                       {creatingBranch && (
-                        <div className="p-2 border-b border-gray-800 space-y-1.5">
+                        <div className="p-2 border-b border-[var(--border)] space-y-1.5">
                           <input
                             type="text"
                             autoFocus
@@ -533,18 +527,18 @@ export function SourceControlPanel({
                               if (e.key === 'Escape') setCreatingBranch(false);
                             }}
                             placeholder="branch-name"
-                            className="w-full text-xs p-1.5 rounded bg-gray-900 border border-gray-700 text-white outline-none"
+                            className="w-full text-xs p-1.5 rounded input-well outline-none"
                           />
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => handleCheckoutBranch(newBranchInput, true)}
-                              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white"
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[var(--accent)] text-white"
                             >
                               Create
                             </button>
                             <button
                               onClick={() => setCreatingBranch(false)}
-                              className="px-2 py-0.5 rounded text-[10px] text-gray-400"
+                              className="px-2 py-0.5 rounded text-[10px] text-[var(--muted)]"
                             >
                               Cancel
                             </button>
@@ -557,12 +551,12 @@ export function SourceControlPanel({
                           <button
                             key={b.name}
                             onClick={() => handleCheckoutBranch(b.name, false)}
-                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-gray-800 transition-colors ${
-                              b.isCurrent ? 'text-blue-400 font-semibold' : 'text-gray-300'
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-[var(--surface-2)] transition-colors ${
+                              b.isCurrent ? 'text-[var(--accent)] font-semibold' : 'text-[var(--text)]'
                             }`}
                           >
                             <span className="truncate">{b.name}</span>
-                            {b.isCurrent && <Check className="w-3 h-3 text-blue-400 shrink-0" />}
+                            {b.isCurrent && <Check className="w-3 h-3 text-[var(--accent)] shrink-0" />}
                           </button>
                         ))}
                       </div>
@@ -582,7 +576,7 @@ export function SourceControlPanel({
                 <button
                   onClick={handlePull}
                   disabled={pulling}
-                  className="flex-1 py-1 px-2 rounded text-xs font-medium bg-[var(--bg)] hover:bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="btn-physical-surface flex-1 py-1.5 px-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   title="Pull latest commits from remote"
                 >
                   <DownloadCloud className={`w-3.5 h-3.5 text-blue-400 ${pulling ? 'animate-bounce' : ''}`} />
@@ -592,7 +586,7 @@ export function SourceControlPanel({
                 <button
                   onClick={handlePush}
                   disabled={pushing}
-                  className="flex-1 py-1 px-2 rounded text-xs font-medium bg-[var(--bg)] hover:bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="btn-physical-surface flex-1 py-1.5 px-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   title="Push local commits to remote"
                 >
                   <UploadCloud className={`w-3.5 h-3.5 text-emerald-400 ${pushing ? 'animate-bounce' : ''}`} />
@@ -613,14 +607,14 @@ export function SourceControlPanel({
                   }
                 }}
                 placeholder="Commit message (Ctrl+Enter to commit)"
-                className="w-full text-xs p-2.5 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text)] placeholder-[var(--muted)] outline-none focus:border-blue-500 transition-colors resize-none"
+                className="w-full text-xs p-2.5 rounded-xl input-well text-[var(--text)] placeholder-[var(--muted)] outline-none resize-none"
               />
 
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => handleCommit(false)}
                   disabled={committing || totalChanges === 0}
-                  className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                  className="btn-physical-primary flex-1 text-xs py-1.5"
                 >
                   {committing ? <Spinner size={13} /> : <GitCommit className="w-3.5 h-3.5" />}
                   <span>Commit</span>
@@ -629,10 +623,10 @@ export function SourceControlPanel({
                 <button
                   onClick={() => handleCommit(true)}
                   disabled={committing || totalChanges === 0}
-                  className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface)] disabled:opacity-50 text-[var(--text)] border border-[var(--border)] flex items-center gap-1 transition-colors cursor-pointer"
+                  className="btn-physical-surface text-xs py-1.5 px-3 flex items-center gap-1"
                   title="Commit and immediately push to remote"
                 >
-                  <UploadCloud className="w-3.5 h-3.5 text-emerald-400" />
+                  <UploadCloud className="w-3.5 h-3.5 text-emerald-500" />
                   <span>& Push</span>
                 </button>
               </div>
@@ -756,25 +750,26 @@ export function SourceControlPanel({
       {/* ── Diff Modal ───────────────────────────────────────────────────── */}
       {activeDiffFile && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in"
           onClick={() => setActiveDiffFile(null)}
         >
           <div
-            className="w-full max-w-3xl max-h-[85vh] bg-[#0d131f] border border-gray-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="w-full max-w-3xl max-h-[85vh] skeuo-card flex flex-col overflow-hidden shadow-2xl"
+            style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-[#090d15] shrink-0">
+            <div className="card-header-tab">
               <div className="flex items-center gap-2">
-                <FileCode className="w-4 h-4 text-blue-400" />
-                <span className="text-xs font-semibold text-white">{activeDiffFile}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">Git Diff</span>
+                <FileCode className="w-4 h-4 text-[var(--accent)]" />
+                <span className="text-xs font-mono font-bold text-[var(--text)]">{activeDiffFile}</span>
+                <span className="badge-accent text-[9px] uppercase font-mono">Git Diff</span>
               </div>
-              <button onClick={() => setActiveDiffFile(null)} className="p-1 rounded text-gray-400 hover:text-white">
+              <button onClick={() => setActiveDiffFile(null)} className="p-1 rounded text-[var(--muted)] hover:text-[var(--text)]">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 bg-[#0a0e17] font-mono text-xs">
+            <div className="flex-1 overflow-auto p-4 bg-[var(--bg)] font-mono text-xs">
               {loadingDiff ? (
                 <div className="flex justify-center py-8"><Spinner size={20} /></div>
               ) : (
@@ -785,15 +780,15 @@ export function SourceControlPanel({
                     const isHeader = line.startsWith('@@') || line.startsWith('diff ');
 
                     let bg = 'transparent';
-                    let color = '#cbd5e1';
+                    let color = 'var(--text)';
                     if (isAdd) {
-                      bg = 'rgba(16, 185, 129, 0.15)';
-                      color = '#34d399';
+                      bg = 'rgba(16, 185, 129, 0.12)';
+                      color = '#10b981';
                     } else if (isDel) {
-                      bg = 'rgba(239, 68, 68, 0.15)';
-                      color = '#f87171';
+                      bg = 'rgba(239, 68, 68, 0.12)';
+                      color = '#ef4444';
                     } else if (isHeader) {
-                      color = '#60a5fa';
+                      color = 'var(--accent)';
                     }
 
                     return (
@@ -812,21 +807,22 @@ export function SourceControlPanel({
       {/* ── Credentials / Author Modal ────────────────────────────────────── */}
       {showCredentialsModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in"
           onClick={() => setShowCredentialsModal(false)}
         >
           <div
-            className="w-full max-w-md bg-[#0d131f] border border-gray-800 rounded-2xl shadow-2xl p-5 flex flex-col gap-4 text-left"
+            className="w-full max-w-md skeuo-card p-5 flex flex-col gap-4 text-left shadow-2xl"
+            style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
+            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-orange-500/10 text-orange-400">
+                <div className="p-1.5 rounded-lg border" style={{ background: 'var(--accent-subtle)', borderColor: 'var(--accent-border)', color: 'var(--accent)' }}>
                   <Key className="w-4 h-4" />
                 </div>
-                <h3 className="text-sm font-bold text-white">GitHub Credentials & Git Author</h3>
+                <h3 className="text-sm font-extrabold tracking-tight" style={{ color: 'var(--text)' }}>GitHub Credentials & Author</h3>
               </div>
-              <button onClick={() => setShowCredentialsModal(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setShowCredentialsModal(false)} className="text-[var(--muted)] hover:text-[var(--text)]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -834,14 +830,14 @@ export function SourceControlPanel({
             <form onSubmit={handleSaveCredentials} className="space-y-3">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-gray-300">
+                  <label className="text-xs font-bold" style={{ color: 'var(--text)' }}>
                     GitHub Personal Access Token (PAT)
                   </label>
                   <a
                     href="https://github.com/settings/tokens"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                    className="text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1 font-semibold"
                   >
                     <span>Generate on GitHub</span>
                     <ExternalLink className="w-2.5 h-2.5" />
@@ -853,23 +849,23 @@ export function SourceControlPanel({
                     value={credToken}
                     onChange={(e) => setCredToken(e.target.value)}
                     placeholder="ghp_••••••••••••••••••••••••••••••••••••"
-                    className="w-full text-xs p-2 rounded-lg bg-gray-900 border border-gray-700 text-white outline-none focus:border-blue-500 font-mono pr-8"
+                    className="w-full text-xs p-2 rounded-lg input-well font-mono pr-8"
                   />
                   <button
                     type="button"
                     onClick={() => setShowTokenPlain((p) => !p)}
-                    className="absolute right-2 top-2 text-gray-400 hover:text-white"
+                    className="absolute right-2 top-2 text-[var(--muted)] hover:text-[var(--text)]"
                   >
                     <Eye className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Requires <code className="text-gray-400">repo</code> scope for private repositories or pushing code.
+                <p className="text-[10px] text-[var(--muted)] mt-1">
+                  Requires <code className="font-mono font-bold" style={{ color: 'var(--accent)' }}>repo</code> scope for private repositories or pushing code.
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">
+                <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text)' }}>
                   GitHub Username
                 </label>
                 <input
@@ -877,13 +873,13 @@ export function SourceControlPanel({
                   value={credUsername}
                   onChange={(e) => setCredUsername(e.target.value)}
                   placeholder="e.g. octocat"
-                  className="w-full text-xs p-2 rounded-lg bg-gray-900 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  className="w-full text-xs p-2 rounded-lg input-well font-mono"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text)' }}>
                     Commit Author Name
                   </label>
                   <input
@@ -891,11 +887,11 @@ export function SourceControlPanel({
                     value={credAuthorName}
                     onChange={(e) => setCredAuthorName(e.target.value)}
                     placeholder="Your Name"
-                    className="w-full text-xs p-2 rounded-lg bg-gray-900 border border-gray-700 text-white outline-none focus:border-blue-500"
+                    className="w-full text-xs p-2 rounded-lg input-well"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text)' }}>
                     Commit Author Email
                   </label>
                   <input
@@ -903,7 +899,7 @@ export function SourceControlPanel({
                     value={credAuthorEmail}
                     onChange={(e) => setCredAuthorEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full text-xs p-2 rounded-lg bg-gray-900 border border-gray-700 text-white outline-none focus:border-blue-500"
+                    className="w-full text-xs p-2 rounded-lg input-well"
                   />
                 </div>
               </div>
@@ -914,9 +910,9 @@ export function SourceControlPanel({
                   id="saveToUser"
                   checked={saveToUser}
                   onChange={(e) => setSaveToUser(e.target.checked)}
-                  className="rounded text-blue-600 cursor-pointer"
+                  className="rounded cursor-pointer"
                 />
-                <label htmlFor="saveToUser" className="text-xs text-gray-300 cursor-pointer select-none">
+                <label htmlFor="saveToUser" className="text-xs cursor-pointer select-none" style={{ color: 'var(--muted)' }}>
                   Save to my CodeSync Account (use across all workspaces)
                 </label>
               </div>
@@ -925,7 +921,7 @@ export function SourceControlPanel({
                 <button
                   type="submit"
                   disabled={savingCreds}
-                  className="flex-1 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="btn-physical-primary flex-1 text-xs py-2"
                 >
                   {savingCreds ? <Spinner size={14} /> : <Check className="w-3.5 h-3.5" />}
                   <span>Save Settings</span>
@@ -934,7 +930,7 @@ export function SourceControlPanel({
                 <button
                   type="button"
                   onClick={() => setShowCredentialsModal(false)}
-                  className="py-2 px-3 rounded-lg text-xs font-semibold text-gray-400 hover:text-white bg-gray-800 transition-colors"
+                  className="btn-physical-surface text-xs py-2 px-3"
                 >
                   Cancel
                 </button>

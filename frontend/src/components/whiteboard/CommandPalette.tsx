@@ -58,7 +58,7 @@ export function CommandPalette({ elements, selectedIds, onClose, onExecute }: Pr
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/60 animate-fade-in"
       onClick={onClose}
     >
       <div
