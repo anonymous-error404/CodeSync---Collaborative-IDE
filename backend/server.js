@@ -14,6 +14,10 @@ import {
   commentRoutes,
   previewRoutes,
   gitRoutes,
+  gatewayRoutes,
+  warmPoolRoutes,
+  databaseBranchRoutes,
+  multiRepoRoutes,
   initWorkspaceSockets
 } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
@@ -47,6 +51,10 @@ app.use('/api', sessionRoutes);
 app.use('/api', professionalRoutes);
 app.use('/api', commentRoutes);
 app.use('/api', gitRoutes);
+app.use('/api', gatewayRoutes);
+app.use('/api', warmPoolRoutes);
+app.use('/api', databaseBranchRoutes);
+app.use('/api', multiRepoRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

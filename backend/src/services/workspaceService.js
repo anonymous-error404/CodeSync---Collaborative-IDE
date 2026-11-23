@@ -4,6 +4,7 @@ import fsSync from 'fs';
 import path from 'path';
 import storageService from './storageService.js';
 import gitService from './gitService.js';
+import warmPoolService from './warmPoolService.js';
 import { STORAGE_ROOT } from '../config/workspaceConfig.js';
 
 const META_FILENAME = '.codesync-meta.json';
@@ -71,24 +72,42 @@ class WorkspaceService {
       gitRepoUrl: gitRepoUrl || null,
     };
 
-    // Create directory on disk
-    await storageService.createWorkspaceDirectory(workspaceId, gitRepoUrl ? null : templateFiles);
-
-    // If a Git repository URL is provided, clone it into the new workspace
+    // Check for warm Copy-on-Write (CoW) snapshot for instant (< 3s) startup
+    let warmForked = false;
     if (gitRepoUrl && gitRepoUrl.trim()) {
       try {
-        await gitService.cloneRepo({
-          workspaceId,
-          repoUrl: gitRepoUrl.trim(),
-          branch: gitBranch,
-          token: gitToken,
-          username: gitUsername,
-          authorName,
-          authorEmail,
-        });
-      } catch (cloneErr) {
-        console.error(`[WorkspaceService] Git clone failed for ${workspaceId}:`, cloneErr.message);
-        workspaceMeta.gitCloneError = cloneErr.message;
+        const warmSnapshot = await warmPoolService.getWarmSnapshot(gitRepoUrl.trim(), gitBranch || 'main');
+        if (warmSnapshot) {
+          const forkResult = await warmPoolService.forkSnapshotToWorkspace(warmSnapshot, workspaceId);
+          workspaceMeta.warmFork = forkResult;
+          warmForked = true;
+          console.log(`[WorkspaceService] ⚡ Instantly launched ${workspaceId} from warm snapshot in ${forkResult.forkTimeMs}ms!`);
+        }
+      } catch (warmErr) {
+        console.warn(`[WorkspaceService] Warm fork failed, falling back to standard clone: ${warmErr.message}`);
+      }
+    }
+
+    if (!warmForked) {
+      // Create directory on disk
+      await storageService.createWorkspaceDirectory(workspaceId, gitRepoUrl ? null : templateFiles);
+
+      // If a Git repository URL is provided, clone it into the new workspace
+      if (gitRepoUrl && gitRepoUrl.trim()) {
+        try {
+          await gitService.cloneRepo({
+            workspaceId,
+            repoUrl: gitRepoUrl.trim(),
+            branch: gitBranch,
+            token: gitToken,
+            username: gitUsername,
+            authorName,
+            authorEmail,
+          });
+        } catch (cloneErr) {
+          console.error(`[WorkspaceService] Git clone failed for ${workspaceId}:`, cloneErr.message);
+          workspaceMeta.gitCloneError = cloneErr.message;
+        }
       }
     }
 

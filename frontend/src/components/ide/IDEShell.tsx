@@ -2149,7 +2149,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             </button>
           )}
 
-          {/* Professional Code Reviews Button */}
+          {/* Professional Hub Button */}
           {workspaceType === 'professional' && (
             <button
               onClick={() => setShowProfessionalPanel(v => !v)}
@@ -2160,10 +2160,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                 border: `1px solid ${showProfessionalPanel ? '#a855f7' : 'var(--border)'}`,
                 cursor: 'pointer',
               }}
-              title="Open Code Reviews"
+              title="Open Professional Hub (Tasks, Reviews, BYO Editor, Warm-Pools, DB Branch, Multi-Repo)"
             >
-              <GitPullRequest size={13} className="text-purple-400" />
-              <span>Reviews</span>
+              <Briefcase size={13} className="text-purple-400" />
+              <span>Pro Hub</span>
               {openReviewsCount > 0 && (
                 <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black">
                   {openReviewsCount}

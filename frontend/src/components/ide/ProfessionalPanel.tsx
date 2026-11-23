@@ -11,6 +11,10 @@ import {
   User as UserIcon,
   ChevronRight,
   GitPullRequest,
+  Terminal,
+  Zap,
+  Database,
+  Layers,
 } from 'lucide-react';
 import type {
   ProjectTask,
@@ -23,6 +27,10 @@ import type {
 } from '../../types';
 import { collabService } from '../../services/workspaceCollabService';
 import { Spinner } from '../ui/Spinner';
+import { GatewayTab } from './professional/GatewayTab';
+import { WarmPoolTab } from './professional/WarmPoolTab';
+import { DatabaseBranchTab } from './professional/DatabaseBranchTab';
+import { MultiRepoTab } from './professional/MultiRepoTab';
 
 interface Props {
   workspaceId: string;
@@ -54,7 +62,7 @@ export function ProfessionalPanel({
   onReviewCreated,
   onReviewUpdated,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'reviews'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh'>('tasks');
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [reviews, setReviews] = useState<CodeReview[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
@@ -286,7 +294,7 @@ export function ProfessionalPanel({
     <div
       className="fixed top-0 bottom-0 right-0 z-50 flex flex-col shadow-2xl animate-fade-in"
       style={{
-        width: 380,
+        width: 440,
         background: 'var(--surface)',
         borderLeft: '1px solid var(--border)',
       }}
@@ -314,10 +322,10 @@ export function ProfessionalPanel({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center px-4 pt-2 gap-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex items-center px-4 pt-2 gap-2 overflow-x-auto no-scrollbar" style={{ borderBottom: '1px solid var(--border)' }}>
         <button
           onClick={() => setActiveTab('tasks')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative"
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
           style={{
             color: activeTab === 'tasks' ? 'var(--accent)' : 'var(--muted)',
             borderBottom: activeTab === 'tasks' ? '2px solid var(--accent)' : '2px solid transparent',
@@ -328,13 +336,13 @@ export function ProfessionalPanel({
             cursor: 'pointer',
           }}
         >
-          <CheckCircle2 size={14} />
+          <CheckCircle2 size={13} />
           Tasks ({tasks.length})
         </button>
 
         <button
           onClick={() => setActiveTab('reviews')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative"
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
           style={{
             color: activeTab === 'reviews' ? 'var(--accent)' : 'var(--muted)',
             borderBottom: activeTab === 'reviews' ? '2px solid var(--accent)' : '2px solid transparent',
@@ -345,13 +353,85 @@ export function ProfessionalPanel({
             cursor: 'pointer',
           }}
         >
-          <GitPullRequest size={14} />
-          Code Reviews
+          <GitPullRequest size={13} />
+          Reviews
           {openReviewsCount > 0 && (
             <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
               {openReviewsCount}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('gateway')}
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+          style={{
+            color: activeTab === 'gateway' ? 'var(--accent)' : 'var(--muted)',
+            borderBottom: activeTab === 'gateway' ? '2px solid var(--accent)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+          }}
+          title="Bring Your Own Editor: Desktop VS Code, Cursor, SSH Gateway"
+        >
+          <Terminal size={13} className="text-blue-400" />
+          BYO Editor
+        </button>
+
+        <button
+          onClick={() => setActiveTab('warmpool')}
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+          style={{
+            color: activeTab === 'warmpool' ? 'var(--accent)' : 'var(--muted)',
+            borderBottom: activeTab === 'warmpool' ? '2px solid var(--accent)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+          }}
+          title="Copy-on-Write (CoW) Warm-Pools & Fast Startup"
+        >
+          <Zap size={13} className="text-amber-400" />
+          Warm-Pools
+        </button>
+
+        <button
+          onClick={() => setActiveTab('database')}
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+          style={{
+            color: activeTab === 'database' ? 'var(--accent)' : 'var(--muted)',
+            borderBottom: activeTab === 'database' ? '2px solid var(--accent)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+          }}
+          title="Ephemeral Isolated Database Branch with PII-Masked Seed"
+        >
+          <Database size={13} className="text-emerald-400" />
+          DB Branch
+        </button>
+
+        <button
+          onClick={() => setActiveTab('mesh')}
+          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+          style={{
+            color: activeTab === 'mesh' ? 'var(--accent)' : 'var(--muted)',
+            borderBottom: activeTab === 'mesh' ? '2px solid var(--accent)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+          }}
+          title="Multi-Repo & Cross-Repo Type Sync Service Mesh"
+        >
+          <Layers size={13} className="text-indigo-400" />
+          Multi-Repo
         </button>
       </div>
 
@@ -628,7 +708,7 @@ export function ProfessionalPanel({
               </div>
             )}
           </>
-        ) : (
+        ) : activeTab === 'reviews' ? (
           /* ─── CODE REVIEWS / PR VIEW ────────────────────────────── */
           <>
             <div className="flex items-center justify-between">
@@ -834,7 +914,15 @@ export function ProfessionalPanel({
               </div>
             )}
           </>
-        )}
+        ) : activeTab === 'gateway' ? (
+          <GatewayTab workspaceId={workspaceId} token={token} />
+        ) : activeTab === 'warmpool' ? (
+          <WarmPoolTab workspaceId={workspaceId} token={token} />
+        ) : activeTab === 'database' ? (
+          <DatabaseBranchTab workspaceId={workspaceId} token={token} />
+        ) : activeTab === 'mesh' ? (
+          <MultiRepoTab workspaceId={workspaceId} token={token} />
+        ) : null}
       </div>
     </div>
   );

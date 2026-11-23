@@ -209,3 +209,62 @@ export interface GitBranch {
   isCurrent: boolean;
   isRemote: boolean;
 }
+
+// ─── Professional Workspace Enterprise Enhancements ────────────────────────
+
+export interface GatewayConnectionInfo {
+  workspaceId: string;
+  workspaceDirectory: string;
+  connectToken: string;
+  cliCommand: string;
+  vscodeUri: string;
+  cursorUri: string;
+  sshHostAlias: string;
+  sshCommand: string;
+  sshConfigSnippet: string;
+  websocketTunnelUrl: string;
+}
+
+export interface DotfilesStatus {
+  installed: boolean;
+  detectedFiles: string[];
+}
+
+export interface WarmPoolSnapshot {
+  key: string;
+  gitRepoUrl: string;
+  branch: string;
+  installType: string;
+  prebuiltAt: string;
+  status: string;
+}
+
+export interface DatabaseBranchStatus {
+  initialized: boolean;
+  workspaceId: string;
+  branchId: string;
+  databaseUrl: string;
+  isolation: string;
+  piiMasked: boolean;
+  tables: Array<{ table: string; rows: number }>;
+  migrations: Array<{ version: string; applied_at: string }>;
+  message?: string;
+}
+
+export interface MountedRepository {
+  id: string;
+  name: string;
+  folder: string;
+  repoUrl?: string;
+  branch: string;
+  isPrimary?: boolean;
+  status: string;
+  exists: boolean;
+}
+
+export interface TypeMeshStatus {
+  workspaceId: string;
+  typeProviders: Array<{ name: string; folder: string; type: string }>;
+  consumers: Array<{ name: string; folder: string }>;
+  meshActive: boolean;
+}

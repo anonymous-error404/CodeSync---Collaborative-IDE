@@ -1,0 +1,14 @@
+{
+  "name": "codesync-cli",
+  "version": "1.0.0",
+  "description": "CodeSync CLI — Bring Your Own Editor & Gateway Client",
+  "main": "codesync.js",
+  "bin": {
+    "codesync": "./codesync.js",
+    "codesync-cli": "./codesync.js"
+  },
+  "type": "module",
+  "keywords": ["codesync", "cloud-ide", "ssh", "vscode-remote", "cursor"],
+  "author": "CodeSync Team",
+  "license": "MIT"
+}
