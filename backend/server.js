@@ -50,11 +50,11 @@ app.use('/api', whiteboardRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', professionalRoutes);
 app.use('/api', commentRoutes);
-app.use('/api', gitRoutes);
 app.use('/api', gatewayRoutes);
 app.use('/api', warmPoolRoutes);
 app.use('/api', databaseBranchRoutes);
 app.use('/api', multiRepoRoutes);
+app.use('/api', gitRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

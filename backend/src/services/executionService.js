@@ -317,11 +317,26 @@ class ExecutionService {
     // installs all packages including devDependencies (vite, nodemon, etc.)
     childEnv.NODE_ENV = 'development';
 
-    // Prepend workspace and current directory node_modules/.bin to PATH
+    // Prepend workspace and current directory node_modules/.bin to PATH.
+    // Case-insensitively retrieve the existing system PATH (Windows uses 'Path', Unix uses 'PATH').
     const cwdBin = path.join(currentCwd, 'node_modules', '.bin');
     const wsBin = path.join(workspaceDir, 'node_modules', '.bin');
-    const pathDelimiter = path.delimiter || ';';
-    childEnv.PATH = `${cwdBin}${pathDelimiter}${wsBin}${pathDelimiter}${childEnv.PATH || ''}`;
+    const nodeBinDir = path.dirname(process.execPath);
+    const existingPathKey = Object.keys(childEnv).find((k) => k.toLowerCase() === 'path') || 'PATH';
+    const existingPath = childEnv[existingPathKey] || '';
+    const pathDelimiter = path.delimiter || (process.platform === 'win32' ? ';' : ':');
+    const updatedPath = `${cwdBin}${pathDelimiter}${wsBin}${pathDelimiter}${nodeBinDir}${pathDelimiter}${existingPath}`;
+
+    // Normalize PATH key across platforms to avoid duplicate/shadowing keys in libuv
+    for (const k of Object.keys(childEnv)) {
+      if (k.toLowerCase() === 'path') {
+        delete childEnv[k];
+      }
+    }
+    childEnv.PATH = updatedPath;
+    if (process.platform === 'win32') {
+      childEnv.Path = updatedPath;
+    }
 
     // Spawn child process with currentCwd as working directory
     const child = spawn(command, {

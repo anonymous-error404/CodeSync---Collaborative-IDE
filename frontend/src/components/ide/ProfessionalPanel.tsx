@@ -46,6 +46,9 @@ interface Props {
   onTaskDeleted?: (taskId: number) => void;
   onReviewCreated?: (review: CodeReview) => void;
   onReviewUpdated?: (review: CodeReview) => void;
+  embedded?: boolean;
+  selectedTab?: 'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh';
+  onTabChange?: (tab: 'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh') => void;
 }
 
 export function ProfessionalPanel({
@@ -61,8 +64,22 @@ export function ProfessionalPanel({
   onTaskDeleted,
   onReviewCreated,
   onReviewUpdated,
+  embedded = false,
+  selectedTab,
+  onTabChange,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh'>(selectedTab || 'tasks');
+
+  useEffect(() => {
+    if (selectedTab && selectedTab !== activeTab) {
+      setActiveTab(selectedTab);
+    }
+  }, [selectedTab]);
+
+  const handleTabSelect = (tab: 'tasks' | 'reviews' | 'gateway' | 'warmpool' | 'database' | 'mesh') => {
+    setActiveTab(tab);
+    onTabChange?.(tab);
+  };
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [reviews, setReviews] = useState<CodeReview[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
@@ -292,148 +309,160 @@ export function ProfessionalPanel({
 
   return (
     <div
-      className="fixed top-0 bottom-0 right-0 z-50 flex flex-col shadow-2xl animate-fade-in"
-      style={{
-        width: 440,
-        background: 'var(--surface)',
-        borderLeft: '1px solid var(--border)',
-      }}
+      className={
+        embedded
+          ? 'flex-1 flex flex-col h-full overflow-hidden bg-[var(--surface)] text-[var(--text)]'
+          : 'fixed top-0 bottom-0 right-0 z-50 flex flex-col shadow-2xl animate-fade-in'
+      }
+      style={
+        embedded
+          ? { width: '100%', background: 'var(--surface)' }
+          : {
+              width: 440,
+              background: 'var(--surface)',
+              borderLeft: '1px solid var(--border)',
+            }
+      }
     >
-      {/* Header */}
-      <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-2">
-          <Briefcase size={18} className="text-blue-400" />
-          <div>
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
-              Project & Sprint Hub
-            </h2>
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-400">
-              Professional Workspace
-            </span>
+      {/* Header — only show when not embedded */}
+      {!embedded && (
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <Briefcase size={18} className="text-blue-400" />
+            <div>
+              <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+                Project &amp; Sprint Hub
+              </h2>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-400">
+                Professional Workspace
+              </span>
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
+            style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
-          style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
-        >
-          <X size={18} />
-        </button>
-      </div>
+      )}
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center px-4 pt-2 gap-2 overflow-x-auto no-scrollbar" style={{ borderBottom: '1px solid var(--border)' }}>
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'tasks' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'tasks' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          <CheckCircle2 size={13} />
-          Tasks ({tasks.length})
-        </button>
+      {/* Navigation Tabs — only show when not embedded, as ProjectManagementHub provides sidebar navigation */}
+      {!embedded && (
+        <div className="flex items-center px-4 pt-2 gap-2 overflow-x-auto no-scrollbar shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+          <button
+            onClick={() => handleTabSelect('tasks')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'tasks' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'tasks' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <CheckCircle2 size={13} />
+            Tasks ({tasks.length})
+          </button>
 
-        <button
-          onClick={() => setActiveTab('reviews')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'reviews' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'reviews' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          <GitPullRequest size={13} />
-          Reviews
-          {openReviewsCount > 0 && (
-            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
-              {openReviewsCount}
-            </span>
-          )}
-        </button>
+          <button
+            onClick={() => handleTabSelect('reviews')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'reviews' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'reviews' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <GitPullRequest size={13} />
+            Reviews
+            {openReviewsCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
+                {openReviewsCount}
+              </span>
+            )}
+          </button>
 
-        <button
-          onClick={() => setActiveTab('gateway')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'gateway' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'gateway' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-          title="Bring Your Own Editor: Desktop VS Code, Cursor, SSH Gateway"
-        >
-          <Terminal size={13} className="text-blue-400" />
-          BYO Editor
-        </button>
+          <button
+            onClick={() => handleTabSelect('gateway')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'gateway' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'gateway' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+            title="Bring Your Own Editor: Desktop VS Code, Cursor, SSH Gateway"
+          >
+            <Terminal size={13} className="text-blue-400" />
+            BYO Editor
+          </button>
 
-        <button
-          onClick={() => setActiveTab('warmpool')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'warmpool' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'warmpool' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-          title="Copy-on-Write (CoW) Warm-Pools & Fast Startup"
-        >
-          <Zap size={13} className="text-amber-400" />
-          Warm-Pools
-        </button>
+          <button
+            onClick={() => handleTabSelect('warmpool')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'warmpool' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'warmpool' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+            title="Copy-on-Write (CoW) Warm-Pools & Fast Startup"
+          >
+            <Zap size={13} className="text-amber-400" />
+            Warm-Pools
+          </button>
 
-        <button
-          onClick={() => setActiveTab('database')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'database' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'database' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-          title="Ephemeral Isolated Database Branch with PII-Masked Seed"
-        >
-          <Database size={13} className="text-emerald-400" />
-          DB Branch
-        </button>
+          <button
+            onClick={() => handleTabSelect('database')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'database' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'database' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+            title="Ephemeral Isolated Database Branch with PII-Masked Seed"
+          >
+            <Database size={13} className="text-emerald-400" />
+            DB Branch
+          </button>
 
-        <button
-          onClick={() => setActiveTab('mesh')}
-          className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
-          style={{
-            color: activeTab === 'mesh' ? 'var(--accent)' : 'var(--muted)',
-            borderBottom: activeTab === 'mesh' ? '2px solid var(--accent)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-          }}
-          title="Multi-Repo & Cross-Repo Type Sync Service Mesh"
-        >
-          <Layers size={13} className="text-indigo-400" />
-          Multi-Repo
-        </button>
-      </div>
+          <button
+            onClick={() => handleTabSelect('mesh')}
+            className="pb-2.5 px-2 text-xs font-semibold flex items-center gap-1.5 transition-colors relative shrink-0"
+            style={{
+              color: activeTab === 'mesh' ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: activeTab === 'mesh' ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+            }}
+            title="Multi-Repo & Cross-Repo Type Sync Service Mesh"
+          >
+            <Layers size={13} className="text-indigo-400" />
+            Multi-Repo
+          </button>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">

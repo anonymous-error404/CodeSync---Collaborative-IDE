@@ -20,7 +20,8 @@ import { requireWorkspaceMember } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
-router.use(authenticateToken);
+router.use('/git', authenticateToken);
+router.use('/workspaces', authenticateToken);
 
 // User-level GitHub token management
 router.post('/git/user-credentials', saveUserGithubToken);

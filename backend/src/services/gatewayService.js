@@ -64,14 +64,31 @@ class GatewayService {
     const isSsl = protocol.startsWith('https');
     const wsProtocol = isSsl ? 'wss' : 'ws';
     const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const isLocalhost = cleanHost.startsWith('localhost') || cleanHost.startsWith('127.0.0.1');
 
-    // VS Code Remote URI format
-    const vscodeUri = `vscode://vscode-remote/ssh-remote+codesync-${workspaceId}${wsDir}`;
-    // Cursor Remote URI format
-    const cursorUri = `cursor://vscode-remote/ssh-remote+codesync-${workspaceId}${wsDir}`;
+    // Normalize path to POSIX forward slashes and ensure leading slash
+    let normalizedPath = wsDir.replace(/\\/g, '/');
+    if (!normalizedPath.startsWith('/')) {
+      normalizedPath = '/' + normalizedPath;
+    }
+    const encodedPath = encodeURI(normalizedPath);
+    const sshHostAlias = `codesync-${workspaceId}`;
+
+    // VS Code Remote SSH URI: vscode://vscode-remote/ssh-remote+<host>/<path>
+    const vscodeRemoteUri = `vscode://vscode-remote/ssh-remote+${sshHostAlias}${encodedPath}`;
+    // Cursor Remote SSH URI: cursor://vscode-remote/ssh-remote+<host>/<path>
+    const cursorRemoteUri = `cursor://vscode-remote/ssh-remote+${sshHostAlias}${encodedPath}`;
+
+    // Local filesystem URIs (for instant opening when running locally without SSH daemon)
+    const vscodeLocalUri = `vscode://file${encodedPath}`;
+    const cursorLocalUri = `cursor://file${encodedPath}`;
+
+    // Default editor URIs: If running locally on localhost, default to native local file URI,
+    // otherwise use the Remote SSH URI.
+    const vscodeUri = isLocalhost ? vscodeLocalUri : vscodeRemoteUri;
+    const cursorUri = isLocalhost ? cursorLocalUri : cursorRemoteUri;
 
     const cliCommand = `npx codesync-cli connect ${workspaceId} --host ${protocol}://${cleanHost} --token ${effectiveToken}`;
-    const sshHostAlias = `codesync-${workspaceId}`;
 
     const sshConfigSnippet = [
       `# CodeSync Remote Workspace: ${workspaceId}`,
@@ -92,6 +109,11 @@ class GatewayService {
       cliCommand,
       vscodeUri,
       cursorUri,
+      vscodeRemoteUri,
+      cursorRemoteUri,
+      vscodeLocalUri,
+      cursorLocalUri,
+      isLocalhost,
       sshHostAlias,
       sshCommand: `ssh ${sshHostAlias}`,
       sshConfigSnippet,

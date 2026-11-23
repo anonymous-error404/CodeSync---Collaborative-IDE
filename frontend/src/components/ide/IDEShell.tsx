@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import ChatAndVoicePanel, { type ChatMessage } from './ChatAndVoicePanel';
 import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder, FolderPlus,
-  X, Terminal, LogOut, Code2, Save, Pencil, Trash2, CheckCheck,
+  X, Terminal, Code2, Save, Pencil, Trash2, CheckCheck,
   Users, Layers, MessageSquare,
   Phone, PhoneOff, Mic, MicOff, Headphones,
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
@@ -17,8 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
-import { ProfessionalPanel } from './ProfessionalPanel';
-import { KanbanSprintHub } from '../kanban/KanbanSprintHub';
+import { ProjectManagementHub, type ProjectManagementTab } from './ProjectManagementHub';
 import { SourceControlPanel } from './SourceControlPanel';
 import { LineCommentThread } from './LineCommentThread';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
@@ -73,7 +72,7 @@ interface Props { workspace: Workspace; myRole?: WorkspaceRole; onBack: () => vo
 interface Tab { id: string; name: string; path: string; content: string; dirty: boolean; }
 
 export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
-  const { token, user, logout } = useAuth();
+  const { token, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   const authHeaders = useCallback(() => ({
@@ -186,7 +185,50 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [pingAlert, setPingAlert] = useState<{ message: string; from?: string } | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
 
-  // ── Professional Workspace State ──
+  // ── Workspace Name & Rename State ──
+  const [workspaceName, setWorkspaceName] = useState<string>(workspace.name);
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [editingNameValue, setEditingNameValue] = useState<string>(workspace.name);
+  const [isRenaming, setIsRenaming] = useState<boolean>(false);
+
+  useEffect(() => {
+    setWorkspaceName(workspace.name);
+    setEditingNameValue(workspace.name);
+  }, [workspace.name]);
+
+  const handleRenameWorkspace = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = editingNameValue.trim();
+    if (!trimmed || trimmed === workspaceName) {
+      setIsEditingName(false);
+      setEditingNameValue(workspaceName);
+      return;
+    }
+    setIsRenaming(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/workspaces/${workspace.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setWorkspaceName(trimmed);
+        workspace.name = trimmed;
+        setIsEditingName(false);
+      } else {
+        alert(data.error || 'Failed to rename workspace');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to rename workspace');
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  // ── Professional & Project Management State ──
+  const [showProjectManagement, setShowProjectManagement] = useState(false);
+  const [projectManagementInitialTab, setProjectManagementInitialTab] = useState<ProjectManagementTab>('sprint');
   const [showProfessionalPanel, setShowProfessionalPanel] = useState(false);
   const [showKanbanHub, setShowKanbanHub] = useState(false);
   const [activeMemberFiles, setActiveMemberFiles] = useState<Record<number, string>>({});
@@ -1880,27 +1922,90 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
       {/* ── Topbar ── */}
       <header
-        className="flex items-center justify-between px-5 shrink-0"
+        className="flex items-center justify-between px-4 lg:px-6 shrink-0 gap-4"
         style={{ height: 52, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
       >
         {/* Left Section: Back, Workspace Title, Type & Role */}
         <div className="flex items-center gap-3 min-w-0">
+          {/* Back to Workspaces Icon Button */}
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg transition-colors"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-all hover:bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--text)] border border-[var(--border)] cursor-pointer shrink-0"
             title="Back to Workspaces"
           >
-            <ChevronLeft size={14} />Workspaces
+            <ChevronLeft size={17} />
           </button>
 
           <div className="w-px h-5" style={{ background: 'var(--border)' }} />
 
+          {/* Workspace Title & Rename */}
           <div className="flex items-center gap-2 min-w-0">
             <img src={logoImg} alt="CodeSync" className="w-5 h-5 rounded object-contain shrink-0" />
-            <span className="font-semibold truncate max-w-48" style={{ color: 'var(--text)', fontSize: 14 }}>
-              {workspace.name}
-            </span>
+
+            {isEditingName ? (
+              <form onSubmit={handleRenameWorkspace} className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={editingNameValue}
+                  onChange={(e) => setEditingNameValue(e.target.value)}
+                  onBlur={() => handleRenameWorkspace()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setIsEditingName(false);
+                      setEditingNameValue(workspaceName);
+                    }
+                  }}
+                  autoFocus
+                  disabled={isRenaming}
+                  className="px-2 py-0.5 rounded text-xs font-semibold outline-none border focus:border-blue-500 bg-[#0d131f] text-white"
+                  style={{ minWidth: 140, maxWidth: 220 }}
+                />
+                <button
+                  type="submit"
+                  disabled={isRenaming}
+                  className="p-1 rounded text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer"
+                  title="Save Name"
+                >
+                  <CheckCheck size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingName(false);
+                    setEditingNameValue(workspaceName);
+                  }}
+                  className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors cursor-pointer"
+                  title="Cancel"
+                >
+                  <X size={13} />
+                </button>
+              </form>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 group min-w-0"
+                title={`Workspace: ${workspaceName} (Click pencil to rename)`}
+              >
+                <span
+                  className="font-semibold truncate max-w-44 lg:max-w-64 cursor-default transition-colors hover:text-white"
+                  style={{ color: 'var(--text)', fontSize: 14 }}
+                  title={workspaceName}
+                >
+                  {workspaceName}
+                </span>
+                {!isEffectiveReadOnly && (
+                  <button
+                    onClick={() => {
+                      setEditingNameValue(workspaceName);
+                      setIsEditingName(true);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-blue-400 transition-all cursor-pointer"
+                    title="Rename workspace"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Workspace Type Badge */}
@@ -2011,7 +2116,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         </div>
 
         {/* Center Section: View Mode Switcher & Run / Stop */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {/* View Mode Toggle: Code Editor vs Whiteboard */}
           <div
             className="flex items-center p-0.5 rounded-lg border"
@@ -2092,8 +2197,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           )}
         </div>
 
-        {/* Right Section: Context Actions (Classroom, Sprint Hub, Voice, Theme, Sign Out) */}
-        <div className="flex items-center gap-2">
+        {/* Right Section: Context Actions (Classroom, Project Management, Voice, Theme) */}
+        <div className="flex items-center gap-2.5 lg:gap-3">
           {/* Start Class button (Education mode) */}
           {workspaceType === 'educational' && !sessionActive && isTeacher && (
             <button
@@ -2131,62 +2236,28 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           )}
 
 
-          {/* Sprint Hub Button for Competitive & Professional Workspaces */}
+          {/* Project Management Button (Unified Sprint Hub & Pro Engineering Hub) */}
           {(workspaceType === 'professional' || workspaceType === 'competitive') && (
             <button
-              onClick={() => setShowKanbanHub(v => !v)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
-              style={{
-                background: showKanbanHub ? 'rgba(59, 130, 246, 0.2)' : 'var(--surface-2)',
-                color: showKanbanHub ? '#60a5fa' : 'var(--text)',
-                border: `1px solid ${showKanbanHub ? '#3b82f6' : 'var(--border)'}`,
-                cursor: 'pointer',
+              onClick={() => {
+                setProjectManagementInitialTab('sprint');
+                setShowProjectManagement(v => !v);
               }}
-              title="Open Kanban Sprint Hub"
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative cursor-pointer"
+              style={{
+                background: showProjectManagement ? 'rgba(59, 130, 246, 0.25)' : 'var(--surface-2)',
+                color: showProjectManagement ? '#60a5fa' : 'var(--text)',
+                border: `1px solid ${showProjectManagement ? '#3b82f6' : 'var(--border)'}`,
+              }}
+              title="Open Project Management (Sprint Kanban & Pro Engineering Hub)"
             >
               <Briefcase size={13} className="text-blue-400" />
-              <span>Sprint Hub</span>
-            </button>
-          )}
-
-          {/* Professional Hub Button */}
-          {workspaceType === 'professional' && (
-            <button
-              onClick={() => setShowProfessionalPanel(v => !v)}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-all relative"
-              style={{
-                background: showProfessionalPanel ? 'rgba(168, 85, 247, 0.2)' : 'var(--surface-2)',
-                color: showProfessionalPanel ? '#c084fc' : 'var(--text)',
-                border: `1px solid ${showProfessionalPanel ? '#a855f7' : 'var(--border)'}`,
-                cursor: 'pointer',
-              }}
-              title="Open Professional Hub (Tasks, Reviews, BYO Editor, Warm-Pools, DB Branch, Multi-Repo)"
-            >
-              <Briefcase size={13} className="text-purple-400" />
-              <span>Pro Hub</span>
+              <span>Project Management</span>
               {openReviewsCount > 0 && (
                 <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black">
                   {openReviewsCount}
                 </span>
               )}
-            </button>
-          )}
-
-          {/* Professional: Request Review button for active file */}
-          {workspaceType === 'professional' && activeTab && !isEffectiveReadOnly && (
-            <button
-              onClick={() => setShowProfessionalPanel(true)}
-              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-colors"
-              style={{
-                background: 'rgba(168, 85, 247, 0.15)',
-                color: '#c084fc',
-                border: '1px solid rgba(168, 85, 247, 0.35)',
-                cursor: 'pointer',
-              }}
-              title="Request code review for current file"
-            >
-              <GitPullRequest size={12} />
-              <span className="hidden lg:inline">Review File</span>
             </button>
           )}
 
@@ -2263,16 +2334,6 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
             title="Toggle Theme"
           >
             {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
-          </button>
-
-          {/* Logout */}
-          <button
-            onClick={logout}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
-            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
-            title="Sign out"
-          >
-            <LogOut size={13} />
           </button>
         </div>
       </header>
@@ -3500,31 +3561,30 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         />
       )}
 
-      {/* Kanban Sprint Hub (Competitive & Professional) */}
-      {showKanbanHub && (workspaceType === 'professional' || workspaceType === 'competitive') && (
-        <KanbanSprintHub
-          workspaceId={workspace.id}
-          workspaceType={workspaceType as 'competitive' | 'professional'}
+      {/* Unified Project Management Hub (Sprint Kanban & Pro Engineering Hub) */}
+      {(showProjectManagement || showKanbanHub || showProfessionalPanel) && (
+        <ProjectManagementHub
+          workspace={workspace}
+          workspaceType={workspaceType as any}
           myRole={currentRole}
           currentUserId={user?.id ?? 0}
           token={token}
           socket={liveSocket}
           activeFilePath={activeTab?.path}
+          initialTab={
+            showKanbanHub
+              ? 'sprint'
+              : showProfessionalPanel
+              ? 'tasks'
+              : projectManagementInitialTab
+          }
+          openReviewsCount={openReviewsCount}
           onOpenFile={(filePath) => openFileByPath(filePath)}
-          onClose={() => setShowKanbanHub(false)}
-        />
-      )}
-
-      {/* Professional Tasks & Code Review Panel Overlay */}
-      {showProfessionalPanel && (
-        <ProfessionalPanel
-          workspaceId={workspace.id}
-          myRole={currentRole}
-          currentUserId={user?.id ?? 0}
-          token={token}
-          activeFilePath={activeTab?.path}
-          onOpenFile={(filePath) => openFileByPath(filePath)}
-          onClose={() => setShowProfessionalPanel(false)}
+          onClose={() => {
+            setShowProjectManagement(false);
+            setShowKanbanHub(false);
+            setShowProfessionalPanel(false);
+          }}
           onTaskCreated={(task) => {
             if (socketRef.current) {
               socketRef.current.emit('task:create', { workspaceId: workspace.id, task });
@@ -3549,6 +3609,9 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           onReviewUpdated={(review) => {
             if (socketRef.current) {
               socketRef.current.emit('review:update_status', { workspaceId: workspace.id, review });
+            }
+            if (review.status === 'closed' || review.status === 'approved') {
+              setOpenReviewsCount(prev => Math.max(0, prev - 1));
             }
           }}
         />

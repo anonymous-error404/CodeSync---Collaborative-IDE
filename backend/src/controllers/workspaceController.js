@@ -573,10 +573,35 @@ const removeAllowedEmail = asyncWrapper(async (req, res) => {
   res.status(200).json({ success: true, allowedEmails: updated });
 });
 
+/**
+ * PATCH /api/workspaces/:id
+ * Updates workspace metadata (e.g. rename workspace name or description).
+ */
+const updateWorkspace = asyncWrapper(async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
+
+  if (name !== undefined && (!name || !name.trim())) {
+    return res.status(400).json({ success: false, error: 'Workspace name cannot be empty' });
+  }
+
+  const updates = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (description !== undefined) updates.description = description.trim();
+
+  const updated = await workspaceService.updateWorkspaceMeta(id, updates);
+  if (!updated) {
+    return res.status(404).json({ success: false, error: 'Workspace not found' });
+  }
+
+  res.status(200).json({ success: true, workspace: updated });
+});
+
 export {
   createWorkspace,
   listWorkspaces,
   getWorkspaceDetails,
+  updateWorkspace,
   deleteWorkspace,
   getFileTree,
   readFileContent,

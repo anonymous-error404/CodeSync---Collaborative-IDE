@@ -12,6 +12,7 @@ import { spawn, exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import net from 'net';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'help';
@@ -78,19 +79,41 @@ async function main() {
       try {
         const info = await fetchJson(`${baseUrl}/api/gateway/workspace/${workspaceId}/connection-info?token=${token}`);
         const editor = flags.editor || (flags.vscode ? 'vscode' : flags.cursor ? 'cursor' : 'terminal');
+        const preferRemote = flags.remote || false;
 
         console.log(`✓ Workspace authenticated: ${info.workspaceDirectory}`);
         console.log(`✓ Connect Token: ${info.connectToken.substring(0, 16)}...`);
 
+        // If launching remote editor, ensure SSH host is configured in ~/.ssh/config
+        if ((editor === 'vscode' || editor === 'cursor') && (preferRemote || !info.isLocalhost)) {
+          const sshConfigDir = path.join(os.homedir(), '.ssh');
+          const sshConfigPath = path.join(sshConfigDir, 'config');
+          try {
+            fs.mkdirSync(sshConfigDir, { recursive: true });
+            let currentConfig = fs.existsSync(sshConfigPath) ? fs.readFileSync(sshConfigPath, 'utf8') : '';
+            if (!currentConfig.includes(`Host ${info.sshHostAlias}`)) {
+              fs.appendFileSync(sshConfigPath, `\n\n${info.sshConfigSnippet}\n`);
+              console.log(`✓ Automatically configured SSH host in ${sshConfigPath}`);
+            }
+          } catch (e) {
+            console.warn(`[CodeSync] Note: Could not auto-write ~/.ssh/config: ${e.message}`);
+          }
+        }
+
         if (editor === 'vscode') {
-          console.log(`\n🚀 Launching Native VS Code Remote...`);
-          openUri(info.vscodeUri);
+          const targetUri = preferRemote ? (info.vscodeRemoteUri || info.vscodeUri) : info.vscodeUri;
+          console.log(`\n🚀 Launching VS Code (${preferRemote ? 'SSH Remote' : info.isLocalhost ? 'Local Workspace' : 'SSH Remote'})...`);
+          openUri(targetUri);
         } else if (editor === 'cursor') {
-          console.log(`\n🚀 Launching Native Cursor Remote...`);
-          openUri(info.cursorUri);
+          const targetUri = preferRemote ? (info.cursorRemoteUri || info.cursorUri) : info.cursorUri;
+          console.log(`\n🚀 Launching Cursor AI (${preferRemote ? 'SSH Remote' : info.isLocalhost ? 'Local Workspace' : 'SSH Remote'})...`);
+          openUri(targetUri);
         } else {
           console.log('\n[Native Editor Connections]:');
-          console.log(`  • VS Code Remote: ${info.vscodeUri}`);
+          console.log(`  • VS Code:        ${info.vscodeUri}`);
+          if (info.vscodeRemoteUri && info.vscodeRemoteUri !== info.vscodeUri) {
+            console.log(`  • VS Code Remote: ${info.vscodeRemoteUri}`);
+          }
           console.log(`  • Cursor Remote:  ${info.cursorUri}`);
           console.log(`  • Direct SSH:     ${info.sshCommand}`);
           console.log('\n[SSH Config snippet]:');
@@ -111,7 +134,8 @@ async function main() {
 
       try {
         const info = await fetchJson(`${baseUrl}/api/gateway/workspace/${workspaceId}/connection-info?token=${token}`);
-        const sshConfigPath = path.join(os.homedir(), '.ssh', 'config');
+        const sshConfigDir = path.join(os.homedir(), '.ssh');
+        const sshConfigPath = path.join(sshConfigDir, 'config');
 
         console.log(`\nSSH Configuration Snippet for ${workspaceId}:`);
         console.log('----------------------------------------------------');
@@ -119,8 +143,14 @@ async function main() {
         console.log('----------------------------------------------------\n');
 
         if (flags.write || flags.save) {
-          fs.appendFileSync(sshConfigPath, `\n\n${info.sshConfigSnippet}\n`);
-          console.log(`✓ Appended to ${sshConfigPath}! You can now run: ssh codesync-${workspaceId}`);
+          fs.mkdirSync(sshConfigDir, { recursive: true });
+          let currentConfig = fs.existsSync(sshConfigPath) ? fs.readFileSync(sshConfigPath, 'utf8') : '';
+          if (currentConfig.includes(`Host ${info.sshHostAlias}`)) {
+            console.log(`✓ Host '${info.sshHostAlias}' is already present in ${sshConfigPath}`);
+          } else {
+            fs.appendFileSync(sshConfigPath, `\n\n${info.sshConfigSnippet}\n`);
+            console.log(`✓ Successfully appended to ${sshConfigPath}! You can now run: ssh ${info.sshHostAlias}`);
+          }
         } else {
           console.log(`Tip: Pass --save to automatically append this to your ${sshConfigPath}`);
         }
@@ -128,6 +158,33 @@ async function main() {
         console.error(`\n❌ Error fetching config: ${err.message}`);
         process.exit(1);
       }
+      break;
+    }
+
+    case 'tunnel': {
+      if (!workspaceId) {
+        console.error('Error: Workspace ID is required for tunnel proxy.');
+        process.exit(1);
+      }
+
+      const host = (flags.host || 'http://localhost:5000').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const [hostname] = host.split(':');
+      const targetHost = hostname || '127.0.0.1';
+      const targetPort = flags.port ? parseInt(flags.port, 10) : 2222;
+
+      const socket = net.createConnection({ host: targetHost, port: targetPort }, () => {
+        process.stdin.pipe(socket);
+        socket.pipe(process.stdout);
+      });
+
+      socket.on('error', (err) => {
+        console.error(`[CodeSync Tunnel Error]: ${err.message}`);
+        process.exit(1);
+      });
+
+      socket.on('close', () => {
+        process.exit(0);
+      });
       break;
     }
 
@@ -162,10 +219,12 @@ CodeSync CLI — "Bring Your Own Editor" & Cloud Gateway
 Usage:
   codesync connect <workspace-id> [options]
   codesync config <workspace-id> [--save]
+  codesync tunnel <workspace-id> [options]
   codesync dotfiles <workspace-id> <git-url>
 
 Options:
   --editor <vscode|cursor|ssh>   Open natively in VS Code, Cursor, or display SSH instructions
+  --remote                       Force SSH Remote connection instead of local filesystem
   --host <url>                   CodeSync Server URL (default: http://localhost:5000)
   --token <token>                User authentication token
   --save                         Write SSH config snippet directly to ~/.ssh/config

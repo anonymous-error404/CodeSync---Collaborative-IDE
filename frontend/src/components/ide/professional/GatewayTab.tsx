@@ -65,6 +65,25 @@ export function GatewayTab({ workspaceId, token }: Props) {
     }
   };
 
+  // Dynamically compute safe URIs directly in frontend (guarantees proper format regardless of backend cache)
+  const rawWsDir = connInfo?.workspaceDirectory || '';
+  const normalizedWsDir = rawWsDir.replace(/\\/g, '/');
+  const safePath = normalizedWsDir.startsWith('/') ? normalizedWsDir : `/${normalizedWsDir}`;
+  const encodedPath = encodeURI(safePath);
+
+  const isLocalhost =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    Boolean(connInfo?.isLocalhost);
+
+  const vscodeLocalUri = `vscode://file${encodedPath}`;
+  const cursorLocalUri = `cursor://file${encodedPath}`;
+  const vscodeRemoteUri = `vscode://vscode-remote/ssh-remote+codesync-${workspaceId}${encodedPath}`;
+  const cursorRemoteUri = `cursor://vscode-remote/ssh-remote+codesync-${workspaceId}${encodedPath}`;
+
+  const vscodeLaunchUri = isLocalhost ? vscodeLocalUri : (connInfo?.vscodeRemoteUri || vscodeRemoteUri);
+  const cursorLaunchUri = isLocalhost ? cursorLocalUri : (connInfo?.cursorRemoteUri || cursorRemoteUri);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-2 text-xs text-[var(--muted)]">
@@ -98,26 +117,28 @@ export function GatewayTab({ workspaceId, token }: Props) {
         </p>
 
         {connInfo && (
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <a
-              href={connInfo.vscodeUri}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold text-xs transition-all no-underline text-white shadow-sm"
-              style={{ background: '#007ACC' }}
-              title="Launch in Desktop VS Code Remote"
-            >
-              <ExternalLink size={13} />
-              Open in VS Code
-            </a>
+          <div className="space-y-2 pt-1">
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={vscodeLaunchUri}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold text-xs transition-all no-underline text-white shadow-sm hover:opacity-90"
+                style={{ background: '#007ACC' }}
+                title="Open in Desktop VS Code"
+              >
+                <ExternalLink size={13} />
+                Open in VS Code
+              </a>
 
-            <a
-              href={connInfo.cursorUri}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold text-xs transition-all no-underline text-white shadow-sm"
-              style={{ background: '#6366F1' }}
-              title="Launch in Desktop Cursor AI"
-            >
-              <ExternalLink size={13} />
-              Open in Cursor
-            </a>
+              <a
+                href={cursorLaunchUri}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-semibold text-xs transition-all no-underline text-white shadow-sm hover:opacity-90"
+                style={{ background: '#6366F1' }}
+                title="Open in Desktop Cursor AI"
+              >
+                <ExternalLink size={13} />
+                Open in Cursor
+              </a>
+            </div>
           </div>
         )}
       </div>
@@ -146,19 +167,45 @@ export function GatewayTab({ workspaceId, token }: Props) {
       {connInfo && (
         <div className="p-3.5 rounded-xl border space-y-2.5" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-[var(--text)]">Direct SSH Host Config</span>
+            <span className="font-semibold text-[var(--text)]">SSH Remote Setup & Config</span>
             <button
-              onClick={() => handleCopy(connInfo.sshConfigSnippet, 'ssh')}
-              className="flex items-center gap-1 text-[11px] text-blue-400 hover:underline"
+              onClick={() => handleCopy(`npx codesync-cli config ${connInfo.workspaceId} --save`, 'auto-config')}
+              className="flex items-center gap-1 text-[11px] text-emerald-400 hover:underline font-medium"
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
-              {copiedKey === 'ssh' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-              {copiedKey === 'ssh' ? 'Copied Config' : 'Copy ~/.ssh/config'}
+              {copiedKey === 'auto-config' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+              {copiedKey === 'auto-config' ? 'Copied 1-Click Command' : 'Copy 1-Click Setup'}
             </button>
           </div>
-          <pre className="p-2.5 rounded-lg bg-[var(--bg)] border font-mono text-[10px] text-[var(--muted)] overflow-x-auto whitespace-pre select-all" style={{ borderColor: 'var(--border)' }}>
-            {connInfo.sshConfigSnippet}
-          </pre>
+          <p className="text-[11px] text-[var(--muted)]">
+            Run this in your terminal to automatically register the host alias in your <code className="text-[10px] text-purple-300">~/.ssh/config</code>:
+          </p>
+          <div className="p-2 rounded bg-[var(--bg)] border font-mono text-[11px] text-purple-300 select-all flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+            <span>npx codesync-cli config {connInfo.workspaceId} --save</span>
+            <button
+              onClick={() => handleCopy(`npx codesync-cli config ${connInfo.workspaceId} --save`, 'auto-config-btn')}
+              className="text-[10px] text-[var(--muted)] hover:text-white px-1.5 py-0.5 rounded bg-[var(--surface)] border"
+              style={{ borderColor: 'var(--border)', cursor: 'pointer' }}
+            >
+              {copiedKey === 'auto-config-btn' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--muted)]">Manual ~/.ssh/config Snippet</span>
+              <button
+                onClick={() => handleCopy(connInfo.sshConfigSnippet, 'ssh')}
+                className="text-[10px] text-blue-400 hover:underline"
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                {copiedKey === 'ssh' ? 'Copied Snippet' : 'Copy Snippet'}
+              </button>
+            </div>
+            <pre className="p-2.5 rounded-lg bg-[var(--bg)] border font-mono text-[10px] text-[var(--muted)] overflow-x-auto whitespace-pre select-all" style={{ borderColor: 'var(--border)' }}>
+              {connInfo.sshConfigSnippet}
+            </pre>
+          </div>
         </div>
       )}
 

@@ -219,6 +219,11 @@ export interface GatewayConnectionInfo {
   cliCommand: string;
   vscodeUri: string;
   cursorUri: string;
+  vscodeRemoteUri?: string;
+  cursorRemoteUri?: string;
+  vscodeLocalUri?: string;
+  cursorLocalUri?: string;
+  isLocalhost?: boolean;
   sshHostAlias: string;
   sshCommand: string;
   sshConfigSnippet: string;

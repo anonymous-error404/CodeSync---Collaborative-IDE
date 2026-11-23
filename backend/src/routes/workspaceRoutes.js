@@ -15,6 +15,7 @@ const router = express.Router();
 router.post('/workspaces', authenticateToken, controller.createWorkspace);
 router.get('/workspaces', authenticateToken, controller.listWorkspaces);
 router.get('/workspaces/:id', authenticateToken, requireWorkspaceMember('viewer'), controller.getWorkspaceDetails);
+router.patch('/workspaces/:id', authenticateToken, requireWorkspaceMember('editor'), controller.updateWorkspace);
 router.delete('/workspaces/:id', authenticateToken, requireWorkspaceOwner, controller.deleteWorkspace);
 router.post('/workspaces/bulk-delete', authenticateToken, controller.bulkDeleteWorkspaces);
 router.get('/users/search', authenticateToken, searchUsers);
