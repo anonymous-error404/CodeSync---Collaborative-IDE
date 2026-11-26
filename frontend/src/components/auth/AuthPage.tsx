@@ -323,20 +323,21 @@ export function AuthPage() {
   const [tab, setTab] = useState<Tab>('login');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [globalError, setGlobalError] = useState('');
-  const [oauthUnconfigured, setOauthUnconfigured] = useState(false);
+  const [globalError, setGlobalError] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get('error');
+    return err ? decodeURIComponent(err) : '';
+  });
+  const [oauthUnconfigured] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('oauth_unconfigured') === 'true';
+  });
   const { login, register } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const err = params.get('error');
-    const unconf = params.get('oauth_unconfigured');
-    if (err) {
-      setGlobalError(decodeURIComponent(err));
-      if (unconf === 'true') {
-        setOauthUnconfigured(true);
-      }
+    if (params.has('error') || params.has('oauth_unconfigured')) {
       const url = new URL(window.location.href);
       url.searchParams.delete('error');
       url.searchParams.delete('oauth_unconfigured');

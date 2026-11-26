@@ -11,6 +11,10 @@ export function attachWhiteboardSocketHandlers(socket) {
       socket.emit('workspace-error', { message: 'Viewers cannot edit whiteboard' });
       return false;
     }
+    if (socket.isCompetitive && socket.role === 'admin') {
+      socket.emit('workspace-error', { message: 'Admin has View & Comment only access in competitive workspaces' });
+      return false;
+    }
     if (socket.sessionRole === 'student' && socket.editorLocked) {
       socket.emit('workspace-error', { message: 'Whiteboard is locked during teaching session' });
       return false;

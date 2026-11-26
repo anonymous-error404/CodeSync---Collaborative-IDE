@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import ChatAndVoicePanel, { type ChatMessage } from './ChatAndVoicePanel';
 import {
   Play, Square, ChevronLeft, Sun, Moon, Plus, FileCode, Folder, FolderPlus,
@@ -8,7 +8,7 @@ import {
   Lock, Unlock, Hand, HelpCircle, Bell, Radio, GraduationCap,
   Eye, Send, EyeOff, Briefcase, Trophy,
   Maximize2, Minimize2, ChevronUp, ChevronDown, GitPullRequest,
-  Cpu, GitBranch, FolderOpen, ChevronRight, Globe
+  Cpu, GitBranch, FolderOpen, ChevronRight, Globe, MapPin, ShieldCheck, Sparkles, Split
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import type { Workspace, FileItem, WorkspaceRole, SessionRole, WorkspaceType, StudentAccessLevel, LineComment } from '../../types';
@@ -18,16 +18,35 @@ import { useCodeEditor } from '../../hooks/useCodeEditor';
 import { useVoiceCall } from '../../hooks/useVoiceCall';
 import { MembersPanel } from './MembersPanel';
 import { ProfessionalPanel } from './ProfessionalPanel';
-import { KanbanSprintHub } from '../kanban/KanbanSprintHub';
 import { SourceControlPanel } from './SourceControlPanel';
 import { LineCommentThread } from './LineCommentThread';
 import { RemoteCursorsOverlay, type RemoteCursorData } from './RemoteCursorsOverlay';
-import { IntelligentWhiteboard } from '../whiteboard/IntelligentWhiteboard';
 import { collabService } from '../../services/workspaceCollabService';
 import { EnvironmentModal } from './EnvironmentModal';
 import { LockManagerModal, type WorkspaceLockItem } from './LockManagerModal';
 import { WebPreviewPanel } from './WebPreviewPanel';
+import { lspRagApi } from '../../services/lspRagApi';
+import { computeDelta, applyDelta, transformCursorByOp, type TextOp } from '../../utils/otClient';
 import logoImg from '../../assets/logo.png';
+
+const IntelligentWhiteboard = lazy(() =>
+  import('../whiteboard/IntelligentWhiteboard').then(m => ({ default: m.IntelligentWhiteboard }))
+);
+const ReviewHub = lazy(() =>
+  import('../review/ReviewHub').then(m => ({ default: m.ReviewHub }))
+);
+const CredentialBrokerHub = lazy(() =>
+  import('../credentials/CredentialBrokerHub').then(m => ({ default: m.CredentialBrokerHub }))
+);
+const GoldenPathHub = lazy(() =>
+  import('../goldenpath/GoldenPathHub').then(m => ({ default: m.GoldenPathHub }))
+);
+const KanbanSprintHub = lazy(() =>
+  import('../kanban/KanbanSprintHub').then(m => ({ default: m.KanbanSprintHub }))
+);
+const CompetitiveRunnerPanel = lazy(() =>
+  import('./CompetitiveRunnerPanel').then(m => ({ default: m.CompetitiveRunnerPanel }))
+);
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
@@ -82,7 +101,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   }), [token]);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [activeView, setActiveView] = useState<'editor' | 'whiteboard' | 'preview'>('editor');
+  const [activeView, setActiveView] = useState<'editor' | 'whiteboard' | 'preview' | 'review' | 'credentials' | 'goldenpath' | 'sprint'>('editor');
   const [previewPort, setPreviewPort] = useState<number | null>(null);
   const [showSplitPreview, setShowSplitPreview] = useState<boolean>(false);
   const [splitPreviewWidth, setSplitPreviewWidth] = useState<number>(() =>
@@ -133,6 +152,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const showChatRef = useRef<boolean>(false);
+  const [showCompetitiveJudge, setShowCompetitiveJudge] = useState<boolean>(false);
+  const [ghostSuggestion, setGhostSuggestion] = useState<{ offset: number; text: string } | null>(null);
+  const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docVersionsRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     showChatRef.current = showChat;
@@ -189,7 +212,22 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
   // ── Professional Workspace State ──
   const [showProfessionalPanel, setShowProfessionalPanel] = useState(false);
-  const [showKanbanHub, setShowKanbanHub] = useState(false);
+  const [isNavTreeExpanded, setIsNavTreeExpanded] = useState(false);
+  const navTreeRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (navTreeRef.current && !navTreeRef.current.contains(e.target as Node)) {
+        setIsNavTreeExpanded(false);
+      }
+    };
+    if (isNavTreeExpanded) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isNavTreeExpanded]);
   const [activeMemberFiles, setActiveMemberFiles] = useState<Record<number, string>>({});
   const [openReviewsCount, setOpenReviewsCount] = useState<number>(0);
   const [projectToast, setProjectToast] = useState<string | null>(null);
@@ -226,7 +264,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
   // In Educational workspace, students must wait until teacher starts a class session
   const isClassWaiting = workspaceType === 'educational' && isStudent && !sessionActive;
 
-  const canAdmin = currentRole === 'owner' || currentRole === 'admin' || currentRole === 'teacher' || currentRole === 'team_leader';
+  const canAdmin = !isCompetitiveAdmin && (currentRole === 'owner' || currentRole === 'admin' || currentRole === 'teacher' || currentRole === 'team_leader');
 
   const canComment =
     isCompetitiveAdmin ||
@@ -510,6 +548,57 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       });
     });
 
+    socket.on('file-op-ack', ({ filePath, version }: { filePath: string; version: number }) => {
+      docVersionsRef.current[filePath] = version;
+    });
+
+    socket.on('file-op', ({ filePath, version, op, updatedBy }: { filePath: string; version: number; op: TextOp; updatedBy: string }) => {
+      docVersionsRef.current[filePath] = version;
+      if (updatedBy === socket.id) return;
+
+      isRemoteUpdatingRef.current = true;
+      setTabs(prev => prev.map(t => {
+        if (t.path !== filePath) return t;
+        const newContent = applyDelta(t.content, op);
+
+        setRemoteCursors(rcs => {
+          let changed = false;
+          const next = { ...rcs };
+          for (const [sId, rc] of Object.entries(next)) {
+            if (sId !== updatedBy && rc.filePath === filePath && rc.cursor.start !== undefined) {
+              const adj = transformCursorByOp(rc.cursor.start, op);
+              if (adj !== rc.cursor.start) {
+                const lns = newContent.slice(0, adj).split('\n');
+                next[sId] = {
+                  ...rc,
+                  cursor: { ...rc.cursor, line: lns.length - 1, col: lns[lns.length - 1].length, start: adj, end: adj },
+                };
+                changed = true;
+              }
+            }
+          }
+          return changed ? next : rcs;
+        });
+
+        if (t.id === activeTabId) {
+          const newOffset = transformCursorByOp(localOffsetRef.current, op);
+          localOffsetRef.current = newOffset;
+          const lns = newContent.slice(0, newOffset).split('\n');
+          setLocalCursor({ line: lns.length - 1, col: lns[lns.length - 1].length });
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(newOffset, newOffset);
+            }
+            setTimeout(() => { isRemoteUpdatingRef.current = false; }, 40);
+          });
+        } else {
+          setTimeout(() => { isRemoteUpdatingRef.current = false; }, 40);
+        }
+
+        return { ...t, content: newContent, dirty: false };
+      }));
+    });
+
     socket.on('file-updated', ({ filePath, content, updatedBy }: { filePath: string, content: string, updatedBy: string }) => {
       if (updatedBy !== socket.id) {
         isRemoteUpdatingRef.current = true;
@@ -769,8 +858,13 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
       setTimeout(() => setPingAlert(null), 6000);
     });
 
-    socket.on('session:open_file', (data: { filePath: string }) => {
-      if (data.filePath) openFileByPathRef.current(data.filePath);
+    socket.on('session:open_file', (data: { filePath: string; requestedBy?: string; message?: string }) => {
+      if (data.filePath) {
+        setActiveView('editor');
+        openFileByPathRef.current(data.filePath);
+        setProjectToast(data.message || `${data.requestedBy || 'Teacher'} opened ${data.filePath} in your IDE`);
+        setTimeout(() => setProjectToast(null), 5000);
+      }
     });
 
     socket.on('session:kicked', (data: { reason: string }) => {
@@ -999,12 +1093,40 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
     }
 
     if (activeTab && socketRef.current?.connected && !isEffectiveReadOnly) {
-      socketRef.current.emit('file-change', {
-        workspaceId: workspace.id,
-        filePath: activeTab.path,
-        content: value,
-      });
+      const op = computeDelta(oldContent, value);
+      if (op.deleteCount > 0 || op.insertText.length > 0) {
+        socketRef.current.emit('file-op', {
+          workspaceId: workspace.id,
+          filePath: activeTab.path,
+          baseVersion: docVersionsRef.current[activeTab.path] ?? 0,
+          op,
+        });
+      }
       emitCursorRef.current(true, cursorOffset, value);
+    }
+
+    // Silent inline LSPRag ghost-text suggestion (debounced)
+    setGhostSuggestion(null);
+    if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+    if (activeTab && !isEffectiveReadOnly && cursorOffset !== undefined && !isRemoteUpdatingRef.current) {
+      const targetPath = activeTab.path;
+      const ext = activeTab.name.split('.').pop()?.toLowerCase() || '';
+      const targetLang = ext === 'ts' || ext === 'tsx' ? 'typescript' : ext === 'py' ? 'python' : 'javascript';
+      ghostTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await lspRagApi.getInlineSuggestion(workspace.id, {
+            filePath: targetPath,
+            content: value,
+            cursorOffset,
+            language: targetLang,
+          });
+          if (res?.suggestion && textareaRef.current && textareaRef.current.selectionStart === cursorOffset) {
+            setGhostSuggestion({ offset: cursorOffset, text: res.suggestion });
+          }
+        } catch {
+          // silent fallback to dev's own typing
+        }
+      }, 220);
     }
   };
 
@@ -1881,7 +2003,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
       {/* ── Topbar ── */}
       <header
-        className="flex items-center justify-between px-5 shrink-0"
+        className="flex items-center justify-between px-2.5 sm:px-3.5 shrink-0"
         style={{
           height: 52,
           background: 'var(--surface)',
@@ -1890,7 +2012,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         }}
       >
         {/* Left Section: Back, Workspace Title, Type & Role */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 shrink-0">
           <button
             onClick={onBack}
             className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg cursor-pointer btn-physical-surface shrink-0"
@@ -1901,10 +2023,10 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
           <div className="w-px h-6 shrink-0" style={{ background: 'var(--border)' }} />
 
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             <img src={logoImg} alt="CodeSync" className="w-7 h-7 rounded-md object-contain shrink-0 border" style={{ borderColor: 'var(--border)' }} />
             <div className="flex flex-col min-w-0 justify-center">
-              <span className="font-extrabold truncate max-w-[140px] sm:max-w-[180px] md:max-w-[220px] text-xs leading-tight tracking-tight" style={{ color: 'var(--text)' }}>
+              <span className="font-extrabold truncate max-w-[130px] sm:max-w-[170px] md:max-w-[210px] text-xs leading-tight tracking-tight" style={{ color: 'var(--text)' }}>
                 {workspace.name}
               </span>
               <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none mt-0.5 truncate">
@@ -1931,71 +2053,224 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           </div>
         </div>
 
-        {/* Center Section: View Mode Switcher & Run / Stop */}
-        <div className="flex items-center gap-2.5">
-          {/* View Mode Toggle: Code Editor vs Whiteboard vs Web Preview */}
+        {/* Center Section: Animated Sliding Nav Tree (Shifted margins to prevent anchor overlap) */}
+        <div className="flex items-center justify-center min-w-0 mx-3 sm:mx-6 shrink" ref={navTreeRef}>
+          {/* Animated Sliding Tree Navigation */}
           <div
-            className="flex items-center p-1 rounded-xl border"
+            className="h-9 flex items-center px-1 rounded-xl border transition-all duration-500 ease-out flex-nowrap shrink-0 overflow-hidden"
             style={{
               background: 'var(--surface-2)',
-              borderColor: 'var(--border)',
-              boxShadow: 'var(--inset-shadow)',
-              gap: 2,
+              borderColor: isNavTreeExpanded ? 'var(--accent)' : 'var(--border)',
+              boxShadow: isNavTreeExpanded ? '0 0 0 1px var(--accent-subtle)' : 'var(--inset-shadow)',
             }}
           >
+            {/* Collapsed Super Option / Root Pill */}
             <button
-              onClick={() => setActiveView('editor')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              onClick={() => setIsNavTreeExpanded(v => !v)}
+              className="h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer hover:bg-[var(--surface)] shrink-0 whitespace-nowrap"
               style={{
-                background: activeView === 'editor' ? 'var(--surface)' : 'transparent',
-                color: activeView === 'editor' ? 'var(--accent)' : 'var(--muted)',
-                border: activeView === 'editor' ? '1px solid var(--border)' : '1px solid transparent',
-                boxShadow: activeView === 'editor' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                background: isNavTreeExpanded ? 'var(--surface)' : 'transparent',
+                color: 'var(--text)',
               }}
+              title={isNavTreeExpanded ? 'Collapse Navigation Tree' : 'Expand Navigation Tree (7 tools)'}
             >
-              <Code2 size={13} />
-              <span>Code Editor</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {activeView === 'editor' && <Code2 size={13} style={{ color: 'var(--accent)' }} />}
+                {activeView === 'whiteboard' && <Layers size={13} style={{ color: 'var(--accent)' }} />}
+                {activeView === 'preview' && <Globe size={13} style={{ color: 'var(--accent)' }} />}
+                {activeView === 'review' && <MapPin size={13} className="text-red-400" />}
+                {activeView === 'sprint' && <Briefcase size={13} className="text-blue-400" />}
+                {activeView === 'goldenpath' && <Sparkles size={13} className="text-purple-400" />}
+                {activeView === 'credentials' && <ShieldCheck size={13} className="text-emerald-400" />}
+
+                <span className="font-semibold text-xs whitespace-nowrap">
+                  {activeView === 'editor'
+                    ? 'Code Editor'
+                    : activeView === 'whiteboard'
+                    ? 'Whiteboard'
+                    : activeView === 'preview'
+                    ? 'Web Preview'
+                    : activeView === 'review'
+                    ? 'Review Hub'
+                    : activeView === 'sprint'
+                    ? 'Sprint Hub'
+                    : activeView === 'goldenpath'
+                    ? 'Golden Paths'
+                    : 'Cred Vault'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 ml-1 shrink-0">
+                <span
+                  className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold"
+                  style={{
+                    background: isNavTreeExpanded ? 'var(--accent-subtle)' : 'var(--surface)',
+                    color: isNavTreeExpanded ? 'var(--accent)' : 'var(--muted)',
+                  }}
+                >
+                  7
+                </span>
+                <ChevronRight
+                  size={12}
+                  className="transition-transform duration-500 ease-out"
+                  style={{
+                    transform: isNavTreeExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    color: 'var(--muted)',
+                  }}
+                />
+              </div>
             </button>
 
-            <button
-              onClick={() => setActiveView('whiteboard')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer"
+            {/* Sliding Tree Drawer — slower, smoother animated horizontal slide */}
+            <div
+              className="flex items-center overflow-hidden flex-nowrap shrink-0 h-7"
               style={{
-                background: activeView === 'whiteboard' ? 'var(--surface)' : 'transparent',
-                color: activeView === 'whiteboard' ? 'var(--accent)' : 'var(--muted)',
-                border: activeView === 'whiteboard' ? '1px solid var(--border)' : '1px solid transparent',
-                boxShadow: activeView === 'whiteboard' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                maxWidth: isNavTreeExpanded ? '800px' : '0px',
+                opacity: isNavTreeExpanded ? 1 : 0,
+                pointerEvents: isNavTreeExpanded ? 'auto' : 'none',
+                transition: 'max-width 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.45s ease-in-out',
               }}
             >
-              <Layers size={13} />
-              <span>Whiteboard</span>
-            </button>
+              <div className="flex items-center gap-1 pl-1.5 border-l ml-1 flex-nowrap shrink-0 h-7" style={{ borderColor: 'var(--border)' }}>
+                {/* 1. Code Editor */}
+                <button
+                  onClick={() => {
+                    setActiveView('editor');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'editor' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'editor' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'editor' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                >
+                  <Code2 size={12} />
+                  <span>Code Editor</span>
+                </button>
 
-            <button
-              onClick={() => setActiveView('preview')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer relative"
-              style={{
-                background: activeView === 'preview' ? 'var(--surface)' : 'transparent',
-                color: activeView === 'preview' ? 'var(--accent)' : 'var(--muted)',
-                border: activeView === 'preview' ? '1px solid var(--border)' : '1px solid transparent',
-                boxShadow: activeView === 'preview' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-              }}
-              title="Sandboxed Web Application Preview"
-            >
-              <Globe size={13} />
-              <span>Web Preview</span>
-              {previewPort && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" title={`Active on port ${previewPort}`} />
-              )}
-            </button>
+                {/* 2. Whiteboard */}
+                <button
+                  onClick={() => {
+                    setActiveView('whiteboard');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'whiteboard' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'whiteboard' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'whiteboard' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                >
+                  <Layers size={12} />
+                  <span>Whiteboard</span>
+                </button>
+
+                {/* 3. Web Preview */}
+                <button
+                  onClick={() => {
+                    setActiveView('preview');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'preview' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'preview' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'preview' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                  title="Sandboxed Web Application Preview"
+                >
+                  <Globe size={12} />
+                  <span>Web Preview</span>
+                  {previewPort && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                  )}
+                </button>
+
+                {/* 4. Review Hub */}
+                <button
+                  onClick={() => {
+                    setActiveView('review');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'review' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'review' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'review' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                  title="Universal Review Hub with Figma-Style Pins, QA & PM Previews"
+                >
+                  <MapPin size={12} className="text-red-400" />
+                  <span>Review Hub</span>
+                </button>
+
+                {/* 5. Sprint Hub (opens in window) */}
+                <button
+                  onClick={() => {
+                    setActiveView('sprint');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'sprint' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'sprint' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'sprint' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                  title="Kanban Sprint Board & Backlog"
+                >
+                  <Briefcase size={12} className="text-blue-400" />
+                  <span>Sprint Hub</span>
+                </button>
+
+                {/* 6. Golden Paths */}
+                <button
+                  onClick={() => {
+                    setActiveView('goldenpath');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'goldenpath' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'goldenpath' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'goldenpath' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                  title="Internal Developer Platform & Golden Path Scaffolding"
+                >
+                  <Sparkles size={12} className="text-purple-400" />
+                  <span>Golden Paths</span>
+                </button>
+
+                {/* 7. Cred Vault */}
+                <button
+                  onClick={() => {
+                    setActiveView('credentials');
+                    setIsNavTreeExpanded(false);
+                  }}
+                  className="h-7 flex items-center gap-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  style={{
+                    background: activeView === 'credentials' ? 'var(--surface)' : 'transparent',
+                    color: activeView === 'credentials' ? 'var(--accent)' : 'var(--text)',
+                    border: activeView === 'credentials' ? '1px solid var(--border)' : '1px solid transparent',
+                  }}
+                  title="Zero-Trust Ephemeral Credential Broker & Secret Scanner"
+                >
+                  <ShieldCheck size={12} className="text-emerald-400" />
+                  <span>Cred Vault</span>
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
 
-          {/* Run / Stop button */}
+        {/* Right Section: Run, Comms & Context Actions (Classroom, Theme, Sign Out) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Anchored Right Option: Run / Stop */}
           {!isEffectiveReadOnly && (
             running ? (
               <button
                 onClick={stopExecution}
-                className="flex items-center gap-1.5 px-3.5 h-8 rounded-xl text-xs font-bold cursor-pointer bg-[var(--error)] text-white border-none shadow-sm transition-all"
+                className="flex items-center gap-1.5 px-3 h-8 rounded-xl text-xs font-bold cursor-pointer bg-[var(--error)] text-white border-none shadow-sm transition-all shrink-0"
               >
                 <Square size={12} />
                 <span>Stop</span>
@@ -2004,7 +2279,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               <button
                 onClick={runFile}
                 disabled={!activeTab || !socketConnected}
-                className="flex items-center gap-1.5 px-4 h-8 rounded-xl text-xs font-bold cursor-pointer btn-physical-primary disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3.5 h-8 rounded-xl text-xs font-bold cursor-pointer btn-physical-primary disabled:opacity-40 shrink-0"
                 title={globalExecutionMode && canAdmin ? 'Run in Global Environment (Broadcasts to all members)' : 'Run in Isolated Private Member Environment'}
               >
                 <Play size={12} fill="currentColor" />
@@ -2012,10 +2287,40 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               </button>
             )
           )}
-        </div>
 
-        {/* Right Section: Context Actions (Classroom, Sprint Hub, Voice, Theme, Sign Out) */}
-        <div className="flex items-center gap-2">
+          {/* Anchored Right Option: Comms (Call & Chat) Drawer Toggle */}
+          <button
+            onClick={() => setShowChat(v => !v)}
+            className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+              showChat || voice.joined || (voice.callActive && !voice.joined)
+                ? 'btn-physical-primary'
+                : 'btn-physical-surface'
+            }`}
+            title={showChat ? 'Close Comms Drawer' : 'Open Comms Drawer'}
+          >
+            {voice.joined ? (
+              <span className="flex items-center gap-1 text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <Headphones size={13} />
+              </span>
+            ) : voice.callActive ? (
+              <span className="flex items-center gap-1 text-amber-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <Phone size={13} />
+              </span>
+            ) : (
+              <MessageSquare size={13} className={showChat ? 'text-white' : 'text-[var(--accent)]'} />
+            )}
+            <span>Comms</span>
+            {unreadChatCount > 0 && !showChat && (
+              <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold bg-rose-500 text-white rounded-full leading-none font-mono">
+                {unreadChatCount}
+              </span>
+            )}
+          </button>
+
+          <div className="h-5 w-[1px] mx-0.5 shrink-0" style={{ background: 'var(--border)' }} />
+
           {/* Start Class button (Education mode) */}
           {workspaceType === 'educational' && !sessionActive && isTeacher && (
             <button
@@ -2051,71 +2356,6 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
               )}
             </div>
           )}
-
-
-          {/* Sprint Hub Button for Competitive & Professional Workspaces */}
-          {(workspaceType === 'professional' || workspaceType === 'competitive') && (
-            <button
-              onClick={() => setShowKanbanHub(v => !v)}
-              className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
-                showKanbanHub ? 'btn-physical-primary' : 'btn-physical-surface'
-              }`}
-              title="Open Kanban Sprint Hub"
-            >
-              <Briefcase size={13} className={showKanbanHub ? 'text-white' : 'text-blue-500'} />
-              <span>Sprint Hub</span>
-            </button>
-          )}
-
-          {/* Professional Code Reviews Button */}
-          {workspaceType === 'professional' && (
-            <button
-              onClick={() => setShowProfessionalPanel(v => !v)}
-              className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
-                showProfessionalPanel ? 'btn-physical-primary' : 'btn-physical-surface'
-              }`}
-              title="Open Code Reviews"
-            >
-              <GitPullRequest size={13} className={showProfessionalPanel ? 'text-white' : 'text-purple-500'} />
-              <span>Reviews</span>
-              {openReviewsCount > 0 && (
-                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-amber-500 text-black font-mono">
-                  {openReviewsCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Consolidated Comms (Call & Chat) Drawer Toggle */}
-          <button
-            onClick={() => setShowChat(v => !v)}
-            className={`flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-all cursor-pointer ${
-              showChat || voice.joined || (voice.callActive && !voice.joined)
-                ? 'btn-physical-primary'
-                : 'btn-physical-surface'
-            }`}
-            title={showChat ? 'Close Comms Drawer' : 'Open Comms Drawer'}
-          >
-            {voice.joined ? (
-              <span className="flex items-center gap-1 text-emerald-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <Headphones size={13} />
-              </span>
-            ) : voice.callActive ? (
-              <span className="flex items-center gap-1 text-amber-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <Phone size={13} />
-              </span>
-            ) : (
-              <MessageSquare size={13} className={showChat ? 'text-white' : 'text-[var(--accent)]'} />
-            )}
-            <span>Comms</span>
-            {unreadChatCount > 0 && !showChat && (
-              <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold bg-rose-500 text-white rounded-full leading-none font-mono">
-                {unreadChatCount}
-              </span>
-            )}
-          </button>
 
           {/* Theme toggle */}
           <button
@@ -2667,41 +2907,107 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
 
         {/* ── Main Pane ── */}
         <main className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
-          {/* Whiteboard view - kept mounted to preserve in-memory drawing state across tab shifts */}
-          <div
-            className="w-full h-full flex flex-col"
-            style={{ display: activeView === 'whiteboard' ? 'flex' : 'none' }}
-          >
-            <IntelligentWhiteboard
-              workspace={workspace}
-              boardId={workspace.id}
-              socket={socketRef.current}
-              username={user?.username ?? 'Anonymous'}
-              userRole={currentRole}
-              sessionRole={sessionRole}
-              readOnly={isEffectiveReadOnly}
-              onOpenFile={filePath => {
-                setActiveView('editor');
-                openFileByPath(filePath);
-              }}
-              onOpenInIDE={filePath => {
-                setActiveView('editor');
-                openFileByPath(filePath);
-              }}
-            />
-          </div>
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs" style={{ color: 'var(--muted)' }}>Loading module...</div>}>
+            {/* Whiteboard view - kept mounted to preserve in-memory drawing state across tab shifts */}
+            <div
+              className="w-full h-full flex flex-col"
+              style={{ display: activeView === 'whiteboard' ? 'flex' : 'none' }}
+            >
+              <IntelligentWhiteboard
+                workspace={workspace}
+                boardId={workspace.id}
+                socket={socketRef.current}
+                username={user?.username ?? 'Anonymous'}
+                userRole={currentRole}
+                sessionRole={sessionRole}
+                readOnly={isEffectiveReadOnly}
+                onOpenFile={filePath => {
+                  setActiveView('editor');
+                  openFileByPath(filePath);
+                }}
+                onOpenInIDE={filePath => {
+                  setActiveView('editor');
+                  openFileByPath(filePath);
+                }}
+              />
+            </div>
 
-          {/* Full Web Preview view */}
-          <div
-            className="w-full h-full flex flex-col overflow-hidden"
-            style={{ display: activeView === 'preview' ? 'flex' : 'none' }}
-          >
-            <WebPreviewPanel
-              workspaceId={workspace.id}
-              detectedPort={previewPort}
-              onPortChange={setPreviewPort}
-            />
-          </div>
+            {/* Full Web Preview view */}
+            <div
+              className="w-full h-full flex flex-col overflow-hidden"
+              style={{ display: activeView === 'preview' ? 'flex' : 'none' }}
+            >
+              <WebPreviewPanel
+                workspaceId={workspace.id}
+                detectedPort={previewPort}
+                onPortChange={setPreviewPort}
+              />
+            </div>
+
+            {/* Universal Review Hub (Feature 5) */}
+            <div
+              className="w-full h-full flex flex-col overflow-hidden"
+              style={{ display: activeView === 'review' ? 'flex' : 'none' }}
+            >
+              <ReviewHub
+                workspaceId={workspace.id}
+                previewPort={previewPort}
+                onPortChange={setPreviewPort}
+                onOpenCodeReviews={() => setShowProfessionalPanel(true)}
+                onOpenInIDE={openFileByPath}
+                onLaunchDevServer={() => {
+                  setActiveView('editor');
+                  runFile();
+                }}
+                openReviewsCount={openReviewsCount}
+                currentUsername={user?.username}
+                currentUserRole={currentRole}
+                collaborators={Object.values(remoteCursors).map(c => ({
+                  id: c.socketId,
+                  username: c.username,
+                  color: c.color,
+                }))}
+              />
+            </div>
+
+            {/* Kanban Sprint Hub (In-Window View) */}
+            <div
+              className="w-full h-full flex flex-col overflow-hidden"
+              style={{ display: activeView === 'sprint' ? 'flex' : 'none' }}
+            >
+              <KanbanSprintHub
+                workspaceId={workspace.id}
+                workspaceType={(workspaceType === 'competitive' || workspaceType === 'professional') ? workspaceType : 'professional'}
+                myRole={currentRole}
+                currentUserId={user?.id ?? 0}
+                token={token}
+                socket={socketRef.current}
+                activeFilePath={activeTab?.path}
+                onOpenFile={(filePath) => {
+                  setActiveView('editor');
+                  openFileByPath(filePath);
+                }}
+                onClose={() => setActiveView('editor')}
+                embedded={true}
+              />
+            </div>
+
+            {/* Zero-Trust Ephemeral Credential Broker (Feature 6) */}
+            <div
+              className="w-full h-full flex flex-col overflow-hidden"
+              style={{ display: activeView === 'credentials' ? 'flex' : 'none' }}
+            >
+              <CredentialBrokerHub workspaceId={workspace.id} />
+            </div>
+
+            {/* Internal Developer Platform & Golden Paths (Feature 10) */}
+            <div
+              className="w-full h-full flex flex-col overflow-hidden"
+              style={{ display: activeView === 'goldenpath' ? 'flex' : 'none' }}
+            >
+              <GoldenPathHub workspaceId={workspace.id} />
+            </div>
+          </Suspense>
 
           {/* Editor view (supports side-by-side split live preview) */}
           <div
@@ -2958,39 +3264,94 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
                     })}
                   </div>
 
-                  {/* Smart textarea */}
-                  <textarea
-                    ref={textareaRef}
-                    value={activeTab.content}
-                    onChange={e => updateCode(e.target.value, e.target.selectionStart)}
-                    onKeyDown={handleKeyDown}
-                    onKeyUp={() => emitCursor(false)}
-                    onClick={() => emitCursor(false)}
-                    onMouseUp={() => emitCursor(false)}
-                    onFocus={() => emitCursor(false)}
-                    onScroll={e => {
-                      setEditorScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft });
-                      if (gutterRef.current) {
-                        gutterRef.current.scrollTop = e.currentTarget.scrollTop;
-                      }
-                    }}
-                    spellCheck={false}
-                    readOnly={isEffectiveReadOnly}
-                    wrap="off"
-                    className="flex-1 py-4 px-3 resize-none focus:outline-none"
-                    style={{
-                      background: 'var(--editor-bg)',
-                      color: 'var(--editor-fg)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 13.5,
-                      lineHeight: '23.8px',
-                      border: 'none',
-                      tabSize: 2,
-                      whiteSpace: 'pre',
-                      overflowX: 'auto',
-                      opacity: isEffectiveReadOnly ? 0.85 : 1,
-                    }}
-                  />
+                  {/* Smart textarea with inline LSPRag ghost-text overlay */}
+                  <div className="relative flex-1 flex overflow-hidden" style={{ background: 'var(--editor-bg)' }}>
+                    {ghostSuggestion && (
+                      <pre
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 m-0 py-4 px-3 overflow-hidden"
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 13.5,
+                          lineHeight: '23.8px',
+                          tabSize: 2,
+                          whiteSpace: 'pre',
+                          transform: `translate(${-editorScroll.left}px, ${-editorScroll.top}px)`,
+                          zIndex: 1,
+                        }}
+                      >
+                        <span style={{ color: 'transparent' }}>
+                          {activeTab.content.slice(0, ghostSuggestion.offset)}
+                        </span>
+                        <span style={{ color: 'var(--muted)', opacity: 0.5 }}>
+                          {ghostSuggestion.text}
+                        </span>
+                      </pre>
+                    )}
+
+                    <textarea
+                      ref={textareaRef}
+                      value={activeTab.content}
+                      onChange={e => updateCode(e.target.value, e.target.selectionStart)}
+                      onKeyDown={e => {
+                        if (ghostSuggestion) {
+                          if (e.key === 'Tab' && !e.shiftKey) {
+                            e.preventDefault();
+                            const { offset, text } = ghostSuggestion;
+                            const nextVal =
+                              activeTab.content.slice(0, offset) +
+                              text +
+                              activeTab.content.slice(offset);
+                            const nextCaret = offset + text.length;
+                            setGhostSuggestion(null);
+                            updateCode(nextVal, nextCaret);
+                            requestAnimationFrame(() => {
+                              if (textareaRef.current) {
+                                textareaRef.current.setSelectionRange(nextCaret, nextCaret);
+                              }
+                            });
+                            return;
+                          }
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setGhostSuggestion(null);
+                            return;
+                          }
+                          if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+                            setGhostSuggestion(null);
+                          }
+                        }
+                        handleKeyDown(e);
+                      }}
+                      onKeyUp={() => emitCursor(false)}
+                      onClick={() => { setGhostSuggestion(null); emitCursor(false); }}
+                      onMouseUp={() => emitCursor(false)}
+                      onFocus={() => emitCursor(false)}
+                      onBlur={() => setGhostSuggestion(null)}
+                      onScroll={e => {
+                        setEditorScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft });
+                        if (gutterRef.current) {
+                          gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+                        }
+                      }}
+                      spellCheck={false}
+                      readOnly={isEffectiveReadOnly}
+                      wrap="off"
+                      className="flex-1 py-4 px-3 resize-none focus:outline-none relative z-[2]"
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--editor-fg)',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 13.5,
+                        lineHeight: '23.8px',
+                        border: 'none',
+                        tabSize: 2,
+                        whiteSpace: 'pre',
+                        overflowX: 'auto',
+                        opacity: isEffectiveReadOnly ? 0.85 : 1,
+                      }}
+                    />
+                  </div>
 
                   {/* Floating Line Comment Thread */}
                   {activeCommentLine !== null && activeTab && (
@@ -3196,6 +3557,21 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         )}
             </div>
 
+            {/* Right Column: Competitive I/O Judge */}
+            {showCompetitiveJudge && (
+              <Suspense fallback={null}>
+                <CompetitiveRunnerPanel
+                  workspaceId={workspace.id}
+                  activeFilePath={activeTab?.path ?? null}
+                  token={token}
+                  onSaveBeforeRun={async () => {
+                    if (activeTab?.dirty) await saveActive();
+                  }}
+                  onClose={() => setShowCompetitiveJudge(false)}
+                />
+              </Suspense>
+            )}
+
             {/* Right Column: Split Live Web Preview */}
             {showSplitPreview && (
               <>
@@ -3290,6 +3666,49 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Zero-Trust Security Status & Secret Scanner Quick Access (Flaw 4 resolved) */}
+          <button
+            type="button"
+            onClick={() => setActiveView('credentials')}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono hover:bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            title="Zero-Trust Security Envelope Active — Click to access Credential Vault & Secret Scanner"
+          >
+            <ShieldCheck size={11} className="text-emerald-400" />
+            <span className="hidden sm:inline">Zero-Trust: Active</span>
+          </button>
+
+          {/* Competitive I/O Judge Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView !== 'editor') setActiveView('editor');
+              setShowCompetitiveJudge(v => !v);
+            }}
+            className={`btn-physical-surface flex items-center gap-1 px-2 py-0.5 text-[10px] cursor-pointer ${
+              showCompetitiveJudge && activeView === 'editor' ? 'text-amber-400 font-semibold' : 'text-[var(--muted)]'
+            }`}
+            title="Toggle Competitive Stdin/Stdout I/O Judge (AC / WA / TLE / RE)"
+          >
+            <Trophy size={11} />
+            <span className="hidden sm:inline">I/O Judge</span>
+          </button>
+
+          {/* Split Preview Shortcut (Flaw 3 resolved) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView !== 'editor') setActiveView('editor');
+              setShowSplitPreview(v => !v);
+            }}
+            className={`btn-physical-surface flex items-center gap-1 px-2 py-0.5 text-[10px] cursor-pointer ${
+              showSplitPreview && activeView === 'editor' ? 'text-[var(--accent)] font-semibold' : 'text-[var(--muted)]'
+            }`}
+            title="Toggle Live Split Preview beside Code Editor"
+          >
+            <Split size={11} />
+            <span className="hidden sm:inline">Split Preview</span>
+          </button>
+
           {/* Terminal Toggle Button */}
           <button
             type="button"
@@ -3323,6 +3742,8 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
           currentUserId={user?.id ?? 0}
           token={token}
           activeMemberFiles={activeMemberFiles}
+          activeFilePath={activeTab?.path}
+          activeUsers={activeUsers}
           socket={socketRef.current}
           onClose={() => setShowMembersPanel(false)}
           onStudentAccessUpdated={(userId, access) => {
@@ -3348,20 +3769,7 @@ export function IDEShell({ workspace, myRole = 'owner', onBack }: Props) {
         />
       )}
 
-      {/* Kanban Sprint Hub (Competitive & Professional) */}
-      {showKanbanHub && (workspaceType === 'professional' || workspaceType === 'competitive') && (
-        <KanbanSprintHub
-          workspaceId={workspace.id}
-          workspaceType={workspaceType as 'competitive' | 'professional'}
-          myRole={currentRole}
-          currentUserId={user?.id ?? 0}
-          token={token}
-          socket={liveSocket}
-          activeFilePath={activeTab?.path}
-          onOpenFile={(filePath) => openFileByPath(filePath)}
-          onClose={() => setShowKanbanHub(false)}
-        />
-      )}
+
 
       {/* Professional Tasks & Code Review Panel Overlay */}
       {showProfessionalPanel && (

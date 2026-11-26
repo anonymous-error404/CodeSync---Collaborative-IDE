@@ -77,6 +77,7 @@ export type ElementType =
   | 'hexagon'
   | 'arrow'
   | 'connector'
+  | 'equation'
   | 'text'
   | 'sticky'
   | 'image'

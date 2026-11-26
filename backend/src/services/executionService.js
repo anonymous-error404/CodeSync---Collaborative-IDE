@@ -10,6 +10,7 @@ import {
   CONTAINER_NAME_PREFIX,
 } from '../config/dockerConfig.js';
 import { detectPortFromOutput, clearPreviewPort } from './previewService.js';
+import { credentialBrokerService } from './credentialBrokerService.js';
 
 class ExecutionService {
   constructor() {
@@ -176,8 +177,8 @@ class ExecutionService {
       startedAt: Date.now(),
     });
 
-    child.stdout.on('data', (data) => onStdout(data.toString()));
-    child.stderr.on('data', (data) => onStderr(data.toString()));
+    child.stdout.on('data', (data) => onStdout(credentialBrokerService.redactOutput(data.toString())));
+    child.stderr.on('data', (data) => onStderr(credentialBrokerService.redactOutput(data.toString())));
 
     child.on('error', (err) => {
       clearTimeout(timeoutHandle);
@@ -288,6 +289,29 @@ class ExecutionService {
       onExit(code);
     };
 
+    if (process.env.REQUIRE_DOCKER === 'true') {
+      const dockerUp = await this.isDockerRunning();
+      if (!dockerUp) {
+        onStderr('[Security] Host shell execution is disabled (REQUIRE_DOCKER=true and Docker engine is offline).\n');
+        safeExit(-1);
+        return;
+      }
+    }
+
+    const dangerousPatterns = [
+      /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive)\s+(\/|~|\*|\.\.)/i,
+      /\b(mkfs|dd\s+if=|shutdown|reboot|halt|poweroff|diskpart)\b/i,
+      /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
+      /\b(curl|wget)\b.*\|\s*(sh|bash|zsh|pwsh|powershell)/i,
+      /\b(Invoke-Expression|iex)\s*\(/i,
+      /\breg\s+delete\b/i,
+    ];
+    if (dangerousPatterns.some(rx => rx.test(command))) {
+      onStderr('[Security] Blocked potentially destructive host command.\n');
+      safeExit(-1);
+      return;
+    }
+
     console.log(`[Terminal Engine] Running command in ${currentCwd}: ${command}`);
 
     // Prepare a clean environment for the terminal child process.
@@ -313,6 +337,13 @@ class ExecutionService {
     delete childEnv.GOOGLE_CLIENT_SECRET;
     delete childEnv.GOOGLE_CLIENT_ID;
     delete childEnv.GOOGLE_CALLBACK_URL;
+    delete childEnv.GEMINI_API_KEY;
+    delete childEnv.GOOGLE_API_KEY;
+    delete childEnv.DATABASE_URL;
+
+    // Inject active workspace ephemeral credentials from Cred Vault
+    const vaultEnv = await credentialBrokerService.getActiveWorkspaceEnvVars(workspaceId);
+    Object.assign(childEnv, vaultEnv);
     // Always force development environment in workspaces so `npm install`
     // installs all packages including devDependencies (vite, nodemon, etc.)
     childEnv.NODE_ENV = 'development';
@@ -349,12 +380,12 @@ class ExecutionService {
     child.stdout.on('data', (data) => {
       const chunk = data.toString();
       detectPortFromOutput(workspaceId, chunk);
-      onStdout(chunk);
+      onStdout(credentialBrokerService.redactOutput(chunk));
     });
     child.stderr.on('data', (data) => {
       const chunk = data.toString();
       detectPortFromOutput(workspaceId, chunk);
-      onStderr(chunk);
+      onStderr(credentialBrokerService.redactOutput(chunk));
     });
 
     child.on('error', (err) => {
@@ -618,6 +649,191 @@ class ExecutionService {
       }
     }
     return list;
+  }
+
+  /**
+   * Competitive I/O Test Case Runner: runs Stdin -> Expected Stdout test cases with AC/WA/TLE/RE verdicts
+   */
+  async runCompetitiveTestCases(workspaceId, { filePath, testCases = [], timeoutMs = 5000 }) {
+    if (!filePath) throw new Error('filePath is required');
+    if (!Array.isArray(testCases) || testCases.length === 0) {
+      throw new Error('At least one test case is required');
+    }
+
+    const safeFilePath = resolveSafePath(workspaceId, filePath);
+    if (!fs.existsSync(safeFilePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const workspaceDir = getWorkspacePath(workspaceId);
+    const fileSubDir = path.dirname(path.relative(workspaceDir, safeFilePath)).replace(/\\/g, '/');
+    const fileName = path.basename(safeFilePath);
+    const ext = path.extname(fileName).toLowerCase();
+
+    if (!['.js', '.mjs', '.cjs', '.py', '.java'].includes(ext)) {
+      throw new Error(`Unsupported language extension '${ext}'. Supported: .js, .py, .java`);
+    }
+
+    const isDocker = await this.isDockerRunning();
+    if (!isDocker && process.env.REQUIRE_DOCKER === 'true') {
+      throw new Error('Docker engine is offline and REQUIRE_DOCKER=true is enforced.');
+    }
+
+    const clampedTimeout = Math.min(Math.max(Number(timeoutMs) || 5000, 500), 15000);
+    const normalizeOut = (str = '') =>
+      str
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map(line => line.replace(/\s+$/, ''))
+        .join('\n')
+        .trim();
+
+    const runSingleCase = (tc, idx) =>
+      new Promise((resolve) => {
+        const startTime = Date.now();
+        let stdout = '';
+        let stderr = '';
+        let timedOut = false;
+
+        let cmd;
+        let args;
+        let cwd = path.dirname(safeFilePath);
+
+        if (isDocker) {
+          const image = ext === '.py' ? DOCKER_IMAGES.python : ext === '.java' ? DOCKER_IMAGES.java : DOCKER_IMAGES.node;
+          const containerWorkDir = fileSubDir === '.' || fileSubDir === '' ? '/workspace' : `/workspace/${fileSubDir}`;
+          const innerCmd =
+            ext === '.py'
+              ? `python3 -u "${fileName}"`
+              : ext === '.java'
+              ? `javac "${fileName}" && java "${fileName.replace(/\.java$/, '')}"`
+              : `node "${fileName}"`;
+
+          cmd = 'docker';
+          args = [
+            'run',
+            '--rm',
+            '-i',
+            '--network', 'none',
+            '--memory', DOCKER_MEMORY_LIMIT,
+            '--cpus', DOCKER_CPU_LIMIT,
+            '-v', `${workspaceDir}:/workspace:rw`,
+            '-w', containerWorkDir,
+            image,
+            'sh', '-c', innerCmd,
+          ];
+          cwd = workspaceDir;
+        } else {
+          if (ext === '.py') {
+            cmd = process.platform === 'win32' ? 'python' : 'python3';
+            args = ['-u', fileName];
+          } else if (ext === '.java') {
+            const className = fileName.replace(/\.java$/, '');
+            cmd = process.platform === 'win32' ? 'cmd' : 'sh';
+            args = process.platform === 'win32'
+              ? ['/c', `javac "${fileName}" && java "${className}"`]
+              : ['-c', `javac "${fileName}" && java "${className}"`];
+          } else {
+            cmd = process.execPath;
+            args = [fileName];
+          }
+        }
+
+        const child = spawn(cmd, args, {
+          cwd,
+          shell: false,
+          env: {
+            PATH: process.env.PATH,
+            NODE_ENV: 'production',
+          },
+        });
+
+        const timer = setTimeout(() => {
+          timedOut = true;
+          try {
+            if (process.platform === 'win32' && child.pid) {
+              spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { shell: false });
+            } else {
+              child.kill('SIGKILL');
+            }
+          } catch { /* ignore */ }
+        }, clampedTimeout);
+
+        child.stdout.on('data', (d) => {
+          if (stdout.length < 64000) stdout += d.toString();
+        });
+        child.stderr.on('data', (d) => {
+          if (stderr.length < 64000) stderr += d.toString();
+        });
+
+        try {
+          if (tc.stdin) {
+            child.stdin.write(String(tc.stdin));
+          }
+          child.stdin.end();
+        } catch { /* ignore */ }
+
+        child.on('error', (err) => {
+          clearTimeout(timer);
+          resolve({
+            id: tc.id || `case-${idx + 1}`,
+            name: tc.name || `Case #${idx + 1}`,
+            verdict: 'RE',
+            durationMs: Date.now() - startTime,
+            actualOutput: '',
+            expectedOutput: tc.expectedOutput ?? '',
+            stderr: err.message,
+          });
+        });
+
+        child.on('close', (code) => {
+          clearTimeout(timer);
+          const durationMs = Date.now() - startTime;
+          const actualNorm = normalizeOut(stdout);
+          const expectedNorm = normalizeOut(tc.expectedOutput || '');
+
+          let verdict = 'AC';
+          if (timedOut) {
+            verdict = 'TLE';
+          } else if (code !== 0) {
+            verdict = 'RE';
+          } else if (actualNorm !== expectedNorm) {
+            verdict = 'WA';
+          }
+
+          resolve({
+            id: tc.id || `case-${idx + 1}`,
+            name: tc.name || `Case #${idx + 1}`,
+            verdict,
+            durationMs,
+            actualOutput: stdout.replace(/\r\n/g, '\n').trimEnd(),
+            expectedOutput: (tc.expectedOutput || '').replace(/\r\n/g, '\n').trimEnd(),
+            stderr: this._redactOrTrim(stderr),
+          });
+        });
+      });
+
+    const results = [];
+    for (let i = 0; i < testCases.slice(0, 20).length; i++) {
+      results.push(await runSingleCase(testCases[i], i));
+    }
+
+    const passed = results.filter(r => r.verdict === 'AC').length;
+    return {
+      success: true,
+      filePath,
+      executionMode: isDocker ? 'docker' : 'host',
+      summary: {
+        total: results.length,
+        passed,
+        failed: results.length - passed,
+      },
+      results,
+    };
+  }
+
+  _redactOrTrim(str = '') {
+    return credentialBrokerService.redactOutput(str).slice(0, 4000);
   }
 
   /**

@@ -30,7 +30,6 @@ import { WhiteboardHeader, type SaveState } from './WhiteboardHeader';
 import { WhiteboardToolbar } from './WhiteboardToolbar';
 import { WhiteboardPropertiesPanel } from './WhiteboardPropertiesPanel';
 import { CommandPalette } from './CommandPalette';
-// import { TextToDiagramModal } from './TextToDiagramModal';
 import { ValidationPanel } from './ValidationPanel';
 import { TaskProposalModal } from './TaskProposalModal';
 import { AiDiagramHubModal } from './AiDiagramHubModal';
@@ -624,6 +623,11 @@ export function IntelligentWhiteboard({
   const [history, setHistory] = useState<CanvasElement[][]>(() => [elements]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
+  const elementsRef = useRef(elements);
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [highlightIds, setHighlightIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>('select');
@@ -881,7 +885,7 @@ export function IntelligentWhiteboard({
       };
 
       if (strokeId) {
-        const filtered = elements.filter(e => e.id !== strokeId);
+        const filtered = elementsRef.current.filter(e => e.id !== strokeId);
         commit([...filtered, newEl]);
         socket?.emit('whiteboard:element_delete', { boardId, elementId: strokeId });
         socket?.emit('whiteboard:element_update', { boardId, element: newEl });
@@ -890,7 +894,7 @@ export function IntelligentWhiteboard({
       }
       setSelectedIds([newEl.id]);
     }
-  }, [elements, commit, socket, boardId, addElement]);
+  }, [commit, socket, boardId, addElement]);
 
   // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -1177,7 +1181,6 @@ export function IntelligentWhiteboard({
     setTaskProposals(tasks);
     setShowTaskModal(true);
   }, [elements, selectedIds]);
-  void handleGenerateTasks;
 
   // ── Export ────────────────────────────────────────────────────────────────
 
@@ -1227,9 +1230,9 @@ export function IntelligentWhiteboard({
         onCleanLayout={readOnly ? () => {} : handleCleanLayout}
         onExport={handleExport}
         onOpenCommandPalette={() => { if (!readOnly) setShowCommandPalette(true); }}
-        // onOpenTextToDiagram
         onOpenAiHub={() => { if (!readOnly) setShowAiHub(true); }}
         onOpenValidation={() => setShowValidation(true)}
+        onGenerateTasks={readOnly ? undefined : handleGenerateTasks}
         selectedCount={selectedIds.length}
         boardTheme={boardTheme}
         onToggleTheme={toggleBoardTheme}

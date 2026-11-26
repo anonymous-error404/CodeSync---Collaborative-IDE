@@ -44,4 +44,19 @@ router.get('/workspaces/:id/environments', authenticateToken, requireWorkspaceMe
   res.json({ success: true, supported, active });
 });
 
+// Competitive I/O Test Case Runner (Stdin -> Expected Stdout)
+router.post('/workspaces/:id/competitive/run-tests', authenticateToken, requireWorkspaceMember('viewer'), async (req, res) => {
+  try {
+    const { filePath, testCases, timeoutMs } = req.body || {};
+    const result = await executionService.runCompetitiveTestCases(req.params.id, {
+      filePath,
+      testCases,
+      timeoutMs,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

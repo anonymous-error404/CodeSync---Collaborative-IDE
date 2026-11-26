@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/authConfig.js';
 import { WorkspaceMember, TeachingSession, WorkspaceLock, LineComment, User } from '../models/index.js';
 import { checkPathLocked } from '../controllers/lockController.js';
+import { otManager } from '../services/otEngine.js';
 
 /**
  * Attaches real-time workspace socket event handlers to Socket.io server.
@@ -44,6 +45,42 @@ export function broadcastTaskEvent(workspaceId, event, data) {
     _workspaceNamespace.to(`workspace:${workspaceId}`).emit(event, data);
   } catch (err) {
     console.error(`[Socket] Failed to broadcast task event ${event}:`, err);
+  }
+}
+
+/**
+ * Broadcast universal preview environment & Figma pin updates across workspace.
+ */
+export function broadcastPreviewEvent(workspaceId, event, data) {
+  if (!_workspaceNamespace || !workspaceId) return;
+  try {
+    _workspaceNamespace.to(`workspace:${workspaceId}`).emit(event, data);
+  } catch (err) {
+    console.error(`[Socket] Failed to broadcast preview event ${event}:`, err);
+  }
+}
+
+/**
+ * Broadcast security / secret leakage alert across workspace.
+ */
+export function broadcastCredentialAlert(workspaceId, data) {
+  if (!_workspaceNamespace || !workspaceId) return;
+  try {
+    _workspaceNamespace.to(`workspace:${workspaceId}`).emit('credential:alert', data);
+  } catch (err) {
+    console.error(`[Socket] Failed to broadcast credential alert:`, err);
+  }
+}
+
+/**
+ * Broadcast Golden Path provisioning progress across workspace.
+ */
+export function broadcastGoldenPathProgress(workspaceId, data) {
+  if (!_workspaceNamespace || !workspaceId) return;
+  try {
+    _workspaceNamespace.to(`workspace:${workspaceId}`).emit('goldenpath:progress', data);
+  } catch (err) {
+    console.error(`[Socket] Failed to broadcast golden path progress:`, err);
   }
 }
 
@@ -118,19 +155,6 @@ function initWorkspaceSockets(io) {
             role: 'team_member',
             studentAccess: 'editor',
           });
-        } else {
-          // Check if admin
-          const isAdminSomewhere = await WorkspaceMember.findOne({
-            where: { userId: decoded.id, role: 'admin' },
-          });
-          if (isAdminSomewhere) {
-            membership = await WorkspaceMember.create({
-              workspaceId,
-              userId: decoded.id,
-              role: 'admin',
-              studentAccess: 'commenter',
-            });
-          }
         }
       }
 
@@ -144,6 +168,7 @@ function initWorkspaceSockets(io) {
 
       socket.userId = decoded.id;
       socket.username = decoded.username;
+      socket.isCompetitive = isCompetitive;
       socket.role = membership.role;                 // 'owner' | 'admin' | 'editor' | 'viewer' | 'teacher' | 'student' | 'team_leader' | 'developer' | 'team_member'
       socket.sessionRole = membership.sessionRole;   // 'teacher' | 'student' | 'none'
       socket.editorLocked = membership.editorLocked; // boolean
@@ -223,25 +248,21 @@ function initWorkspaceSockets(io) {
       }
     });
 
-    // Real-time file content change
-    socket.on('file-change', async ({ workspaceId, filePath, content }) => {
-      if (!workspaceId || !filePath) return;
-
+    // Shared RBAC & lock check helper for file edits
+    const canSocketEditFile = async (workspaceId, filePath) => {
       const ws = await workspaceService.getWorkspace(workspaceId);
       const isCompetitive = ws?.type === 'competitive';
       const isEducational = ws?.type === 'educational';
 
-      // Competitive workspace Admin can view and comment only
       if (isCompetitive && socket.role === 'admin') {
         socket.emit('workspace-error', { message: 'Admin has View & Comment only access in competitive workspaces.' });
-        return;
+        return false;
       }
 
-      // Access checks for editing
       const isCommenterOnly = socket.studentAccess === 'commenter' || socket.studentAccess === 'comment';
       if (isCommenterOnly) {
         socket.emit('workspace-error', { message: 'Comment only: you cannot edit files' });
-        return;
+        return false;
       }
 
       const isViewOnly =
@@ -250,37 +271,75 @@ function initWorkspaceSockets(io) {
         socket.studentAccess === 'view';
 
       const hasFullAdmin = ['owner', 'admin', 'teacher', 'team_leader', 'team_member'].includes(socket.role);
-
       if (!hasFullAdmin && isViewOnly) {
         socket.emit('workspace-error', { message: 'View only: you cannot edit files' });
-        return;
+        return false;
       }
 
-      // In Educational workspace, students can only edit when class is in session
       if (isEducational && socket.role === 'student') {
         const activeSession = await TeachingSession.findOne({ where: { workspaceId, active: true } });
         if (!activeSession) {
           socket.emit('workspace-error', { message: 'Class is not in session. Please wait for your teacher to start the class.' });
-          return;
+          return false;
         }
       }
 
-      // Education RBAC: students whose editors are locked cannot modify files
       if (socket.sessionRole === 'student' && socket.editorLocked) {
         socket.emit('workspace-error', { message: 'Your editor is locked by the teacher' });
-        return;
+        return false;
       }
 
-      // Check if file or containing folder is locked by someone else
       const lockCheck = await checkPathLocked(workspaceId, filePath, socket.userId);
       if (lockCheck.isLocked) {
         socket.emit('workspace-error', {
           message: `Cannot edit: ${filePath} is locked by ${lockCheck.lock.lockedByName}`,
         });
-        return;
+        return false;
       }
 
+      return true;
+    };
+
+    // Full-Duplex Operational Transform (OT) delta edit
+    socket.on('file-op', async ({ workspaceId, filePath, baseVersion, op }) => {
+      if (!workspaceId || !filePath || !op) return;
+      if (!(await canSocketEditFile(workspaceId, filePath))) return;
+
       try {
+        if (!otManager.getDoc(workspaceId, filePath)) {
+          let diskContent = '';
+          try {
+            const fileObj = await storageService.readFile(workspaceId, filePath);
+            diskContent = typeof fileObj === 'string' ? fileObj : (fileObj?.content ?? '');
+          } catch {
+            diskContent = '';
+          }
+          otManager.initDoc(workspaceId, filePath, diskContent);
+        }
+
+        const result = otManager.applyClientOp(workspaceId, filePath, baseVersion, op, socket.id);
+        await storageService.writeFile(workspaceId, filePath, result.content);
+
+        socket.emit('file-op-ack', { filePath, version: result.version });
+        socket.to(`workspace:${workspaceId}`).emit('file-op', {
+          filePath,
+          version: result.version,
+          op: result.op,
+          updatedBy: socket.id,
+          username: socket.username || 'Collaborator',
+        });
+      } catch (err) {
+        socket.emit('workspace-error', { message: `Failed to apply OT edit: ${err.message}` });
+      }
+    });
+
+    // Real-time file content change (full-text fallback)
+    socket.on('file-change', async ({ workspaceId, filePath, content }) => {
+      if (!workspaceId || !filePath) return;
+      if (!(await canSocketEditFile(workspaceId, filePath))) return;
+
+      try {
+        otManager.setFullContent(workspaceId, filePath, content, socket.id);
         await storageService.writeFile(workspaceId, filePath, content);
 
         socket.to(`workspace:${workspaceId}`).emit('file-updated', {
@@ -311,6 +370,28 @@ function initWorkspaceSockets(io) {
       socket.to(`workspace:${workspaceId}`).emit('remote-cursor-remove', {
         socketId: socket.id,
         filePath,
+      });
+    });
+
+    // ── Universal Review Hub Real-time Sync ──
+    socket.on('preview:sync-nav', ({ workspaceId, previewId, route, viewport }) => {
+      if (!workspaceId) return;
+      socket.to(`workspace:${workspaceId}`).emit('preview:nav-synced', {
+        previewId,
+        route,
+        viewport,
+        syncedBy: socket.username || 'Reviewer',
+      });
+    });
+
+    socket.on('preview:pin-interaction', ({ workspaceId, previewId, pinId, action, data }) => {
+      if (!workspaceId) return;
+      socket.to(`workspace:${workspaceId}`).emit('preview:pin-interacted', {
+        previewId,
+        pinId,
+        action,
+        data,
+        by: socket.username || 'Reviewer',
       });
     });
 

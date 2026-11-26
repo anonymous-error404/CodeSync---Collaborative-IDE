@@ -202,13 +202,13 @@ export function AiDiagramHubModal({
         }),
       });
 
-      setFileCreatedToast(`Successfully created ${suggestedFilename}! Opening in IDE...`);
+      setFileCreatedToast(`Successfully created ${suggestedFilename}! Opening in Editor...`);
       setTimeout(() => {
         if (onOpenFileInIDE) {
           onOpenFileInIDE(suggestedFilename);
         }
         onClose();
-      }, 1200);
+      }, 350);
     } catch (err: any) {
       alert(`Failed to save file: ${err.message}`);
     } finally {
@@ -218,27 +218,48 @@ export function AiDiagramHubModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl bg-[#0d131f] border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-4xl skeuo-card border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        style={{
+          background: 'var(--surface)',
+          borderColor: 'var(--border)',
+          color: 'var(--text)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-[#090d15] shrink-0">
+        <div
+          className="flex items-center justify-between px-6 py-4 border-b shrink-0"
+          style={{
+            background: 'var(--surface-2)',
+            borderColor: 'var(--border)',
+          }}
+        >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/20">
+            <div
+              className="p-2 rounded-xl text-white shadow-sm flex items-center justify-center"
+              style={{ background: 'var(--accent)' }}
+            >
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white tracking-tight">AI Diagram & Code Hub</h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <h2 className="text-base font-bold tracking-tight" style={{ color: 'var(--text)' }}>AI Diagram & Code Hub</h2>
+                <span
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold border"
+                  style={{
+                    background: 'var(--accent-subtle)',
+                    color: 'var(--accent)',
+                    borderColor: 'var(--border)',
+                  }}
+                >
                   Whiteboard AI
                 </span>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                 Generate dynamic architecture diagrams from text and convert diagrams directly into production code
               </p>
             </div>
@@ -246,7 +267,8 @@ export function AiDiagramHubModal({
 
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition-colors"
+            className="p-1.5 rounded-lg btn-physical-surface cursor-pointer"
+            style={{ color: 'var(--muted)' }}
           >
             <X className="w-5 h-5" />
           </button>
@@ -258,13 +280,13 @@ export function AiDiagramHubModal({
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl">
               <Lock className="w-8 h-8" />
             </div>
-            <h3 className="text-sm font-bold text-white">Teacher Only Feature</h3>
-            <p className="text-xs text-gray-400 max-w-md">
+            <h3 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Teacher Only Feature</h3>
+            <p className="text-xs max-w-md" style={{ color: 'var(--text-secondary)' }}>
               AI text-to-diagram and diagram-to-code synthesis is restricted to teachers in educational workspaces to maintain focused classroom instruction.
             </p>
             <button
               onClick={onClose}
-              className="mt-2 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg"
+              className="mt-2 px-4 py-1.5 btn-physical-surface text-xs font-semibold rounded-lg cursor-pointer"
             >
               Back to Whiteboard
             </button>
@@ -272,41 +294,49 @@ export function AiDiagramHubModal({
         ) : (
           <>
             {/* Tabs Bar */}
-            <div className="flex items-center border-b border-gray-800 bg-[#0b101a] px-6 shrink-0">
+            <div
+              className="flex items-center border-b px-6 shrink-0"
+              style={{
+                background: 'var(--surface)',
+                borderColor: 'var(--border)',
+              }}
+            >
               <button
                 onClick={() => setActiveTab('text-to-diagram')}
                 className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
                   activeTab === 'text-to-diagram'
-                    ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5'
-                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                    ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-subtle)]'
+                    : 'border-transparent hover:text-[var(--text)]'
                 }`}
+                style={{ color: activeTab === 'text-to-diagram' ? 'var(--accent)' : 'var(--muted)' }}
               >
                 <Layers className="w-4 h-4" />
-                <span>✨ Text → Diagram Generator</span>
+                <span>Text → Diagram Generator</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('diagram-to-code')}
                 className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
                   activeTab === 'diagram-to-code'
-                    ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5'
-                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                    ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-subtle)]'
+                    : 'border-transparent hover:text-[var(--text)]'
                 }`}
+                style={{ color: activeTab === 'diagram-to-code' ? 'var(--accent)' : 'var(--muted)' }}
               >
                 <Code2 className="w-4 h-4" />
-                <span>⚡ Diagram / Text → Code Generator</span>
+                <span>Diagram / Text → Code Generator</span>
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5" style={{ background: 'var(--bg)' }}>
               {/* ─── TAB 1: Text → Diagram ──────────────────────────────── */}
               {activeTab === 'text-to-diagram' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2 space-y-3">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-300 mb-1">
+                        <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>
                           Describe the System or Architecture Prompt
                         </label>
                         <textarea
@@ -314,13 +344,18 @@ export function AiDiagramHubModal({
                           value={diagramPrompt}
                           onChange={(e) => setDiagramPrompt(e.target.value)}
                           placeholder="e.g. Microservices architecture with API Gateway, Auth, Postgres, and Redis..."
-                          className="w-full bg-[#131b29] border border-gray-800 rounded-xl p-3 text-xs text-white placeholder-gray-500 outline-none focus:border-indigo-500 transition-colors"
+                          className="w-full rounded-xl p-3 text-xs outline-none transition-colors border"
+                          style={{
+                            background: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text)',
+                          }}
                         />
                       </div>
 
                       {/* Quick starter chips */}
                       <div>
-                        <span className="text-[11px] font-medium text-gray-400 block mb-1.5">
+                        <span className="text-[11px] font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                           Or try an architectural template:
                         </span>
                         <div className="flex flex-wrap gap-1.5">
@@ -329,7 +364,8 @@ export function AiDiagramHubModal({
                               key={i}
                               type="button"
                               onClick={() => setDiagramPrompt(prompt)}
-                              className="text-[10px] px-2.5 py-1 bg-[#131b29] hover:bg-[#1a2538] text-gray-300 hover:text-white border border-gray-800 rounded-lg text-left truncate max-w-[280px]"
+                              className="text-[10px] px-2.5 py-1 rounded-lg text-left truncate max-w-[280px] btn-physical-surface cursor-pointer"
+                              style={{ color: 'var(--text)' }}
                             >
                               {prompt}
                             </button>
@@ -339,22 +375,32 @@ export function AiDiagramHubModal({
                     </div>
 
                     {/* Diagram settings */}
-                    <div className="bg-[#131b29] border border-gray-800 rounded-xl p-4 space-y-3 h-fit">
-                      <h4 className="text-xs font-bold text-gray-300">Diagram Style</h4>
+                    <div
+                      className="border rounded-xl p-4 space-y-3 h-fit"
+                      style={{
+                        background: 'var(--surface)',
+                        borderColor: 'var(--border)',
+                      }}
+                    >
+                      <h4 className="text-xs font-bold" style={{ color: 'var(--text)' }}>Diagram Style</h4>
                       <div className="space-y-1.5 text-xs">
                         {[
-                          { id: 'architecture', label: '🏗️ Microservices Architecture' },
-                          { id: 'flowchart', label: '🔀 Workflow & Flowchart' },
-                          { id: 'database', label: '🗄️ Database ER Diagram' },
-                          { id: 'event_driven', label: '⚡ Event-Driven Streams' },
+                          { id: 'architecture', label: 'Microservices Architecture' },
+                          { id: 'flowchart', label: 'Workflow & Flowchart' },
+                          { id: 'database', label: 'Database ER Diagram' },
+                          { id: 'event_driven', label: 'Event-Driven Streams' },
                         ].map((d) => (
                           <label
                             key={d.id}
                             className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors ${
                               diagramType === d.id
-                                ? 'bg-indigo-600/20 border-indigo-500 text-white font-medium'
-                                : 'bg-[#0f1724] border-gray-800/80 text-gray-400 hover:text-gray-200'
+                                ? 'border-[var(--accent)] text-[var(--accent)] font-medium'
+                                : 'border-transparent hover:bg-[var(--surface-2)]'
                             }`}
+                            style={{
+                              background: diagramType === d.id ? 'var(--accent-subtle)' : 'var(--surface-2)',
+                              color: diagramType === d.id ? 'var(--accent)' : 'var(--text)',
+                            }}
                           >
                             <input
                               type="radio"
@@ -373,7 +419,7 @@ export function AiDiagramHubModal({
                         type="button"
                         onClick={handleGenerateDiagram}
                         disabled={generatingDiagram || !diagramPrompt.trim()}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-md disabled:opacity-40 transition-all cursor-pointer"
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold btn-physical-primary disabled:opacity-40 transition-all cursor-pointer"
                       >
                         {generatingDiagram ? <Spinner size={14} /> : <Sparkles className="w-3.5 h-3.5" />}
                         <span>{generatingDiagram ? 'Synthesizing...' : 'Generate with AI'}</span>
@@ -390,11 +436,17 @@ export function AiDiagramHubModal({
 
                   {/* Generated Diagram Preview */}
                   {generatedElements && (
-                    <div className="mt-4 p-4 bg-[#131b29] border border-indigo-500/40 rounded-xl space-y-3">
+                    <div
+                      className="mt-4 p-4 border rounded-xl space-y-3"
+                      style={{
+                        background: 'var(--surface)',
+                        borderColor: 'var(--accent)',
+                      }}
+                    >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Check className="w-4 h-4 text-emerald-400" />
-                          <span className="text-xs font-bold text-white">
+                          <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>
                             Generated {generatedElements.filter((e) => e.type !== 'connector').length} Nodes &{' '}
                             {generatedElements.filter((e) => e.type === 'connector').length} Connectors
                           </span>
@@ -402,7 +454,7 @@ export function AiDiagramHubModal({
 
                         <button
                           onClick={handleInsertDiagram}
-                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all cursor-pointer"
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold btn-physical-primary cursor-pointer"
                         >
                           <span>Insert into Whiteboard</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -415,11 +467,14 @@ export function AiDiagramHubModal({
                           .map((el) => (
                             <div
                               key={el.id}
-                              className="p-2.5 rounded-lg bg-[#0d131f] border text-xs"
-                              style={{ borderColor: el.strokeColor || '#388bfd' }}
+                              className="p-2.5 rounded-lg border text-xs"
+                              style={{
+                                background: 'var(--surface-2)',
+                                borderColor: el.strokeColor || 'var(--accent)',
+                              }}
                             >
-                              <div className="font-semibold text-white truncate">{el.text}</div>
-                              <div className="text-[10px] text-gray-400 capitalize">{el.diagramType || el.type}</div>
+                              <div className="font-semibold truncate" style={{ color: 'var(--text)' }}>{el.text}</div>
+                              <div className="text-[10px] capitalize" style={{ color: 'var(--muted)' }}>{el.diagramType || el.type}</div>
                             </div>
                           ))}
                       </div>
@@ -435,15 +490,21 @@ export function AiDiagramHubModal({
                     <div className="md:col-span-2 space-y-3">
                       {/* Source choice */}
                       <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-gray-300">Code Source:</span>
-                        <div className="flex items-center rounded-lg border border-gray-800 bg-[#131b29] p-0.5">
+                        <span className="font-semibold" style={{ color: 'var(--text)' }}>Code Source:</span>
+                        <div
+                          className="flex items-center rounded-lg border p-0.5"
+                          style={{
+                            background: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                          }}
+                        >
                           <button
                             type="button"
                             onClick={() => setCodeSource('canvas')}
-                            className={`px-3 py-1 rounded transition-colors ${
+                            className={`px-3 py-1 rounded transition-colors cursor-pointer ${
                               codeSource === 'canvas'
-                                ? 'bg-indigo-600 text-white font-medium'
-                                : 'text-gray-400 hover:text-white'
+                                ? 'bg-[var(--accent)] text-white font-medium'
+                                : 'text-[var(--muted)] hover:text-[var(--text)]'
                             }`}
                           >
                             Current Whiteboard ({currentElements.filter((e) => e.type !== 'connector').length} nodes)
@@ -451,10 +512,10 @@ export function AiDiagramHubModal({
                           <button
                             type="button"
                             onClick={() => setCodeSource('prompt')}
-                            className={`px-3 py-1 rounded transition-colors ${
+                            className={`px-3 py-1 rounded transition-colors cursor-pointer ${
                               codeSource === 'prompt'
-                                ? 'bg-indigo-600 text-white font-medium'
-                                : 'text-gray-400 hover:text-white'
+                                ? 'bg-[var(--accent)] text-white font-medium'
+                                : 'text-[var(--muted)] hover:text-[var(--text)]'
                             }`}
                           >
                             Custom Feature Prompt
@@ -468,17 +529,35 @@ export function AiDiagramHubModal({
                           value={codePrompt}
                           onChange={(e) => setCodePrompt(e.target.value)}
                           placeholder="Describe the software component, schema, or API routes to generate..."
-                          className="w-full bg-[#131b29] border border-gray-800 rounded-xl p-3 text-xs text-white placeholder-gray-500 outline-none focus:border-indigo-500"
+                          className="w-full rounded-xl p-3 text-xs outline-none border"
+                          style={{
+                            background: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text)',
+                          }}
                         />
                       ) : (
-                        <div className="p-3 bg-[#131b29] border border-gray-800 rounded-xl text-xs text-gray-300 flex items-center justify-between">
+                        <div
+                          className="p-3 border rounded-xl text-xs flex items-center justify-between"
+                          style={{
+                            background: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                          }}
+                        >
                           <div>
-                            <span className="font-bold text-white">Whiteboard Architecture Synced</span>
-                            <p className="text-[11px] text-gray-400 mt-0.5">
+                            <span className="font-bold" style={{ color: 'var(--text)' }}>Whiteboard Architecture Synced</span>
+                            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
                               Extracting all active services, gateways, databases, and relationships directly from your canvas.
                             </p>
                           </div>
-                          <span className="px-2 py-1 rounded bg-indigo-500/10 text-indigo-400 font-bold border border-indigo-500/20 text-[10px]">
+                          <span
+                            className="px-2 py-1 rounded font-bold border text-[10px]"
+                            style={{
+                              background: 'var(--accent-subtle)',
+                              color: 'var(--accent)',
+                              borderColor: 'var(--border)',
+                            }}
+                          >
                             {currentElements.length} elements
                           </span>
                         </div>
@@ -486,11 +565,16 @@ export function AiDiagramHubModal({
 
                       <div className="flex items-center gap-3">
                         <div className="flex-1">
-                          <label className="block text-xs font-semibold text-gray-300 mb-1">Target Language</label>
+                          <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>Target Language</label>
                           <select
                             value={language}
                             onChange={(e) => setLanguage(e.target.value)}
-                            className="w-full bg-[#131b29] border border-gray-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                            className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
+                            style={{
+                              background: 'var(--surface)',
+                              borderColor: 'var(--border)',
+                              color: 'var(--text)',
+                            }}
                           >
                             <option value="typescript">TypeScript (Express Router & Services)</option>
                             <option value="javascript">JavaScript (Node.js & Express)</option>
@@ -501,11 +585,16 @@ export function AiDiagramHubModal({
                         </div>
 
                         <div className="flex-1">
-                          <label className="block text-xs font-semibold text-gray-300 mb-1">Code Type</label>
+                          <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>Code Type</label>
                           <select
                             value={codeType}
                             onChange={(e) => setCodeType(e.target.value)}
-                            className="w-full bg-[#131b29] border border-gray-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                            className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
+                            style={{
+                              background: 'var(--surface)',
+                              borderColor: 'var(--border)',
+                              color: 'var(--text)',
+                            }}
                           >
                             <option value="full">Complete Architecture Boilerplate</option>
                             <option value="routes">API Endpoints & Controllers</option>
@@ -516,10 +605,16 @@ export function AiDiagramHubModal({
                     </div>
 
                     {/* Action button card */}
-                    <div className="bg-[#131b29] border border-gray-800 rounded-xl p-4 flex flex-col justify-between">
+                    <div
+                      className="border rounded-xl p-4 flex flex-col justify-between"
+                      style={{
+                        background: 'var(--surface)',
+                        borderColor: 'var(--border)',
+                      }}
+                    >
                       <div>
-                        <h4 className="text-xs font-bold text-gray-300">Code Synthesis</h4>
-                        <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                        <h4 className="text-xs font-bold" style={{ color: 'var(--text)' }}>Code Synthesis</h4>
+                        <p className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                           AI will analyze the diagram nodes, protocols, and database entities to generate clean, executable code.
                         </p>
                       </div>
@@ -528,7 +623,7 @@ export function AiDiagramHubModal({
                         type="button"
                         onClick={handleGenerateCode}
                         disabled={generatingCode}
-                        className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md disabled:opacity-40 transition-all cursor-pointer"
+                        className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold btn-physical-primary disabled:opacity-40 transition-all cursor-pointer"
                       >
                         {generatingCode ? <Spinner size={14} /> : <Code2 className="w-3.5 h-3.5" />}
                         <span>{generatingCode ? 'Writing Code...' : 'Generate Code'}</span>
@@ -552,19 +647,31 @@ export function AiDiagramHubModal({
 
                   {/* Generated Code Display */}
                   {generatedCode && (
-                    <div className="mt-4 rounded-xl border border-gray-800 overflow-hidden bg-[#090d15]">
-                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-[#0d131f]">
+                    <div
+                      className="mt-4 rounded-xl border overflow-hidden"
+                      style={{
+                        background: 'var(--surface)',
+                        borderColor: 'var(--border)',
+                      }}
+                    >
+                      <div
+                        className="flex items-center justify-between px-4 py-2.5 border-b"
+                        style={{
+                          background: 'var(--surface-2)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
                         <div className="flex items-center gap-2">
-                          <FileCode className="w-4 h-4 text-indigo-400" />
-                          <span className="text-xs font-bold text-white font-mono">{suggestedFilename}</span>
-                          {codeSummary && <span className="text-[11px] text-gray-400 hidden sm:inline">- {codeSummary}</span>}
+                          <FileCode className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                          <span className="text-xs font-bold font-mono" style={{ color: 'var(--text)' }}>{suggestedFilename}</span>
+                          {codeSummary && <span className="text-[11px] hidden sm:inline" style={{ color: 'var(--muted)' }}>- {codeSummary}</span>}
                         </div>
 
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={handleCopyCode}
-                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium btn-physical-surface rounded-lg cursor-pointer"
                           >
                             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                             <span>{copied ? 'Copied!' : 'Copy'}</span>
@@ -574,7 +681,7 @@ export function AiDiagramHubModal({
                             type="button"
                             onClick={handleCreateFileInWorkspace}
                             disabled={creatingFile}
-                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-sm transition-colors cursor-pointer"
+                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold btn-physical-primary rounded-lg shadow-sm cursor-pointer"
                           >
                             {creatingFile ? <Spinner size={12} /> : <FolderPlus className="w-3.5 h-3.5" />}
                             <span>Save to Workspace File</span>
@@ -582,7 +689,13 @@ export function AiDiagramHubModal({
                         </div>
                       </div>
 
-                      <pre className="p-4 text-xs font-mono text-gray-200 overflow-x-auto max-h-72 overflow-y-auto leading-relaxed bg-[#06090e]">
+                      <pre
+                        className="p-4 text-xs font-mono overflow-x-auto max-h-72 overflow-y-auto leading-relaxed"
+                        style={{
+                          background: 'var(--bg)',
+                          color: 'var(--text)',
+                        }}
+                      >
                         <code>{generatedCode}</code>
                       </pre>
                     </div>

@@ -269,7 +269,7 @@ function parseGroup(text: string, elements: CanvasElement[], selectedIds: string
   };
 }
 
-function parseFind(text: string, elements: CanvasElement[], _selectedIds: string[]): ParsedCommand {
+function parseFind(text: string, elements: CanvasElement[]): ParsedCommand {
   const lower = normalize(text);
 
   // "find all nodes linked to open tasks"
@@ -352,7 +352,7 @@ function parseShowDependencies(text: string, elements: CanvasElement[], selected
   };
 }
 
-function parseCreateNode(text: string, _elements: CanvasElement[], _selectedIds: string[]): ParsedCommand {
+function parseCreateNode(text: string): ParsedCommand {
   const lower = normalize(text);
   const diagramType: DiagramNodeType =
     matchKeywords<DiagramNodeType>(lower, NODE_TYPE_KEYWORDS, 'type') ?? 'generic';
@@ -489,9 +489,9 @@ export function parseCommand(
   if (LAYOUT_PATTERN.test(text)) return parseLayout(text, elements, selectedIds);
   if (ARRANGE_PATTERN.test(text)) return parseArrange(text, elements, selectedIds);
   if (ALIGN_PATTERN.test(text)) return parseAlign(text, elements, selectedIds);
-  if (CREATE_PATTERN.test(text)) return parseCreateNode(text, elements, selectedIds);
-  if (FIND_PATTERN.test(text)) return parseFind(text, elements, selectedIds);
-  if (FILTER_PATTERN.test(text)) return parseFind(text, elements, selectedIds);
+  if (CREATE_PATTERN.test(text)) return parseCreateNode(text);
+  if (FIND_PATTERN.test(text)) return parseFind(text, elements);
+  if (FILTER_PATTERN.test(text)) return parseFind(text, elements);
   if (DELETE_PATTERN.test(text)) return parseDelete(text, elements, selectedIds);
   if (SELECT_PATTERN.test(text)) {
     const names = extractQuotedNames(text);

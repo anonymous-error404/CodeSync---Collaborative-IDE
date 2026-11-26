@@ -15,6 +15,8 @@ interface Props {
   currentUserId: number;
   token: string | null;
   activeMemberFiles?: Record<number, string>;
+  activeFilePath?: string;
+  activeUsers?: Array<{ socketId: string; userId?: number; username: string }>;
   socket?: any;
   onClose: () => void;
   onStudentAccessUpdated?: (userId: number, access: StudentAccessLevel) => void;
@@ -27,6 +29,8 @@ export function MembersPanel({
   currentUserId,
   token,
   activeMemberFiles,
+  activeFilePath,
+  activeUsers = [],
   socket,
   onClose,
   onStudentAccessUpdated,
@@ -1296,18 +1300,68 @@ export function MembersPanel({
                         </div>
                       )}
 
-                    {/* Session / Education badges */}
+                    {/* Session / Education badges & Teacher Takeover Controls */}
                     {(m.sessionRole && m.sessionRole !== 'none') && (
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-[var(--border)]">
+                      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-[var(--border)] flex-wrap">
                         {m.sessionRole === 'teacher' ? (
                           <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/30 font-bold uppercase tracking-wider">
                             <GraduationCap size={10} /> Teacher
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
-                            Student {m.editorLocked && <span className="flex items-center text-amber-400 font-bold ml-1"><Lock size={9} /> Locked</span>}
-                            {m.handRaised && <Hand size={10} className="inline ml-1 text-amber-400" />}
-                          </span>
+                          <>
+                            <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
+                              Student {m.editorLocked && <span className="flex items-center text-amber-400 font-bold ml-1"><Lock size={9} /> Locked</span>}
+                              {m.handRaised && <Hand size={10} className="inline ml-1 text-amber-400" />}
+                            </span>
+                            {(myRole === 'owner' || myRole === 'teacher' || myRole === 'admin') && (() => {
+                              const peer = activeUsers.find(u => u.userId === m.userId || u.username === m.User?.username);
+                              if (!peer || !socket) return null;
+                              return (
+                                <div className="flex items-center gap-1">
+                                  {activeFilePath && (
+                                    <button
+                                      type="button"
+                                      onClick={() => socket.emit('session:takeover', {
+                                        workspaceId,
+                                        targetSocketId: peer.socketId,
+                                        filePath: activeFilePath,
+                                      })}
+                                      className="text-[9px] px-1.5 py-0.5 rounded font-semibold cursor-pointer btn-physical-surface"
+                                      style={{ color: 'var(--accent)' }}
+                                      title={`Push & open ${activeFilePath} in ${m.User?.username}'s IDE`}
+                                    >
+                                      Takeover
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => socket.emit(m.editorLocked ? 'session:unlock_editor' : 'session:lock_editor', {
+                                      workspaceId,
+                                      targetSocketId: peer.socketId,
+                                    })}
+                                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold cursor-pointer btn-physical-surface"
+                                    style={{ color: m.editorLocked ? 'var(--success)' : 'var(--warning)' }}
+                                    title={m.editorLocked ? 'Unlock student editor' : 'Lock student editor'}
+                                  >
+                                    {m.editorLocked ? 'Unlock' : 'Lock'}
+                                  </button>
+                                  {m.handRaised && (
+                                    <button
+                                      type="button"
+                                      onClick={() => socket.emit('session:lower_hand', {
+                                        workspaceId,
+                                        targetSocketId: peer.socketId,
+                                      })}
+                                      className="text-[9px] px-1.5 py-0.5 rounded font-semibold cursor-pointer btn-physical-surface"
+                                      title="Lower student's raised hand"
+                                    >
+                                      Lower Hand
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </>
                         )}
                       </div>
                     )}

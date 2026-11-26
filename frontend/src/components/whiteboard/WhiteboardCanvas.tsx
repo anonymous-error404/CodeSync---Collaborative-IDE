@@ -3,6 +3,7 @@ import type { CanvasElement, RemoteWhiteboardCursor, Anchor, RelationshipType, D
 import type { ToolType } from './WhiteboardToolbar';
 import { CodeCellNode } from './CodeCellNode';
 import { DiagramNode } from './DiagramNode';
+import { EquationNode } from './EquationNode';
 
 const NODE_TYPE_DEFAULTS: Partial<Record<DiagramNodeType, { strokeColor?: string; width?: number; height?: number; type?: string }>> = {
   service:       { strokeColor: '#2f81f7', width: 160, height: 70 },
@@ -335,7 +336,11 @@ export function WhiteboardCanvas({
 
   // ─── Native Wheel Listener (passive: false) ───────────────────────────────
   // Crucial: Must be native with { passive: false } so e.preventDefault() stops
-  // browser zoom from zooming the entire webpage.
+  // browser zoom from zooming the entire webpage. Uses viewportRef to avoid re-attaching on every frame.
+  const viewportRef = useRef(viewport);
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -343,6 +348,7 @@ export function WhiteboardCanvas({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const vp = viewportRef.current;
 
       if (e.ctrlKey || e.metaKey) {
         // Zoom whiteboard canvas centered at mouse coordinates
@@ -350,18 +356,18 @@ export function WhiteboardCanvas({
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         const factor = e.deltaY < 0 ? 1.12 : 0.88;
-        const newZoom = Math.min(Math.max(viewport.zoom * factor, 0.1), 5);
+        const newZoom = Math.min(Math.max(vp.zoom * factor, 0.1), 5);
         setViewport({
           zoom: newZoom,
-          x: mx - (mx - viewport.x) * (newZoom / viewport.zoom),
-          y: my - (my - viewport.y) * (newZoom / viewport.zoom),
+          x: mx - (mx - vp.x) * (newZoom / vp.zoom),
+          y: my - (my - vp.y) * (newZoom / vp.zoom),
         });
       } else {
-        // Regular wheel pans the canvas
+        // Regular wheel pans the canvas smoothly
         setViewport({
-          ...viewport,
-          x: viewport.x - e.deltaX,
-          y: viewport.y - e.deltaY,
+          ...vp,
+          x: vp.x - e.deltaX,
+          y: vp.y - e.deltaY,
         });
       }
     };
@@ -370,9 +376,9 @@ export function WhiteboardCanvas({
     return () => {
       el.removeEventListener('wheel', onWheel);
     };
-  }, [viewport, setViewport]);
+  }, [setViewport]);
 
-  // ─── Keyboard shortcuts ───────────────────────────────────────────────────
+  // ─── Keyboard shortcuts (Delete, Duplicate, Select All, Nudge) ────────────
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -384,20 +390,70 @@ export function WhiteboardCanvas({
       if (e.key === 'Escape') {
         onSelect([]);
       }
+
+      // Duplicate selected elements (Ctrl+D / Cmd+D)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        if (selectedIds.length > 0) {
+          const timestamp = Date.now();
+          const duplicates: CanvasElement[] = [];
+          const idMap = new Map<string, string>();
+
+          selectedIds.forEach((id, idx) => {
+            const found = elements.find(item => item.id === id);
+            if (found && found.type !== 'connector') {
+              const newId = `${found.type || 'el'}-dup-${timestamp}-${idx}`;
+              idMap.set(id, newId);
+              duplicates.push({
+                ...found,
+                id: newId,
+                x: found.x + 24,
+                y: found.y + 24,
+              });
+            }
+          });
+
+          selectedIds.forEach((id) => {
+            const found = elements.find(item => item.id === id);
+            if (found && found.type === 'connector' && found.sourceId && found.targetId) {
+              const newSrc = idMap.get(found.sourceId);
+              const newTgt = idMap.get(found.targetId);
+              if (newSrc && newTgt) {
+                duplicates.push({
+                  ...found,
+                  id: `conn-dup-${timestamp}-${Math.random().toString(36).slice(2, 6)}`,
+                  sourceId: newSrc,
+                  targetId: newTgt,
+                });
+              }
+            }
+          });
+
+          duplicates.forEach(d => onAddElement(d));
+          onSelect(duplicates.map(d => d.id));
+        }
+      }
+
+      // Select All elements (Ctrl+A / Cmd+A)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        onSelect(elements.map(item => item.id));
+      }
+
       // Nudge with arrow keys
       const NUDGE = e.shiftKey ? 10 : 2;
       const nudge = { ArrowLeft: { x: -NUDGE, y: 0 }, ArrowRight: { x: NUDGE, y: 0 }, ArrowUp: { x: 0, y: -NUDGE }, ArrowDown: { x: 0, y: NUDGE } }[e.key];
       if (nudge) {
         e.preventDefault();
         for (const id of selectedIds) {
-          const el = elements.find(el => el.id === id);
+          const el = elements.find(item => item.id === id);
           if (el) onUpdateElement({ ...el, x: el.x + nudge.x, y: el.y + nudge.y });
         }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedIds, elements, onDeleteElement, onSelect, onUpdateElement]);
+  }, [selectedIds, elements, onDeleteElement, onSelect, onUpdateElement, onAddElement]);
 
   // ─── Hit testing (Handles ALL element types) ──────────────────────────────
 
@@ -477,11 +533,15 @@ export function WhiteboardCanvas({
 
   const finishEditingText = useCallback((id: string, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) {
-      onDeleteElement?.(id);
-    } else {
-      const el = elements.find(e => e.id === id);
-      if (el) {
+    const el = elements.find(e => e.id === id);
+    if (el) {
+      if (el.type === 'text' && !trimmed) {
+        // Only delete pure standalone text elements when left empty
+        onDeleteElement?.(id);
+      } else if (el.type === 'equation') {
+        onUpdateElement({ ...el, text: trimmed, latex: trimmed || '\\int f(x) dx' });
+      } else {
+        // Shapes, nodes, sticky notes preserve their element and update text
         onUpdateElement({ ...el, text: trimmed });
       }
     }
@@ -681,8 +741,33 @@ export function WhiteboardCanvas({
 
       if (maxX - minX > 4 || maxY - minY > 4) {
         const selected = elements.filter(el => {
-          if (!el.width || !el.height) return false;
-          return el.x >= minX && el.y >= minY && el.x + el.width <= maxX && el.y + el.height <= maxY;
+          // 1. Freehand strokes
+          if (el.type === 'stroke') {
+            if (!el.points || el.points.length === 0) return false;
+            return el.points.some(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY);
+          }
+          // 2. Connectors
+          if (el.type === 'connector' || el.type === 'arrow') {
+            if (el.sourceId && el.targetId) {
+              const src = elements.find(e => e.id === el.sourceId);
+              const tgt = elements.find(e => e.id === el.targetId);
+              if (!src || !tgt) return false;
+              const sx = src.x + (src.width ?? 160) / 2;
+              const sy = src.y + (src.height ?? 70) / 2;
+              const tx = tgt.x + (tgt.width ?? 160) / 2;
+              const ty = tgt.y + (tgt.height ?? 70) / 2;
+              return (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) ||
+                     (tx >= minX && tx <= maxX && ty >= minY && ty <= maxY);
+            }
+            if (el.points && el.points.length > 0) {
+              return el.points.some(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY);
+            }
+            return false;
+          }
+          // 3. Rectangles, circles, diamonds, nodes, frames (intersection)
+          const w = el.width ?? 160;
+          const h = el.height ?? 70;
+          return el.x <= maxX && el.x + w >= minX && el.y <= maxY && el.y + h >= minY;
         });
         onSelect(selected.map(e => e.id));
       }
@@ -773,7 +858,8 @@ export function WhiteboardCanvas({
         strokeColor: isLight ? '#0969da' : '#2f81f7',
         fillColor: activeTool === 'sticky' ? (isLight ? '#fff8c5' : '#21262d') : 'transparent',
         strokeWidth: 2,
-        text: activeTool === 'sticky' ? 'Note' : '',
+        text: activeTool === 'sticky' ? 'Note' : activeTool === 'equation' ? '\\int f(x) dx' : '',
+        latex: activeTool === 'equation' ? '\\int f(x) dx' : undefined,
         codeLanguage: activeTool === 'code_cell' ? 'javascript' : undefined,
         codeContent: activeTool === 'code_cell' ? '// code snippet' : undefined,
         codeLinkType: activeTool === 'code_cell' ? 'static' : undefined,
@@ -866,11 +952,17 @@ export function WhiteboardCanvas({
 
           // Inline text editing mode for this element
           if (editingTextId === el.id) {
+            const isPureText = el.type === 'text';
             return (
               <div
                 key={el.id}
-                className="absolute z-50"
-                style={{ left: el.x, top: el.y }}
+                className="absolute z-50 flex items-center justify-center"
+                style={{
+                  left: el.x,
+                  top: el.y,
+                  width: isPureText ? undefined : (el.width ?? 160),
+                  height: isPureText ? undefined : (el.height ?? 70),
+                }}
                 onClick={e => e.stopPropagation()}
                 onMouseDown={e => e.stopPropagation()}
               >
@@ -880,11 +972,15 @@ export function WhiteboardCanvas({
                   onChange={e => {
                     const val = e.target.value;
                     setInlineTextValue(val);
-                    const lines = val.split('\n');
-                    const maxLen = Math.max(...lines.map(l => l.length), 10);
-                    const newW = Math.max(160, maxLen * 9 + 20);
-                    const newH = Math.max(36, lines.length * 22 + 16);
-                    onUpdateElement({ ...el, text: val, width: newW, height: newH });
+                    if (isPureText) {
+                      const lines = val.split('\n');
+                      const maxLen = Math.max(...lines.map(l => l.length), 10);
+                      const newW = Math.max(160, maxLen * 9 + 20);
+                      const newH = Math.max(36, lines.length * 22 + 16);
+                      onUpdateElement({ ...el, text: val, width: newW, height: newH });
+                    } else {
+                      onUpdateElement({ ...el, text: val });
+                    }
                   }}
                   onKeyDown={e => {
                     if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
@@ -895,15 +991,55 @@ export function WhiteboardCanvas({
                   onBlur={() => {
                     finishEditingText(el.id, inlineTextValue);
                   }}
-                  placeholder="Type text here..."
+                  placeholder="Type label here..."
                   rows={Math.max(1, inlineTextValue.split('\n').length)}
-                  className={`p-1.5 rounded border ${isLight ? 'border-blue-600 bg-white text-[#1f2328]' : 'border-blue-500 bg-[#161b22] text-[#e6edf3]'} text-sm font-sans focus:outline-none resize-none shadow-2xl`}
+                  className={`p-2 rounded-lg border ${isLight ? 'border-blue-600 bg-white text-[#1f2328]' : 'border-blue-500 bg-[#161b22] text-[#e6edf3]'} text-xs font-semibold font-sans focus:outline-none resize-none shadow-2xl ${isPureText ? '' : 'w-full h-full text-center'}`}
                   style={{
-                    minWidth: 160,
-                    fontSize: el.fontSize ?? 14,
+                    minWidth: isPureText ? 160 : undefined,
+                    fontSize: el.fontSize ?? 13,
                     lineHeight: 1.4,
                   }}
                 />
+              </div>
+            );
+          }
+
+          if (el.type === 'equation') {
+            return (
+              <div
+                key={el.id}
+                className={`absolute ${isPendingTarget ? 'cursor-crosshair' : ''}`}
+                style={{ left: el.x, top: el.y, zIndex: isSelected ? 30 : 20 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeTool === 'eraser') {
+                    onDeleteElement?.(el.id);
+                    onSelect(selectedIds.filter(i => i !== el.id));
+                    return;
+                  }
+                  if (pendingConnectorSourceId) { onConnectorTargetPicked?.(el.id); return; }
+                  onSelect(e.shiftKey ? (selectedIds.includes(el.id) ? selectedIds.filter(i => i !== el.id) : [...selectedIds, el.id]) : [el.id]);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingTextId(el.id);
+                  setInlineTextValue(el.latex ?? el.text ?? '');
+                }}
+                onMouseDown={(e) => {
+                  if (pendingConnectorSourceId || activeTool !== 'select') return;
+                  e.stopPropagation();
+                  if (!selectedIds.includes(el.id)) onSelect([el.id]);
+                  const pos = screenToWorld(e.clientX, e.clientY);
+                  setDraggingIds(selectedIds.includes(el.id) ? selectedIds : [el.id]);
+                  const offs: Record<string, { dx: number; dy: number }> = {};
+                  (selectedIds.includes(el.id) ? selectedIds : [el.id]).forEach(id => {
+                    const found = elements.find(item => item.id === id);
+                    if (found) offs[id] = { dx: pos.x - found.x, dy: pos.y - found.y };
+                  });
+                  setDragOffsets(offs);
+                }}
+              >
+                <EquationNode element={el} isSelected={isSelected} />
               </div>
             );
           }
@@ -947,10 +1083,8 @@ export function WhiteboardCanvas({
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                if (el.type === 'text' || el.type === 'sticky') {
-                  setEditingTextId(el.id);
-                  setInlineTextValue(el.text ?? '');
-                }
+                setEditingTextId(el.id);
+                setInlineTextValue(el.text ?? '');
               }}
               onMouseDown={(e) => {
                 if (pendingConnectorSourceId) return;

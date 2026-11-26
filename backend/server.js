@@ -14,9 +14,12 @@ import {
   commentRoutes,
   previewRoutes,
   gitRoutes,
+  credentialRoutes,
+  goldenPathRoutes,
   initWorkspaceSockets
 } from './src/index.js';
 import { syncDatabase } from './src/models/index.js';
+import lspRagRoutes from './src/routes/lspRagRoutes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +38,23 @@ app.use(
 // JSON body parser
 app.use(express.json());
 
+// Ensure database sync completes before handling API requests, while allowing server.listen() immediately
+let dbReadyResolve;
+let dbReadyReject;
+const dbReadyPromise = new Promise((resolve, reject) => {
+  dbReadyResolve = resolve;
+  dbReadyReject = reject;
+});
+
+app.use('/api', async (req, res, next) => {
+  try {
+    await dbReadyPromise;
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // REST API routes
 app.use('/api/auth', authRoutes);
 app.use('/api', previewRoutes);
@@ -47,6 +67,9 @@ app.use('/api', sessionRoutes);
 app.use('/api', professionalRoutes);
 app.use('/api', commentRoutes);
 app.use('/api', gitRoutes);
+app.use('/api', credentialRoutes);
+app.use('/api', goldenPathRoutes);
+app.use('/api', lspRagRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -77,11 +100,15 @@ const io = new Server(server, {
 // Attach Workspace Real-Time Socket Handlers
 initWorkspaceSockets(io);
 
-// Start Server and Synchronize SQLite Database
+// Start Server immediately and synchronize SQLite Database concurrently
 const startServer = async (port = PORT) => {
   try {
-    // Sync Sequelize models with SQLite
-    await syncDatabase();
+    syncDatabase()
+      .then(() => dbReadyResolve())
+      .catch((err) => {
+        console.error('[Startup Error]: Database sync failed:', err);
+        dbReadyReject(err);
+      });
 
     return new Promise((resolve) => {
       server.listen(port, () => {

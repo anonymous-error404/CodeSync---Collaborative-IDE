@@ -145,7 +145,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# SQLite Database & Transaction Files
+# SQLite Database & Transaction Files (root and nested)
 *.sqlite
 *.sqlite3
 *.db
@@ -155,6 +155,18 @@ vite.config.ts.timestamp-*
 *.db-journal
 *.db-wal
 *.db-shm
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.sqlite-*
+**/*.db-*
+**/database.sqlite*
+backend/*.sqlite*
+
+# Local User Workspaces Data
+user_workspaces_data/
+**/user_workspaces_data/
+backend/user_workspaces_data/
 
 # OS Generated Files
 .DS_Store
@@ -172,4 +184,3 @@ Desktop.ini
 *.swp
 *.swo
 *~
-user_workspaces_data

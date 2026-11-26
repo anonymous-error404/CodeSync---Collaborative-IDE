@@ -63,10 +63,10 @@ export function useCodeEditor(
   };
 
   /** Apply a value change and schedule cursor placement. */
-  const applyChange = (newValue: string, cursorStart: number, cursorEnd = cursorStart) => {
+  const applyChange = useCallback((newValue: string, cursorStart: number, cursorEnd = cursorStart) => {
     onChange(newValue, cursorStart);
     setCursor(cursorStart, cursorEnd);
-  };
+  }, [onChange]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -201,7 +201,7 @@ export function useCodeEditor(
         return;
       }
     },
-    [value, onChange, filename, onSave, onToggleTerminal],
+    [value, applyChange, filename, onSave, onToggleTerminal],
   );
 
   return { textareaRef, handleKeyDown };

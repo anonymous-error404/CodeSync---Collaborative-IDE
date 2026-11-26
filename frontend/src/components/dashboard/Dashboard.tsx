@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Plus, FolderOpen, Sun, Moon, LogOut, Clock, Trash2, UserPlus, Link2,
   GraduationCap, Briefcase, Trophy, Check, Sparkles, Eye, EyeOff,
-  Shield, X, GitPullRequest, AlertCircle, Search, ArrowRight
+  Shield, X, GitPullRequest, AlertCircle, Search, ArrowRight,
+  FileCode, Layers, Server, Zap, Coffee, Code2
 } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 import type { Workspace, WorkspaceRole, WorkspaceType } from '../../types';
@@ -67,12 +68,12 @@ const typeDetails: Record<WorkspaceType, {
 };
 
 const PROJECT_TEMPLATES_LIST = [
-  { id: 'blank', label: 'Blank Project', desc: 'Empty workspace with README.md', badge: 'Empty', icon: '📄' },
-  { id: 'node-express', label: 'Node.js Express', desc: 'REST server with Express & package.json', badge: 'Node.js', icon: '🟢' },
-  { id: 'python-flask', label: 'Python Flask', desc: 'Flask web app with requirements.txt', badge: 'Flask', icon: '🐍' },
-  { id: 'python-script', label: 'Python Script', desc: 'Starter main.py script runner', badge: 'Python', icon: '⚡' },
-  { id: 'java-maven', label: 'Java Maven', desc: 'Java 21 project with pom.xml', badge: 'Java', icon: '☕' },
-  { id: 'react-vite', label: 'React + Vite', desc: 'React 19 single-page app', badge: 'React', icon: '⚛️' },
+  { id: 'blank', label: 'Blank Project', desc: 'Empty workspace with README.md', badge: 'Empty', icon: FileCode },
+  { id: 'node-express', label: 'Node.js Express', desc: 'REST server with Express & package.json', badge: 'Node.js', icon: Server },
+  { id: 'python-flask', label: 'Python Flask', desc: 'Flask web app with requirements.txt', badge: 'Flask', icon: Code2 },
+  { id: 'python-script', label: 'Python Script', desc: 'Starter main.py script runner', badge: 'Python', icon: Zap },
+  { id: 'java-maven', label: 'Java Maven', desc: 'Java 21 project with pom.xml', badge: 'Java', icon: Coffee },
+  { id: 'react-vite', label: 'React + Vite', desc: 'React 19 single-page app', badge: 'React', icon: Layers },
 ];
 
 interface Props { onOpen: (ws: Workspace, role: WorkspaceRole) => void; }
@@ -885,15 +886,18 @@ export function Dashboard({ onOpen }: Props) {
                           }}
                         >
                           <div className="flex items-center justify-between gap-1 mb-1">
-                            <span
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono uppercase"
-                              style={{
-                                background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
-                                color: isSelected ? '#fff' : 'var(--muted)',
-                              }}
-                            >
-                              {tmpl.badge}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <tmpl.icon size={13} style={{ color: isSelected ? 'var(--accent)' : 'var(--muted)' }} />
+                              <span
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono uppercase"
+                                style={{
+                                  background: isSelected ? 'var(--accent)' : 'var(--surface-2)',
+                                  color: isSelected ? '#fff' : 'var(--muted)',
+                                }}
+                              >
+                                {tmpl.badge}
+                              </span>
+                            </div>
                             {isSelected && <Check size={11} style={{ color: 'var(--accent)' }} />}
                           </div>
                           <div className="text-xs font-bold truncate" style={{ color: isSelected ? 'var(--accent)' : 'var(--text)' }}>

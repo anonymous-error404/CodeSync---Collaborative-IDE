@@ -124,19 +124,6 @@ export function requireWorkspaceMember(minRole = 'viewer') {
             role: 'team_member',
             studentAccess: 'editor',
           });
-        } else {
-          // If user is admin in any competitive workspace, grant admin view+comment access
-          const isAdminSomewhere = await WorkspaceMember.findOne({
-            where: { userId, role: 'admin' },
-          });
-          if (isAdminSomewhere) {
-            membership = await WorkspaceMember.create({
-              workspaceId,
-              userId,
-              role: 'admin',
-              studentAccess: 'commenter',
-            });
-          }
         }
       }
 

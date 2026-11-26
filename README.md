@@ -17,6 +17,9 @@ CodeSync is a modern, full-stack, cloud-based collaborative development platform
   - [7. Professional Agile & Code Review Tools](#7-professional-agile--code-review-tools)
   - [8. WebRTC Live Voice Calling & Workspace Chat](#8-webrtc-live-voice-calling--workspace-chat)
   - [9. Authentication & Granular RBAC](#9-authentication--granular-rbac)
+  - [10. Universal Review Hub, Live Preview & Test Runner](#10-universal-review-hub-live-preview--test-runner)
+  - [11. Zero-Trust Credential Vault & Secret Scanner](#11-zero-trust-credential-vault--secret-scanner)
+  - [12. Golden Paths (IDP) & Git Source Control](#12-golden-paths-idp--git-source-control)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [📂 Project Directory Structure](#-project-directory-structure)
 - [🚀 Quick Start & Installation](#-quick-start--installation)
@@ -49,6 +52,7 @@ CodeSync is a modern, full-stack, cloud-based collaborative development platform
 
 ### 1. Smart Code Editor
 - **Custom-Built Lightweight Engine:** Clean, high-performance editor with syntax highlighting, line numbers, and dark/light themes.
+- **Inline LSPRag Autocomplete:** Workspace-indexed symbol and context-aware ghost-text suggestions rendered inline at the cursor (`Tab` to accept, keep typing or `Esc` to dismiss).
 - **Smart Auto-Closing Pairs:** Automatically closes `()`, `[]`, `{}`, `""`, `''`, and ```` `` ````. Intelligent skip past closing characters and paired backspace deletion.
 - **Context-Aware Indentation:** Automatically applies indentation levels based on file language (e.g. following `:` in Python or `{` in JavaScript/Java).
 - **Multi-Tab File Management:** Open multiple files simultaneously with active indicators, file extension icons, and unsaved changes indicators (`●`).
@@ -78,6 +82,7 @@ CodeSync is a modern, full-stack, cloud-based collaborative development platform
 - **Multi-Member Environment Modal:** Inspect running container statuses and stop active execution tasks across workspace members.
 
 ### 4. Real-Time Collaboration & Synchronization
+- **Full-Duplex Operational Transform (OT):** Character-level delta syncing (`file-op` / `file-op-ack`) with monotonic server document versions and deterministic conflict resolution for simultaneous multi-user editing.
 - **Remote Collaborator Cursors:** View other users' cursors with deterministic color coding, username labels, selection ranges, and real-time `(typing...)` badges.
 - **Smart Cursor Reconciliation:** The `adjustCursorForRemoteChange` algorithm anchors local and remote cursors to code positions during concurrent remote edits.
 - **Granular File & Line Locking (`LockManagerModal`):**
@@ -132,6 +137,19 @@ CodeSync is a modern, full-stack, cloud-based collaborative development platform
   - `editor` / `developer` — Can read, write, create files, execute code, and draw on whiteboard.
   - `viewer` / `student` (locked) — Read-only access to files and whiteboard.
 - **UUID Invite Links:** Shareable workspace invitation links (`/join?code=<UUID>`) with configurable role defaults, expiration timestamps, and max usage counts.
+
+### 10. Universal Review Hub, Live Preview & Test Runner
+- **Sandboxed Live Web Preview & Reverse Proxy:** Auto-detects running workspace ports with split-pane or full-screen browser preview, responsive device presets (Desktop/Tablet/Mobile), and port security filtering.
+- **Figma-Style Pin Annotations & Non-Blocking Inspector:** Drop contextual pins directly on live UI surfaces and inspect **Test Suite**, **Environment Compare**, and **Review Memo** in a side-by-side drawer without hiding the preview.
+- **Manual & Automated Test Suite (`node --test`):** Discover workspace test files (`*.test.*`, `*.spec.*`), author new API/Unit/Integration test files from templates, execute suites via Node's native test runner, and view parsed TAP pass/fail results and console output.
+
+### 11. Zero-Trust Credential Vault & Secret Scanner
+- **Ephemeral Credential Broker & Runtime Injection:** Request, issue, and revoke short-lived scoped credentials per workspace with policy evaluation, automatic runtime environment injection (`process.env.CODESYNC_*`), and emergency lockdown controls.
+- **Multi-Vendor Entropy Secret Scanner & One-Click Remediation:** Scans workspace files against 25+ vendor signatures (AWS, GCP, GitHub, OpenAI, Anthropic, Stripe, database URIs, JWTs, private keys) with Shannon entropy analysis, false-positive filtering, and one-click **Vault & Fix** replacement into `process.env` references.
+
+### 12. Golden Paths (IDP) & Git Source Control
+- **Golden Path Blueprints:** Scaffold real runnable project files (`package.json`, `src/index.js`, `Dockerfile`, `.env.example`, `tests/health.test.js`, `.codesync-idp.json`) into the workspace, run deterministic filesystem/security drift detection, and apply upstream config updates.
+- **Integrated Git Source Control:** Built-in `SourceControlPanel` supporting `status`, `diff`, `stage`, `commit`, `push`, `pull`, `clone`, branch checkout, and GitHub credential management.
 
 ---
 
@@ -345,6 +363,14 @@ VITE_API_URL=http://localhost:5000
 | `POST` | `/api/workspaces/:id/files` | Create new file or folder | Editor / Owner |
 | `DELETE` | `/api/workspaces/:id/files` | Delete file or folder | Editor / Owner |
 | `POST` | `/api/workspaces/:id/files/rename` | Rename file or folder | Editor / Owner |
+| `GET/POST` | `/api/workspaces/:id/previews` | List or provision preview environments | Member / Editor |
+| `POST` | `/api/previews/:previewId/tests/create-file` | Create manual test file from template | Bearer Token |
+| `POST` | `/api/previews/:previewId/tests/run` | Execute workspace tests (`node --test`) | Bearer Token |
+| `GET` | `/api/workspaces/:id/credentials/scan-secrets` | Run multi-vendor entropy secret scan | Member |
+| `POST` | `/api/workspaces/:id/credentials/remediate-secret` | Replace hardcoded secret & register in vault | Editor / Owner |
+| `POST` | `/api/workspaces/:id/competitive/run-tests` | Run Stdin/Stdout competitive I/O test cases | Member |
+| `POST` | `/api/workspaces/:id/lsprag/inline` | Inline LSPRag completion suggestions | Member |
+| `GET/POST` | `/api/workspaces/:id/git/*` | Git status, diff, stage, commit, push, pull | Member / Editor |
 
 ---
 
@@ -355,7 +381,8 @@ VITE_API_URL=http://localhost:5000
 | `join-workspace` | Client → Server | `{ workspaceId, token }` |
 | `workspace-ready` | Server → Client | Initial file tree, member role, session state, and locks |
 | `user-joined` / `user-left`| Server → Client | Member presence notifications and socket IDs |
-| `file-change` | Client → Server | Broadcast content changes to collaborators |
+| `file-op` / `file-op-ack` | Bi-directional | Full-duplex OT text delta edits and version acknowledgements |
+| `file-change` | Client → Server | Broadcast full-text fallback changes to collaborators |
 | `file-updated` | Server → Client | Receives real-time content changes from others |
 | `cursor-move` / `cursor-leave` | Bi-directional | Real-time cursor coordinates and typing state |
 | `execute-code` | Client → Server | Triggers Docker container execution for the active file |
@@ -370,7 +397,7 @@ VITE_API_URL=http://localhost:5000
 | `session:focus` | Client → Server | Teacher forces all students to open a specific file |
 | `session:raise_hand` | Client → Server | Student requests instructor attention |
 | `lock:create` / `lock:release` | Bi-directional | Granular file and line-range locking coordination |
-| `whiteboard:elements-change` | Bi-directional | Broadcasts canvas diagram updates in real-time |
+| `whiteboard:element_update` / `whiteboard:elements-change` | Bi-directional | Broadcasts canvas element and diagram updates in real-time |
 
 ---
 

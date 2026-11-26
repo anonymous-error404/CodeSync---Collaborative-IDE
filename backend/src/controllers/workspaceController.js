@@ -56,6 +56,31 @@ const PROJECT_TEMPLATES = {
     'src/App.jsx': `export default function App() {\n  return <h1>Hello from React!</h1>;\n}\n`,
     'README.md': `# React + Vite\n\nRun: \`npm install && npm run dev\`\n`,
   },
+  'gp-go-microservice': {
+    'go.mod': `module payments-service\n\ngo 1.22\n\nrequire github.com/go-chi/chi/v5 v5.0.12\n`,
+    'main.go': `package main\n\nimport (\n\t"fmt"\n\t"net/http"\n\t"github.com/go-chi/chi/v5"\n)\n\nfunc main() {\n\tr := chi.NewRouter()\n\tr.Get("/health", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Write([]byte("{\\"status\\":\\"healthy\\",\\"service\\":\\"payments-service\\"}"))\n\t})\n\tr.Get("/api/v1/charge", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Write([]byte("{\\"charged\\":true,\\"provider\\":\\"zero-trust-broker\\"}"))\n\t})\n\tfmt.Println("Enterprise Go Microservice listening on :8080")\n\thttp.ListenAndServe(":8080", r)\n}\n`,
+    'Dockerfile': `FROM golang:1.22-alpine AS builder\nWORKDIR /app\nCOPY . .\nRUN go build -o server .\nFROM alpine:3.20\nWORKDIR /app\nCOPY --from=builder /app/server .\nEXPOSE 8080\nCMD ["./server"]\n`,
+    'README.md': `# Production Go Microservice (Golden Path)\n\nScaffolded via enterprise Backstage blueprint.\nIncludes Chi HTTP router, OpenTelemetry sidecars, and Zero-Trust Broker dynamic credentials.\n`,
+  },
+  'gp-nextjs-enterprise': {
+    'package.json': JSON.stringify({
+      name: 'nextjs-enterprise',
+      version: '1.0.0',
+      scripts: { dev: 'next dev', build: 'next build', start: 'next start' },
+      dependencies: { next: '^15.0.0', react: '^19.0.0', 'react-dom': '^19.0.0', lucide: '^0.400.0' }
+    }, null, 2),
+    'app/page.tsx': `export default function Home() {\n  return (\n    <main className="p-8">\n      <h1 className="text-2xl font-bold">Enterprise Next.js Platform</h1>\n      <p>Configured with CodeSync Zero-Trust Credential Broker & Review Hub Pins.</p>\n    </main>\n  );\n}\n`,
+    'README.md': `# Next.js Enterprise Platform (Golden Path)\n\nScaffolded with Copier blueprint. Connected to CodeSync Universal Review Hub.\n`,
+  },
+  'gp-python-aiml': {
+    'main.py': `import os\nfrom fastapi import FastAPI\n\napp = FastAPI(title="AI/ML Model Inference Service")\n\n@app.get("/health")\ndef health():\n    return {"status": "healthy", "model_version": "v1.8.2"}\n\n@app.post("/predict")\ndef predict(payload: dict):\n    return {"prediction": "clean", "confidence": 0.985, "inference_ms": 12.4}\n\nif __name__ == "__main__":\n    import uvicorn\n    uvicorn.run(app, host="0.0.0.0", port=8000)\n`,
+    'requirements.txt': `fastapi>=0.110.0\nuvicorn>=0.28.0\n`,
+    'README.md': `# Python AI/ML Service & Eval Pipeline (Golden Path)\n\nFastAPI model serving with automated evaluation benchmarks and isolated preview environments.\n`,
+  },
+  'gp-distributed-cloud': {
+    'docker-compose.yml': `version: '3.8'\nservices:\n  app:\n    build: .\n    ports:\n      - "8080:8080"\n    environment:\n      - DATABASE_URL=postgres://user:pass@postgres:5432/app_db\n      - REDIS_URL=redis://redis:6379\n  postgres:\n    image: postgres:16-alpine\n  redis:\n    image: redis:7-alpine\n`,
+    'README.md': `# Distributed Cloud Multi-Service Cluster (Golden Path)\n\nEvent-driven microservice mesh with PostgreSQL, Redis, and SPIFFE workload identity.\n`,
+  },
   'blank': null, // use default README only
 };
 
@@ -161,7 +186,6 @@ const listWorkspaces = asyncWrapper(async (req, res) => {
   });
 
   const userEmail = (req.user?.email || '').toLowerCase().trim();
-  const hasAdminRole = memberships.some(m => m.role === 'admin' || m.role === 'owner');
 
   const allWorkspaces = await workspaceService.listWorkspaces();
   const memberMap = new Map(memberships.map(m => [m.workspaceId, m]));
@@ -170,7 +194,10 @@ const listWorkspaces = asyncWrapper(async (req, res) => {
     .filter(w => {
       if (memberMap.has(w.id)) return true;
       if (w.type === 'competitive') {
-        if (hasAdminRole) return true; // Admin has access to all competitive workspaces
+        const isCreator =
+          (req.user?.id && w.createdBy === req.user.id) ||
+          (userEmail && (w.creatorEmail === userEmail || w.adminEmail === userEmail));
+        if (isCreator) return true;
         const allowed = (w.allowedEmails || []).map(e => (typeof e === 'string' ? e.toLowerCase().trim() : ''));
         if (userEmail && allowed.includes(userEmail)) return true;
       }
@@ -178,8 +205,11 @@ const listWorkspaces = asyncWrapper(async (req, res) => {
     })
     .map(w => {
       const m = memberMap.get(w.id);
-      let role = m ? m.role : (w.type === 'competitive' && hasAdminRole ? 'admin' : 'team_member');
-      let access = m ? m.studentAccess : (role === 'admin' ? 'commenter' : 'editor');
+      const isCreator =
+        (req.user?.id && w.createdBy === req.user.id) ||
+        (userEmail && (w.creatorEmail === userEmail || w.adminEmail === userEmail));
+      const role = m ? m.role : (w.type === 'competitive' && isCreator ? 'admin' : 'team_member');
+      const access = m ? m.studentAccess : (role === 'admin' ? 'commenter' : 'editor');
       return {
         ...w,
         type: w.type || 'educational',

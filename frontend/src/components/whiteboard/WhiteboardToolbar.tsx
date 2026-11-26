@@ -2,7 +2,7 @@ import {
   MousePointer2, Hand, PenTool, Highlighter, Sparkles, Eraser,
   Type, Square, Circle, Triangle, Diamond, ArrowRight, StickyNote, Code2,
   LayoutTemplate, Server, Database, Layers, Network, Box,
-  GitBranch, Cpu, Cloud, ZapIcon, Users, Globe,
+  GitBranch, Cpu, Cloud, ZapIcon, Users, Globe, Binary,
 } from 'lucide-react';
 import type { DiagramNodeType } from '../../types/whiteboard';
 
@@ -11,7 +11,7 @@ export type ToolType =
   | 'select' | 'hand' | 'pen' | 'highlighter' | 'smart_pen' | 'eraser'
   | 'text' | 'sticky' | 'frame'
   | 'rectangle' | 'circle' | 'triangle' | 'diamond' | 'arrow' | 'connector'
-  | 'code_cell'
+  | 'code_cell' | 'equation'
   // Semantic typed-node tools
   | `node:${DiagramNodeType}`;
 
@@ -43,6 +43,7 @@ const SHAPE_TOOLS: Array<{ id: ToolType; icon: any; label: string }> = [
   { id: 'arrow',      icon: ArrowRight,    label: 'Arrow' },
   { id: 'connector',  icon: GitBranch,     label: 'Semantic Connector' },
   { id: 'code_cell',  icon: Code2,         label: 'Code Cell' },
+  { id: 'equation',   icon: Binary,        label: 'Math Equation' },
   { id: 'frame',      icon: LayoutTemplate,label: 'Section Frame' },
 ];
 

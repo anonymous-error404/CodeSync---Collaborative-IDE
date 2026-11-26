@@ -33,6 +33,7 @@ interface Props {
   activeFilePath?: string | null;
   onOpenFile: (filePath: string) => void;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 const COLUMNS: Array<{ id: TaskStatus; label: string; icon: string; accent: string; accentBg: string }> = [
@@ -59,6 +60,7 @@ export function KanbanSprintHub({
   activeFilePath,
   onOpenFile,
   onClose,
+  embedded = false,
 }: Props) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
@@ -238,7 +240,7 @@ export function KanbanSprintHub({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col"
+      className={embedded ? "flex flex-col w-full h-full overflow-hidden" : "fixed inset-0 z-50 flex flex-col"}
       style={{ background: 'var(--bg)', color: 'var(--text)', fontFamily: 'Inter, system-ui, sans-serif' }}
     >
       {/* ── Top Navigation Bar ─────────────────────────────────────────────── */}

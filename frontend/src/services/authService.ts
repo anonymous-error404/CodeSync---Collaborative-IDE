@@ -3,17 +3,25 @@ import type { AuthResponse, LoginPayload, RegisterPayload } from '../types';
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
 
 async function request(path: string, options: RequestInit = {}): Promise<AuthResponse> {
-  try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> | undefined) },
-      ...options,
-    });
-    const data = await res.json() as AuthResponse;
-    if (!res.ok) return { success: false, error: data.error ?? data.message ?? `Error ${res.status}` };
-    return data;
-  } catch {
-    return { success: false, error: 'Cannot connect to server. Is the backend running?' };
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> | undefined) },
+        ...options,
+      });
+      const data = await res.json() as AuthResponse;
+      if (!res.ok) return { success: false, error: data.error ?? data.message ?? `Error ${res.status}` };
+      return data;
+    } catch {
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, attempt * 400));
+        continue;
+      }
+      return { success: false, error: 'Cannot connect to server. Is the backend running?' };
+    }
   }
+  return { success: false, error: 'Cannot connect to server. Is the backend running?' };
 }
 
 export const authService = {

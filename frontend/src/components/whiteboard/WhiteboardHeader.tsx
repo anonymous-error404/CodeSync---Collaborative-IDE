@@ -11,7 +11,7 @@ import {
   Undo2, Redo2, Download, LayoutDashboard, Terminal,
   ShieldCheck, Maximize2,
   CheckCircle, AlertCircle, Clock, ChevronDown, Loader2,
-  Sun, Moon, Sparkles,
+  Sun, Moon, Sparkles, ListTodo,
 } from 'lucide-react';
 import type { LayoutAlgorithm } from '../../types/whiteboard';
 
@@ -32,6 +32,7 @@ interface Props {
   onOpenTextToDiagram?: () => void;
   onOpenAiHub?: () => void;
   onOpenValidation: () => void;
+  onGenerateTasks?: () => void;
   selectedCount: number;
   boardTheme?: 'dark' | 'light';
   onToggleTheme?: () => void;
@@ -160,6 +161,7 @@ export function WhiteboardHeader({
   onOpenTextToDiagram,
   onOpenAiHub,
   onOpenValidation,
+  onGenerateTasks,
   selectedCount,
   boardTheme = 'dark',
   onToggleTheme,
@@ -261,6 +263,15 @@ export function WhiteboardHeader({
         onClick={onOpenValidation}
         title="Run diagram validation"
       />
+
+      {onGenerateTasks && (
+        <HeaderButton
+          icon={ListTodo}
+          label="Tasks"
+          onClick={onGenerateTasks}
+          title="Generate Kanban tasks from diagram nodes"
+        />
+      )}
 
       {/* Separator */}
       <div style={{ flex: 1 }} />
